@@ -98,9 +98,11 @@ def section(title):
 def get_id_token(username, password, subscription_key):
     """
     ERCOT auth exactly as documented at developer.ercot.com.
-    Credentials are passed as URL query parameters on a POST request.
-    The subscription key goes in the header.
+    Credentials are URL-encoded then passed as query parameters on a POST.
+    URL encoding is critical — any special character (digits, symbols) in
+    the password will break auth if not encoded first.
     """
+    from urllib.parse import quote
     AUTH_URL = (
         "https://ercotb2c.b2clogin.com"
         "/ercotb2c.onmicrosoft.com"
@@ -114,13 +116,15 @@ def get_id_token(username, password, subscription_key):
         "&response_type=id_token"
     )
     r = requests.post(
-        AUTH_URL.format(username=username, password=password),
+        AUTH_URL.format(
+            username=quote(username, safe=""),
+            password=quote(password, safe=""),
+        ),
         headers={"Ocp-Apim-Subscription-Key": subscription_key},
         timeout=15,
     )
     r.raise_for_status()
     data = r.json()
-    # ERCOT returns both access_token and id_token — use id_token per docs
     return data.get("id_token") or data.get("access_token")
 
 
