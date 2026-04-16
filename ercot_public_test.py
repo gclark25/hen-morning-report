@@ -444,7 +444,7 @@ def main():
     print(f"  Testing {len(TEST_NODES)} nodes: {', '.join(TEST_NODES)}\n")
 
     for node in TEST_NODES:
-        time.sleep(1)  # avoid 429 rate limit
+        time.sleep(2)  # 32 nodes needs ~2s gap to avoid 429s
         try:
             data = ercot_get(
                 "np6-905-cd/spp_node_zone_hub", token, subscription_key,
@@ -504,7 +504,7 @@ def main():
     print(f"  Testing {len(TEST_NODES)} nodes\n")
 
     for node in TEST_NODES:
-        time.sleep(1)  # avoid 429 rate limit
+        time.sleep(2)  # 32 nodes needs ~2s gap to avoid 429s
         try:
             data = ercot_get(
                 "np4-190-cd/dam_stlmnt_pnt_prices", token, subscription_key,
