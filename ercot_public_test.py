@@ -129,7 +129,11 @@ def get_id_token(username, password, subscription_key):
 
 
 def ercot_get(path, token, subscription_key, params=None):
-    """Single authenticated GET to the ERCOT public API."""
+    """Single authenticated GET to the ERCOT public API.
+    Normalises the response — ERCOT returns either:
+      {"data": [...]}  or  [...] (raw list)  or  {"_embedded": {...}}
+    Always returns a list of row dicts.
+    """
     headers = {
         "Authorization":             f"Bearer {token}",
         "Ocp-Apim-Subscription-Key": subscription_key,
@@ -145,7 +149,17 @@ def ercot_get(path, token, subscription_key, params=None):
         timeout=20,
     )
     r.raise_for_status()
-    return r.json()
+    body = r.json()
+    # Normalise to a list
+    if isinstance(body, list):
+        return {"data": body}
+    if "data" in body:
+        return body
+    # Some endpoints wrap in _embedded
+    for v in body.values():
+        if isinstance(v, list):
+            return {"data": v}
+    return {"data": []}
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
@@ -246,14 +260,50 @@ def main():
     try:
         data = ercot_get(
             "np6-345-cd/act_sys_load_by_wzn", token, subscription_key,
-            {"deliveryDateFrom": WEEK_AGO, "deliveryDateTo": YESTERDAY}
+            {
+                "deliveryDateFrom": WEEK_AGO,
+                "deliveryDateTo":   YESTERDAY,
+                "deliveryHourFrom": 1,
+                "deliveryHourTo":   24,
+            }
         )
         rows = data.get("data", [])
+        # If date params fail try without them — endpoint may only support
+        # a rolling window. Print first row keys to help diagnose.
+        if not rows:
+            data2 = ercot_get(
+                "np6-345-cd/act_sys_load_by_wzn", token, subscription_key
+            )
+            rows = data2.get("data", [])
+            if rows:
+                info(f"  Note: endpoint returned {len(rows)} rows without date filter")
+                info(f"  Available fields: {list(rows[0].keys())}")
         if rows:
-            # Group by date for per-day peak - sum all weather zones
+            info(f"  Row sample fields: {list(rows[0].keys())}")
             for r in rows:
-                d   = r.get("deliveryDate", "")[:10]
-                val = safe_float(r.get("ercotLoad") or r.get("systemLoad") or r.get("value") or 0)
+                # Try every plausible field name for the date
+                d = (r.get("deliveryDate") or r.get("operatingDay") or
+                     r.get("SCEDTimestamp", "")[:10] or "")[:10]
+                if not d:
+                    continue
+                # Sum all weather zone load columns
+                val = sum(safe_float(v) for k, v in r.items()
+                          if any(z in k.upper() for z in
+                                 ["LOAD", "ERCOT", "COAST", "EAST", "FAR_WEST",
+                                  "NORTH", "NORTH_C", "SOUTHERN", "SOUTH_C", "WEST"])
+                          and isinstance(v, (int, float, str)))
+                if val == 0:
+                    # fallback: first numeric field
+                    for k, v in r.items():
+                        try:
+                            val = float(v)
+                            if val > 0:
+                                break
+                        except (TypeError, ValueError):
+                            pass
+                if d not in gross_by_day:
+                    gross_by_day[d] = []
+                gross_by_day[d].append(val)
                 if d not in gross_by_day:
                     gross_by_day[d] = []
                 gross_by_day[d].append(val)
@@ -293,11 +343,15 @@ def main():
         )
         rows = data.get("data", [])
         if rows:
+            info(f"  Wind row sample fields: {list(rows[0].keys())}")
             for r in rows:
-                d = r.get("deliveryDate", "")[:10]
-                # Try multiple possible field names
+                d = (r.get("deliveryDate") or r.get("operatingDay") or "")[:10]
+                if not d:
+                    continue
                 val = safe_float(
-                    r.get("actualStelLoad") or r.get("actual") or
+                    r.get("actualStelLoad") or r.get("actualLoad") or
+                    r.get("actual") or r.get("genSystemWide") or
+                    r.get("systemWide") or r.get("stwpf") or
                     r.get("hsLoad") or r.get("value") or 0
                 )
                 if d not in wind_by_day:
@@ -336,10 +390,15 @@ def main():
         )
         rows = data.get("data", [])
         if rows:
+            info(f"  Solar row sample fields: {list(rows[0].keys())}")
             for r in rows:
-                d = r.get("deliveryDate", "")[:10]
+                d = (r.get("deliveryDate") or r.get("operatingDay") or "")[:10]
+                if not d:
+                    continue
                 val = safe_float(
-                    r.get("actualStelLoad") or r.get("actual") or
+                    r.get("actualStelLoad") or r.get("actualLoad") or
+                    r.get("actual") or r.get("genSystemWide") or
+                    r.get("systemWide") or r.get("pvgrSystemWide") or
                     r.get("hsLoad") or r.get("value") or 0
                 )
                 if d not in solar_by_day:
