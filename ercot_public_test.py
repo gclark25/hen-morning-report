@@ -47,21 +47,15 @@ from datetime import date, timedelta
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
-# Token endpoint — confirmed from ERCOT gridstatus open-source client
-TOKEN_URL = (
-    "https://ercotb2c.b2clogin.com"
-    "/ercotb2c.onmicrosoft.com"
-    "/B2C_1_PUBAPI-ROPC-FLOW"
-    "/oauth2/v2.0/token"
-)
 BASE_URL = "https://api.ercot.com/api/public-reports"
 
 # Settlement points to test DART prices against.
 # Replace with your actual site node names — hub averages work for initial testing.
-TEST_NODES = os.environ.get(
-    "ERCOT_TEST_NODES",
-    "HB_BUSAVG,HB_HOUSTON,HB_NORTH,HB_SOUTH,HB_WEST"
-).split(",")
+TEST_NODES = [
+    n.strip() for n in
+    os.environ.get("ERCOT_TEST_NODES", "HB_BUSAVG,HB_HOUSTON,HB_NORTH,HB_SOUTH,HB_WEST").split(",")
+    if n.strip()
+]
 
 YESTERDAY = (date.today() - timedelta(days=1)).isoformat()
 WEEK_AGO  = (date.today() - timedelta(days=7)).isoformat()
@@ -103,25 +97,31 @@ def section(title):
 
 def get_id_token(username, password, subscription_key):
     """
-    ERCOT uses OAuth2 Resource Owner Password Credentials (ROPC) flow.
-    POST username + password to get a short-lived ID token (1 hour).
-    The subscription key is also required on this call.
+    ERCOT auth exactly as documented at developer.ercot.com.
+    Credentials are passed as URL query parameters on a POST request.
+    The subscription key goes in the header.
     """
+    AUTH_URL = (
+        "https://ercotb2c.b2clogin.com"
+        "/ercotb2c.onmicrosoft.com"
+        "/B2C_1_PUBAPI-ROPC-FLOW"
+        "/oauth2/v2.0/token"
+        "?username={username}"
+        "&password={password}"
+        "&grant_type=password"
+        "&scope=openid+fec253ea-0d06-4272-a5e6-b478baeecd70+offline_access"
+        "&client_id=fec253ea-0d06-4272-a5e6-b478baeecd70"
+        "&response_type=id_token"
+    )
     r = requests.post(
-        TOKEN_URL,
+        AUTH_URL.format(username=username, password=password),
         headers={"Ocp-Apim-Subscription-Key": subscription_key},
-        data={
-            "grant_type": "password",
-            "username":   username,
-            "password":   password,
-            "scope":      "openid fec253ea-0d06-4272-a5e6-b478baaaaac2 offline_access",
-            "client_id":  "fec253ea-0d06-4272-a5e6-b478baaaaac2",
-            "response_type": "id_token",
-        },
         timeout=15,
     )
     r.raise_for_status()
-    return r.json().get("id_token") or r.json().get("access_token")
+    data = r.json()
+    # ERCOT returns both access_token and id_token — use id_token per docs
+    return data.get("id_token") or data.get("access_token")
 
 
 def ercot_get(path, token, subscription_key, params=None):
