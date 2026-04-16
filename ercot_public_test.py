@@ -261,49 +261,46 @@ def main():
         data = ercot_get(
             "np6-345-cd/act_sys_load_by_wzn", token, subscription_key,
             {
-                "deliveryDateFrom": WEEK_AGO,
-                "deliveryDateTo":   YESTERDAY,
-                "deliveryHourFrom": 1,
-                "deliveryHourTo":   24,
+                "SCEDTimestampFrom": f"{WEEK_AGO}T00:00:00",
+                "SCEDTimestampTo":   f"{YESTERDAY}T23:59:59",
             }
         )
         rows = data.get("data", [])
-        # If date params fail try without them — endpoint may only support
-        # a rolling window. Print first row keys to help diagnose.
-        if not rows:
-            data2 = ercot_get(
-                "np6-345-cd/act_sys_load_by_wzn", token, subscription_key
-            )
-            rows = data2.get("data", [])
-            if rows:
-                info(f"  Note: endpoint returned {len(rows)} rows without date filter")
-                info(f"  Available fields: {list(rows[0].keys())}")
         if rows:
-            info(f"  Row sample fields: {list(rows[0].keys())}")
-            for r in rows:
-                # Try every plausible field name for the date
-                d = (r.get("deliveryDate") or r.get("operatingDay") or
-                     r.get("SCEDTimestamp", "")[:10] or "")[:10]
-                if not d:
-                    continue
-                # Sum all weather zone load columns
-                val = sum(safe_float(v) for k, v in r.items()
-                          if any(z in k.upper() for z in
-                                 ["LOAD", "ERCOT", "COAST", "EAST", "FAR_WEST",
-                                  "NORTH", "NORTH_C", "SOUTHERN", "SOUTH_C", "WEST"])
-                          and isinstance(v, (int, float, str)))
-                if val == 0:
-                    # fallback: first numeric field
-                    for k, v in r.items():
-                        try:
-                            val = float(v)
-                            if val > 0:
-                                break
-                        except (TypeError, ValueError):
-                            pass
-                if d not in gross_by_day:
-                    gross_by_day[d] = []
-                gross_by_day[d].append(val)
+            # ERCOT columnar format: first row = column headers, rest = values
+            if isinstance(rows[0], list):
+                headers = rows[0]
+                info(f"  Load columns: {headers}")
+                # Find the ERCOT total load column and timestamp column
+                ts_idx   = next((i for i,h in enumerate(headers)
+                                 if "TIMESTAMP" in str(h).upper() or
+                                    "TIME" in str(h).upper()), 0)
+                load_idx = next((i for i,h in enumerate(headers)
+                                 if "ERCOT" in str(h).upper() and
+                                    "LOAD" in str(h).upper()), None)
+                if load_idx is None:
+                    # fallback: last numeric column
+                    load_idx = len(headers) - 1
+                for row in rows[1:]:
+                    d = str(row[ts_idx])[:10]
+                    val = safe_float(row[load_idx])
+                    if d and val:
+                        if d not in gross_by_day:
+                            gross_by_day[d] = []
+                        gross_by_day[d].append(val)
+            else:
+                # dict rows
+                info(f"  Load row fields: {list(rows[0].keys())}")
+                for r in rows:
+                    d = str(r.get("SCEDTimestamp", r.get("deliveryDate", "")))[:10]
+                    val = safe_float(
+                        r.get("ercotLoad") or r.get("systemLoad") or
+                        r.get("total") or r.get("value") or 0
+                    )
+                    if d and val:
+                        if d not in gross_by_day:
+                            gross_by_day[d] = []
+                        gross_by_day[d].append(val)
                 if d not in gross_by_day:
                     gross_by_day[d] = []
                 gross_by_day[d].append(val)
@@ -343,17 +340,37 @@ def main():
         )
         rows = data.get("data", [])
         if rows:
-            info(f"  Wind row sample fields: {list(rows[0].keys())}")
-            for r in rows:
-                d = (r.get("deliveryDate") or r.get("operatingDay") or "")[:10]
-                if not d:
-                    continue
-                val = safe_float(
-                    r.get("actualStelLoad") or r.get("actualLoad") or
-                    r.get("actual") or r.get("genSystemWide") or
-                    r.get("systemWide") or r.get("stwpf") or
-                    r.get("hsLoad") or r.get("value") or 0
-                )
+            if isinstance(rows[0], list):
+                headers = rows[0]
+                info(f"  Wind columns: {headers}")
+                ts_idx  = next((i for i,h in enumerate(headers)
+                                if "DATE" in str(h).upper() or
+                                   "TIME" in str(h).upper()), 0)
+                gen_idx = next((i for i,h in enumerate(headers)
+                                if "GEN" in str(h).upper() and
+                                   "SYSTEM" in str(h).upper()), None)
+                if gen_idx is None:
+                    gen_idx = next((i for i,h in enumerate(headers)
+                                    if "GEN" in str(h).upper()), 1)
+                for row in rows[1:]:
+                    d = str(row[ts_idx])[:10]
+                    val = safe_float(row[gen_idx])
+                    if d and val:
+                        if d not in wind_by_day:
+                            wind_by_day[d] = []
+                        wind_by_day[d].append(val)
+            else:
+                info(f"  Wind row fields: {list(rows[0].keys())}")
+                for r in rows:
+                    d = (r.get("deliveryDate") or r.get("operatingDay") or "")[:10]
+                    val = safe_float(
+                        r.get("genSystemWide") or r.get("actualStelLoad") or
+                        r.get("systemWide") or r.get("actual") or 0
+                    )
+                    if d and val:
+                        if d not in wind_by_day:
+                            wind_by_day[d] = []
+                        wind_by_day[d].append(val)
                 if d not in wind_by_day:
                     wind_by_day[d] = []
                 wind_by_day[d].append(val)
@@ -390,17 +407,37 @@ def main():
         )
         rows = data.get("data", [])
         if rows:
-            info(f"  Solar row sample fields: {list(rows[0].keys())}")
-            for r in rows:
-                d = (r.get("deliveryDate") or r.get("operatingDay") or "")[:10]
-                if not d:
-                    continue
-                val = safe_float(
-                    r.get("actualStelLoad") or r.get("actualLoad") or
-                    r.get("actual") or r.get("genSystemWide") or
-                    r.get("systemWide") or r.get("pvgrSystemWide") or
-                    r.get("hsLoad") or r.get("value") or 0
-                )
+            if isinstance(rows[0], list):
+                headers = rows[0]
+                info(f"  Solar columns: {headers}")
+                ts_idx  = next((i for i,h in enumerate(headers)
+                                if "DATE" in str(h).upper() or
+                                   "TIME" in str(h).upper()), 0)
+                gen_idx = next((i for i,h in enumerate(headers)
+                                if "GEN" in str(h).upper() and
+                                   "SYSTEM" in str(h).upper()), None)
+                if gen_idx is None:
+                    gen_idx = next((i for i,h in enumerate(headers)
+                                    if "GEN" in str(h).upper()), 1)
+                for row in rows[1:]:
+                    d = str(row[ts_idx])[:10]
+                    val = safe_float(row[gen_idx])
+                    if d and val:
+                        if d not in solar_by_day:
+                            solar_by_day[d] = []
+                        solar_by_day[d].append(val)
+            else:
+                info(f"  Solar row fields: {list(rows[0].keys())}")
+                for r in rows:
+                    d = (r.get("deliveryDate") or r.get("operatingDay") or "")[:10]
+                    val = safe_float(
+                        r.get("genSystemWide") or r.get("actualStelLoad") or
+                        r.get("pvgrSystemWide") or r.get("actual") or 0
+                    )
+                    if d and val:
+                        if d not in solar_by_day:
+                            solar_by_day[d] = []
+                        solar_by_day[d].append(val)
                 if d not in solar_by_day:
                     solar_by_day[d] = []
                 solar_by_day[d].append(val)
