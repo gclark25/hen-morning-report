@@ -42,6 +42,7 @@ OUTPUT:
 import os
 import sys
 import json
+import time
 import requests
 from datetime import date, timedelta
 
@@ -443,6 +444,7 @@ def main():
     print(f"  Testing {len(TEST_NODES)} nodes: {', '.join(TEST_NODES)}\n")
 
     for node in TEST_NODES:
+        time.sleep(1)  # avoid 429 rate limit
         try:
             data = ercot_get(
                 "np6-905-cd/spp_node_zone_hub", token, subscription_key,
@@ -454,24 +456,39 @@ def main():
             )
             rows = data.get("data", [])
             if rows:
-                prices = [safe_float(r.get("settlementPointPrice") or
-                                     r.get("spp") or r.get("price") or 0) for r in rows]
-                prices = [p for p in prices if p != 0]
-                avg_p  = avg(prices)
-                max_p  = peak(prices)
-                min_p  = round(min(prices), 2) if prices else 0
-                rt_prices[node] = {
-                    "avg": avg_p, "max": max_p, "min": min_p,
-                    "intervals": len(rows)
-                }
-                # Price spike flag
-                spike = f"  ⚡ SPIKE" if max_p > 100 else ""
-                ok(f"RT prices: {node:<18} avg=${avg_p:>7.2f}  "
-                   f"min=${min_p:>7.2f}  max=${max_p:>7.2f}/MWh{spike}",
-                   f"{len(rows)} intervals on {YESTERDAY}")
+                info(f"  RT row[0] sample ({node}): {rows[0]}")
+                prices = []
+                for r in rows:
+                    if isinstance(r, list):
+                        # positional: [publishTs, deliveryDate, deliveryHour,
+                        #              deliveryInterval, settlementPoint, price, ...]
+                        nums = [x for x in r if isinstance(x, (int, float))
+                                and not isinstance(x, bool) and x != 0]
+                        if nums:
+                            prices.append(nums[-1])
+                    elif isinstance(r, dict):
+                        p = safe_float(r.get("settlementPointPrice") or
+                                       r.get("spp") or r.get("price") or 0)
+                        if p:
+                            prices.append(p)
+                if prices:
+                    avg_p = avg(prices)
+                    max_p = peak(prices)
+                    min_p = round(min(prices), 2)
+                    rt_prices[node] = {
+                        "avg": avg_p, "max": max_p, "min": min_p,
+                        "intervals": len(rows)
+                    }
+                    spike = "  SPIKE" if max_p > 100 else ""
+                    ok(f"RT prices: {node:<18} avg=${avg_p:>7.2f}  "
+                       f"min=${min_p:>7.2f}  max=${max_p:>7.2f}/MWh{spike}",
+                       f"{len(rows)} intervals on {YESTERDAY}")
+                else:
+                    fail(f"RT prices: {node} — rows returned but no prices parsed",
+                         f"Row sample: {rows[0]}")
             else:
                 fail(f"RT prices: {node} — no data",
-                     "Check settlement point name — must match ERCOT exactly (case-sensitive)")
+                     "Check settlement point name — must match ERCOT exactly")
         except requests.HTTPError as e:
             fail(f"RT prices: {node} — HTTP {e.response.status_code}",
                  e.response.text[:150])
@@ -487,6 +504,7 @@ def main():
     print(f"  Testing {len(TEST_NODES)} nodes\n")
 
     for node in TEST_NODES:
+        time.sleep(1)  # avoid 429 rate limit
         try:
             data = ercot_get(
                 "np4-190-cd/dam_stlmnt_pnt_prices", token, subscription_key,
@@ -498,15 +516,29 @@ def main():
             )
             rows = data.get("data", [])
             if rows:
-                prices = [safe_float(r.get("settlementPointPrice") or
-                                     r.get("spp") or r.get("price") or 0) for r in rows]
-                prices = [p for p in prices if p != 0]
-                avg_p  = avg(prices)
-                max_p  = peak(prices)
-                da_prices[node] = {"avg": avg_p, "max": max_p, "intervals": len(rows)}
-                ok(f"DA prices: {node:<18} avg=${avg_p:>7.2f}  "
-                   f"max=${max_p:>7.2f}/MWh",
-                   f"{len(rows)} hourly intervals on {YESTERDAY}")
+                info(f"  DA row[0] sample ({node}): {rows[0]}")
+                prices = []
+                for r in rows:
+                    if isinstance(r, list):
+                        nums = [x for x in r if isinstance(x, (int, float))
+                                and not isinstance(x, bool) and x != 0]
+                        if nums:
+                            prices.append(nums[-1])
+                    elif isinstance(r, dict):
+                        p = safe_float(r.get("settlementPointPrice") or
+                                       r.get("spp") or r.get("price") or 0)
+                        if p:
+                            prices.append(p)
+                if prices:
+                    avg_p = avg(prices)
+                    max_p = peak(prices)
+                    da_prices[node] = {"avg": avg_p, "max": max_p, "intervals": len(rows)}
+                    ok(f"DA prices: {node:<18} avg=${avg_p:>7.2f}  "
+                       f"max=${max_p:>7.2f}/MWh",
+                       f"{len(rows)} hourly intervals on {YESTERDAY}")
+                else:
+                    fail(f"DA prices: {node} — no prices parsed",
+                         f"Row sample: {rows[0]}")
             else:
                 fail(f"DA prices: {node} — no data")
         except requests.HTTPError as e:
