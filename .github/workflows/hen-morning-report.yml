@@ -5,6 +5,10 @@ on:
     - cron: '0 11 * * 1-5'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  issues: write
+
 jobs:
   morning-report:
     runs-on: ubuntu-latest
@@ -39,6 +43,22 @@ jobs:
           name: morning-report-${{ github.run_id }}
           path: morning_report.html
           retention-days: 30
+
+      - name: Publish dashboard to GitHub Pages
+        if: success()
+        run: |
+          cp dashboard/index.html index.html
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages 2>/dev/null || true
+          git checkout --orphan gh-pages-new
+          git rm -rf . --quiet 2>/dev/null || true
+          cp index.html .
+          cp latest.json .
+          git add index.html latest.json
+          git commit -m "Dashboard update — $(date -u +%Y-%m-%d)"
+          git push origin gh-pages-new:gh-pages --force
+          echo "Dashboard published to GitHub Pages"
 
       - name: Alert on failure
         if: failure()
