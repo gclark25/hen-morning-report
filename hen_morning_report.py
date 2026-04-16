@@ -531,7 +531,7 @@ def main():
     password   = os.environ.get("ERCOT_PASSWORD", "")
     sub_key    = os.environ.get("ERCOT_SUBSCRIPTION_KEY", "")
     sg_api_key = os.environ.get("SENDGRID_API_KEY", "")
-    from_addr  = os.environ.get("FROM_EMAIL", "")
+    from_addr  = os.environ.get("FROM_EMAIL", "").strip()
     to_raw     = os.environ.get("TO_EMAILS", "")
     s3_bucket  = os.environ.get("S3_BUCKET", "")
     to_addrs   = [e.strip() for e in to_raw.split(",") if e.strip()]
@@ -540,12 +540,11 @@ def main():
     if not username:   missing.append("ERCOT_USERNAME")
     if not password:   missing.append("ERCOT_PASSWORD")
     if not sub_key:    missing.append("ERCOT_SUBSCRIPTION_KEY")
-    if not sg_api_key: missing.append("SENDGRID_API_KEY")
-    if not from_addr:  missing.append("FROM_EMAIL")
-    if not to_addrs:   missing.append("TO_EMAILS")
     if missing:
         print(f"ERROR: Missing env vars: {', '.join(missing)}")
         sys.exit(1)
+
+    email_enabled = bool(sg_api_key and from_addr and to_addrs)
 
     # Authenticate
     print("\n1. Authenticating with ERCOT...")
@@ -576,15 +575,17 @@ def main():
         except Exception as e:
             print(f"   WARN: S3 archive failed — {e} (report will still send)")
 
-    # Send email via SendGrid
-    print("\n5. Sending email via SendGrid...")
-    dow     = date.today().strftime("%A")
-    subject = f"HEN Morning Report — {dow} {YESTERDAY}"
-    try:
-        send_email(html, subject, from_addr, to_addrs, sg_api_key)
-    except Exception as e:
-        print(f"   FAILED to send email: {e}")
-        sys.exit(1)
+    # Send email via SendGrid (optional — skipped if secrets not configured)
+    if email_enabled:
+        print("\n5. Sending email via SendGrid...")
+        dow     = date.today().strftime("%A")
+        subject = f"HEN Morning Report — {dow} {YESTERDAY}"
+        try:
+            send_email(html, subject, from_addr, to_addrs, sg_api_key)
+        except Exception as e:
+            print(f"   WARN: Email failed — {e} (dashboard still updated)")
+    else:
+        print("\n5. Email skipped — SENDGRID_API_KEY / FROM_EMAIL / TO_EMAILS not configured")
 
     print(f"\nDone. Report delivered for {YESTERDAY}.\n")
 
