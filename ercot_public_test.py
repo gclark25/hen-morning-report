@@ -51,11 +51,12 @@ BASE_URL = "https://api.ercot.com/api/public-reports"
 
 # Settlement points to test DART prices against.
 # Replace with your actual site node names — hub averages work for initial testing.
-TEST_NODES = [
-    n.strip() for n in
-    os.environ.get("ERCOT_TEST_NODES", "HB_BUSAVG,HB_HOUSTON,HB_NORTH,HB_SOUTH,HB_WEST").split(",")
-    if n.strip()
-]
+_nodes_env = os.environ.get("ERCOT_TEST_NODES", "").strip()
+TEST_NODES = (
+    [n.strip() for n in _nodes_env.split(",") if n.strip()]
+    if _nodes_env
+    else ["HB_BUSAVG", "HB_HOUSTON", "HB_NORTH", "HB_SOUTH", "HB_WEST"]
+)
 
 YESTERDAY = (date.today() - timedelta(days=1)).isoformat()
 WEEK_AGO  = (date.today() - timedelta(days=7)).isoformat()
@@ -267,21 +268,18 @@ def main():
             for row in rows:
                 if not isinstance(row, list) or len(row) < 3:
                     continue
-                # positional: [publishTs, deliveryDate, deliveryHour, coast, east,
-                #              farWest, north, northCentral, southern, southCentral,
-                #              west, ercotTotal, ...]
-                d = str(row[1])[:10]
+                # positional: [deliveryDate, deliveryHour, coast, east,
+                #              farWest, north, northCentral, southern,
+                #              southCentral, west, ercotTotal, ...]
+                d = str(row[0])[:10]
                 # Last numeric column before any boolean is ERCOT total
-                nums = [x for x in row[2:] if isinstance(x, (int, float))
+                nums = [x for x in row[1:] if isinstance(x, (int, float))
                         and not isinstance(x, bool)]
-                val  = nums[-1] if nums else 0
+                val = nums[-1] if nums else 0
                 if d and val:
                     if d not in gross_by_day:
                         gross_by_day[d] = []
                     gross_by_day[d].append(float(val))
-                if d not in gross_by_day:
-                    gross_by_day[d] = []
-                gross_by_day[d].append(val)
 
             peak_day  = max(gross_by_day, key=lambda d: max(gross_by_day[d]))
             peak_load = round(max(gross_by_day[peak_day]), 1)
