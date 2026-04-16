@@ -1,0 +1,382 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>HEN — ERCOT Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e8eaf0;min-height:100vh}
+  a{color:inherit;text-decoration:none}
+
+  /* HEADER */
+  .topbar{background:#0a3d2e;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1a5c40}
+  .topbar-left{display:flex;align-items:center;gap:12px}
+  .topbar-logo{font-size:15px;font-weight:700;color:#fff;letter-spacing:.02em}
+  .topbar-sub{font-size:12px;color:#7fc8a0}
+  .topbar-right{display:flex;align-items:center;gap:16px}
+  .data-date{font-size:12px;color:#7fc8a0;font-family:monospace}
+  .refresh-btn{font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid #2a7a50;background:transparent;color:#7fc8a0;cursor:pointer}
+  .refresh-btn:hover{background:#1a5c40}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:#3dba6f;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  /* LAYOUT */
+  .main{max-width:1200px;margin:0 auto;padding:20px 20px 40px}
+
+  /* KPI STRIP */
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .kpi-card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px 18px}
+  .kpi-label{font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+  .kpi-value{font-size:26px;font-weight:700;color:#e8eaf0;font-family:monospace;line-height:1}
+  .kpi-sub{font-size:11px;color:#555;margin-top:5px}
+  .kpi-card.green .kpi-value{color:#3dba6f}
+  .kpi-card.amber .kpi-value{color:#f0a500}
+  .kpi-card.red .kpi-value{color:#e05050}
+  .kpi-card.blue .kpi-value{color:#4a9eff}
+
+  /* CHARTS ROW */
+  .charts-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+  .chart-card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px 18px}
+  .card-title{font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px}
+  .chart-wrap{position:relative;height:180px}
+
+  /* PRICE TABLE */
+  .table-card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px 18px;margin-bottom:20px}
+  .table-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .sort-btns{display:flex;gap:6px}
+  .sort-btn{font-size:10px;padding:3px 9px;border-radius:4px;border:1px solid #2a2d3a;background:transparent;color:#666;cursor:pointer}
+  .sort-btn.active{border-color:#3dba6f;color:#3dba6f}
+  .sort-btn:hover{border-color:#555;color:#aaa}
+  .table-scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{padding:7px 10px;text-align:right;color:#555;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #2a2d3a;white-space:nowrap}
+  th:first-child{text-align:left}
+  td{padding:8px 10px;text-align:right;border-bottom:1px solid #1e2130;color:#c8cad4;font-family:monospace;font-size:12px}
+  td:first-child{text-align:left;font-family:-apple-system,sans-serif;font-size:11px;color:#9ea0a8}
+  tr:hover td{background:#1e2130}
+  .spike{color:#e05050;font-weight:700}
+  .neg{color:#4a9eff}
+  .rt-prem{color:#3dba6f;font-weight:600}
+  .da-prem{color:#c87800}
+
+  /* FUNDAMENTALS TABLE */
+  .fund-card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px 18px;margin-bottom:20px}
+  .charging-row td{background:#0d1f14}
+
+  /* CALLOUT GRID */
+  .callout-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .callout{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:14px 16px;border-left:3px solid #333}
+  .callout.green{border-left-color:#3dba6f}
+  .callout.amber{border-left-color:#f0a500}
+  .callout.red{border-left-color:#e05050}
+  .callout.blue{border-left-color:#4a9eff}
+  .callout-label{font-size:9px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+  .callout-value{font-size:12px;color:#c8cad4;font-family:monospace;line-height:1.4}
+
+  /* LOADING / ERROR */
+  .loading{text-align:center;padding:80px 0;color:#555;font-size:14px}
+  .error{text-align:center;padding:40px;color:#e05050;font-size:13px;background:#1a1d27;border-radius:10px;border:1px solid #3a1d1d}
+
+  /* FOOTER */
+  .footer{text-align:center;font-size:11px;color:#444;padding-top:10px}
+
+  @media(max-width:700px){
+    .kpi-grid{grid-template-columns:1fr 1fr}
+    .charts-row{grid-template-columns:1fr}
+    .callout-grid{grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-logo">Hunt Energy Network</div>
+    <div class="topbar-sub">ERCOT Commercial Dashboard</div>
+  </div>
+  <div class="topbar-right">
+    <span class="status-dot" id="status-dot" title="Data status"></span>
+    <span class="data-date" id="data-date">Loading…</span>
+    <button class="refresh-btn" onclick="loadData()">Refresh</button>
+  </div>
+</div>
+
+<div class="main" id="main">
+  <div class="loading" id="loading">Loading latest data…</div>
+</div>
+
+<script>
+const fmt  = v => v == null ? '—' : `$${v.toFixed(2)}`;
+const fmtD = v => v == null ? '—' : (v >= 0 ? `+$${v.toFixed(2)}` : `-$${Math.abs(v).toFixed(2)}`);
+const fmtGW = v => v == null ? '—' : `${v.toFixed(1)} GW`;
+
+let sortKey = 'rt_avg';
+let lastData = null;
+let charts = {};
+
+async function loadData() {
+  try {
+    const r = await fetch(`latest.json?_=${Date.now()}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    lastData = d;
+    render(d);
+  } catch(e) {
+    document.getElementById('main').innerHTML =
+      `<div class="error">
+        <div style="font-size:16px;margin-bottom:8px">No data available yet</div>
+        <div style="color:#888">The dashboard updates each weekday at 6 AM CT when the morning report runs.<br>
+        If you just set this up, trigger the workflow manually in GitHub Actions first.</div>
+        <div style="margin-top:16px;font-size:11px;color:#555">Error: ${e.message}</div>
+      </div>`;
+  }
+}
+
+function render(d) {
+  const rt    = d.rt    || {};
+  const da    = d.da    || {};
+  const dart  = d.dart  || {};
+  const load  = d.gross_load || {};
+  const wind  = d.wind  || {};
+  const solar = d.solar || {};
+
+  const rtVals     = Object.values(rt);
+  const fleetAvg   = rtVals.length ? (rtVals.reduce((s,v)=>s+v.avg,0)/rtVals.length).toFixed(2) : '—';
+  const fleetMax   = rtVals.length ? Math.max(...rtVals.map(v=>v.max)).toFixed(2) : '—';
+  const spikes     = Object.entries(rt).filter(([,v])=>v.max>100).map(([n])=>n);
+  const negs       = Object.entries(rt).filter(([,v])=>v.min<0).map(([n])=>n);
+  const dartVals   = Object.entries(dart);
+  const bestDart   = dartVals.length ? dartVals.reduce((a,b)=>b[1]>a[1]?b:a) : null;
+  const worstDart  = dartVals.length ? dartVals.reduce((a,b)=>b[1]<a[1]?b:a) : null;
+
+  document.getElementById('data-date').textContent = `Data: ${d.data_date || 'unknown'}`;
+  document.getElementById('loading')?.remove();
+
+  document.getElementById('main').innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi-card green">
+        <div class="kpi-label">Fleet avg RT price</div>
+        <div class="kpi-value">$${fleetAvg}</div>
+        <div class="kpi-sub">${Object.keys(rt).length} nodes · ${d.data_date}</div>
+      </div>
+      <div class="kpi-card amber">
+        <div class="kpi-label">Fleet peak RT price</div>
+        <div class="kpi-value">$${fleetMax}</div>
+        <div class="kpi-sub">$/MWh highest interval</div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-label">Spike events</div>
+        <div class="kpi-value">${spikes.length}</div>
+        <div class="kpi-sub">nodes &gt;$100/MWh</div>
+      </div>
+      <div class="kpi-card blue">
+        <div class="kpi-label">Negative price nodes</div>
+        <div class="kpi-value">${negs.length}</div>
+        <div class="kpi-sub">charging opportunities</div>
+      </div>
+    </div>
+
+    <div class="callout-grid">
+      <div class="callout green">
+        <div class="callout-label">Best DART performer</div>
+        <div class="callout-value">${bestDart ? `${bestDart[0]}<br>+$${bestDart[1].toFixed(2)}/MWh above DA` : 'N/A'}</div>
+      </div>
+      <div class="callout amber">
+        <div class="callout-label">Largest DA premium</div>
+        <div class="callout-value">${worstDart ? `${worstDart[0]}<br>$${worstDart[1].toFixed(2)}/MWh below RT` : 'N/A'}</div>
+      </div>
+      <div class="callout red">
+        <div class="callout-label">Spike nodes (&gt;$100/MWh)</div>
+        <div class="callout-value">${spikes.length ? spikes.join(', ') : 'None'}</div>
+      </div>
+      <div class="callout blue">
+        <div class="callout-label">Negative price nodes</div>
+        <div class="callout-value">${negs.length ? negs.join(', ') : 'None'}</div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="card-title">ERCOT gross load — 7-day peak (GW)</div>
+        <div class="chart-wrap"><canvas id="load-chart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="card-title">Wind &amp; solar generation — 7-day peak (GW)</div>
+        <div class="chart-wrap"><canvas id="gen-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <div class="card-title" style="margin-bottom:0">RT vs DA prices by node — ${d.data_date}</div>
+        <div class="sort-btns">
+          <button class="sort-btn ${sortKey==='rt_avg'?'active':''}" onclick="setSort('rt_avg')">RT avg</button>
+          <button class="sort-btn ${sortKey==='dart'?'active':''}" onclick="setSort('dart')">DART</button>
+          <button class="sort-btn ${sortKey==='rt_max'?'active':''}" onclick="setSort('rt_max')">RT max</button>
+          <button class="sort-btn ${sortKey==='node'?'active':''}" onclick="setSort('node')">Name</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table id="price-table">
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>RT avg</th>
+              <th>RT min</th>
+              <th>RT max</th>
+              <th>DA avg</th>
+              <th>DART spread</th>
+            </tr>
+          </thead>
+          <tbody id="price-tbody"></tbody>
+        </table>
+      </div>
+      <div style="font-size:10px;color:#444;margin-top:8px">
+        Green = RT premium · Brown = DA premium · Red = spike &gt;$100 · Blue = negative price
+      </div>
+    </div>
+
+    <div class="fund-card">
+      <div class="card-title">ERCOT fundamentals — 7-day lookback (GW daily peak)</div>
+      <div class="table-scroll">
+        <table id="fund-table">
+          <thead>
+            <tr>
+              <th style="text-align:left">Date</th>
+              <th>Gross load</th>
+              <th>Wind</th>
+              <th>Solar</th>
+              <th>Net load</th>
+            </tr>
+          </thead>
+          <tbody id="fund-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  renderPriceTable(rt, da, dart);
+  renderFundamentals(load, wind, solar);
+  renderCharts(load, wind, solar);
+}
+
+function renderPriceTable(rt, da, dart) {
+  const nodes = Object.keys(rt);
+  nodes.sort((a, b) => {
+    if (sortKey === 'node')   return a.localeCompare(b);
+    if (sortKey === 'rt_avg') return (rt[b]?.avg||0) - (rt[a]?.avg||0);
+    if (sortKey === 'rt_max') return (rt[b]?.max||0) - (rt[a]?.max||0);
+    if (sortKey === 'dart')   return (dart[b]||0) - (dart[a]||0);
+    return 0;
+  });
+  const tbody = document.getElementById('price-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = nodes.map(node => {
+    const r  = rt[node]  || {};
+    const dv = da[node]  || {};
+    const sp = dart[node];
+    const spikeCls = r.max > 100 ? 'class="spike"' : '';
+    const negCls   = r.min < 0   ? 'class="neg"'   : '';
+    const dartCls  = sp > 5 ? 'class="rt-prem"' : (sp < -5 ? 'class="da-prem"' : '');
+    const spStr    = sp != null ? (sp >= 0 ? `+$${sp.toFixed(2)}` : `-$${Math.abs(sp).toFixed(2)}`) : '—';
+    return `<tr>
+      <td>${node}</td>
+      <td ${spikeCls}>$${(r.avg||0).toFixed(2)}</td>
+      <td ${negCls}>$${(r.min||0).toFixed(2)}</td>
+      <td ${spikeCls}>$${(r.max||0).toFixed(2)}</td>
+      <td>$${(dv.avg||0).toFixed(2)}</td>
+      <td ${dartCls}>${spStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderFundamentals(load, wind, solar) {
+  const days = [...new Set([...Object.keys(load), ...Object.keys(wind), ...Object.keys(solar)])]
+    .filter(d => load[d] && wind[d] && solar[d])
+    .sort().slice(-7);
+  const tbody = document.getElementById('fund-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = days.map(d => {
+    const g = load[d]||0, w = wind[d]||0, s = solar[d]||0;
+    const net = (g - w - s).toFixed(1);
+    const cls = net < 30 ? 'class="charging-row"' : '';
+    return `<tr ${cls}>
+      <td style="text-align:left;font-family:monospace">${d}</td>
+      <td>${g.toFixed(1)}</td>
+      <td>${w.toFixed(1)}</td>
+      <td>${s.toFixed(1)}</td>
+      <td>${net}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderCharts(load, wind, solar) {
+  const days = Object.keys(load).sort().slice(-7);
+  const chartDefaults = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#666', font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#555', font: { size: 10 }, maxRotation: 0 }, grid: { color: '#1e2130' } },
+      y: { ticks: { color: '#555', font: { size: 10 } }, grid: { color: '#1e2130' } }
+    }
+  };
+
+  if (charts['load']) charts['load'].destroy();
+  charts['load'] = new Chart(document.getElementById('load-chart'), {
+    type: 'bar',
+    data: {
+      labels: days.map(d => d.slice(5)),
+      datasets: [{ label: 'Peak load (GW)', data: days.map(d => load[d]||0),
+        backgroundColor: '#1a5c40', borderColor: '#3dba6f', borderWidth: 1 }]
+    },
+    options: { ...chartDefaults }
+  });
+
+  const windDays = Object.keys(wind).sort().slice(-7);
+  const solarDays = Object.keys(solar).sort().slice(-7);
+  const allDays = [...new Set([...windDays, ...solarDays])].sort().slice(-7);
+
+  if (charts['gen']) charts['gen'].destroy();
+  charts['gen'] = new Chart(document.getElementById('gen-chart'), {
+    type: 'bar',
+    data: {
+      labels: allDays.map(d => d.slice(5)),
+      datasets: [
+        { label: 'Wind (GW)', data: allDays.map(d => wind[d]||0),
+          backgroundColor: '#0d3a5c', borderColor: '#4a9eff', borderWidth: 1 },
+        { label: 'Solar (GW)', data: allDays.map(d => solar[d]||0),
+          backgroundColor: '#3a2800', borderColor: '#f0a500', borderWidth: 1 }
+      ]
+    },
+    options: { ...chartDefaults, scales: { ...chartDefaults.scales, x: { ...chartDefaults.scales.x, stacked: false } } }
+  });
+}
+
+function setSort(key) {
+  sortKey = key;
+  if (lastData) {
+    renderPriceTable(lastData.rt||{}, lastData.da||{}, lastData.dart||{});
+    document.querySelectorAll('.sort-btn').forEach(b => {
+      b.classList.toggle('active', b.textContent.trim().toLowerCase().replace(' ','_') === key ||
+        (key==='rt_avg' && b.textContent==='RT avg') ||
+        (key==='rt_max' && b.textContent==='RT max') ||
+        (key==='dart'   && b.textContent==='DART') ||
+        (key==='node'   && b.textContent==='Name'));
+    });
+  }
+}
+
+loadData();
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+
+<div class="footer" style="padding:20px 0 8px">
+  Hunt Energy Network · Commercial Operations · Confidential ·
+  Updates automatically each weekday at 6 AM CT
+</div>
+
+</body>
+</html>
