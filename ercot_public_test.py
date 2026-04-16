@@ -212,21 +212,48 @@ def main():
         fail("Auth request failed", str(e))
         sys.exit(1)
 
+    # ── TEST 1b: Discover available endpoints ────────────────────────────────
+    # Calls the root API to list all available EMIL products and their
+    # artifact URLs — prints them so you always have the ground truth
+    try:
+        r = requests.get(
+            BASE_URL,
+            headers={
+                "Authorization":             f"Bearer {token}",
+                "Ocp-Apim-Subscription-Key": subscription_key,
+            },
+            timeout=15,
+        )
+        products = r.json().get("_embedded", {}).get("products", [])
+        if products:
+            info(f"API explorer: {len(products)} EMIL products available")
+            # Print the specific ones we care about
+            target_ids = {"np6-345-cd", "np4-732-cd", "np4-737-cd",
+                          "np6-905-cd", "np4-190-cd"}
+            for p in products:
+                eid = p.get("emilId", "").lower()
+                if eid in target_ids:
+                    for a in p.get("artifacts", []):
+                        href = a.get("_links", {}).get("endpoint", {}).get("href", "")
+                        info(f"  FOUND: {eid} → {href}")
+    except Exception:
+        pass  # non-critical, just diagnostic
+
     # ── TEST 2: Gross Load ────────────────────────────────────────────────────
     section("TEST 2 — Gross Load (7-day hourly actual)")
 
     gross_by_day = {}
     try:
         data = ercot_get(
-            "np4-745-cd/hb_busavg", token, subscription_key,
+            "np6-345-cd/act_sys_load_by_wzn", token, subscription_key,
             {"deliveryDateFrom": WEEK_AGO, "deliveryDateTo": YESTERDAY}
         )
         rows = data.get("data", [])
         if rows:
-            # Group by date for per-day peak
+            # Group by date for per-day peak - sum all weather zones
             for r in rows:
                 d   = r.get("deliveryDate", "")[:10]
-                val = safe_float(r.get("hbBusAvg") or r.get("value") or 0)
+                val = safe_float(r.get("ercotLoad") or r.get("systemLoad") or r.get("value") or 0)
                 if d not in gross_by_day:
                     gross_by_day[d] = []
                 gross_by_day[d].append(val)
@@ -261,7 +288,7 @@ def main():
     wind_by_day = {}
     try:
         data = ercot_get(
-            "np4-733-cd/wpp_hrly_avrg_actl_fcast", token, subscription_key,
+            "np4-732-cd/wpp_hrly_avrg_actl_fcast", token, subscription_key,
             {"deliveryDateFrom": WEEK_AGO, "deliveryDateTo": YESTERDAY}
         )
         rows = data.get("data", [])
@@ -393,7 +420,7 @@ def main():
             rows = data.get("data", [])
             if rows:
                 prices = [safe_float(r.get("settlementPointPrice") or
-                                     r.get("price") or 0) for r in rows]
+                                     r.get("spp") or r.get("price") or 0) for r in rows]
                 prices = [p for p in prices if p != 0]
                 avg_p  = avg(prices)
                 max_p  = peak(prices)
@@ -437,7 +464,7 @@ def main():
             rows = data.get("data", [])
             if rows:
                 prices = [safe_float(r.get("settlementPointPrice") or
-                                     r.get("price") or 0) for r in rows]
+                                     r.get("spp") or r.get("price") or 0) for r in rows]
                 prices = [p for p in prices if p != 0]
                 avg_p  = avg(prices)
                 max_p  = peak(prices)
