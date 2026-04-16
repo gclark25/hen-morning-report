@@ -502,6 +502,24 @@ def archive_to_s3(html, data_json, bucket):
     )
     print(f"  Archived to s3://{bucket}/reports/{yr}/{mo}/{dy}/")
 
+# ── DASHBOARD JSON ────────────────────────────────────────────────────────────
+
+def write_dashboard_json(data):
+    """Write latest.json — the single file the GitHub Pages dashboard reads."""
+    payload = {
+        "data_date":    YESTERDAY,
+        "generated_at": TODAY_STR,
+        "rt":           data.get("rt", {}),
+        "da":           data.get("da", {}),
+        "dart":         data.get("dart", {}),
+        "gross_load":   data.get("gross_load", {}),
+        "wind":         data.get("wind", {}),
+        "solar":        data.get("solar", {}),
+    }
+    with open("latest.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print("   Dashboard data written to latest.json")
+
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -548,6 +566,7 @@ def main():
     with open("morning_report.html", "w", encoding="utf-8") as f:
         f.write(html)
     print("   Report written to morning_report.html")
+    write_dashboard_json(data)
 
     # Archive to S3 if configured (skipped gracefully if AWS not set up)
     if s3_bucket:
