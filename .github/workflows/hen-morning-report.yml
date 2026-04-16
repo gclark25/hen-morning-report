@@ -5,10 +5,6 @@ on:
     - cron: '0 11 * * 1-5'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  issues: write
-
 jobs:
   morning-report:
     runs-on: ubuntu-latest
@@ -31,9 +27,6 @@ jobs:
           ERCOT_PASSWORD: ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
           ERCOT_NODES: ${{ secrets.ERCOT_TEST_NODES }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
-          TO_EMAILS: ${{ secrets.TO_EMAILS }}
         run: python hen_morning_report.py
 
       - name: Upload report as artifact
@@ -44,31 +37,77 @@ jobs:
           path: morning_report.html
           retention-days: 30
 
-      - name: Publish dashboard to GitHub Pages
+      - name: Deploy dashboard to Netlify
         if: success()
         run: |
-          cp dashboard/index.html index.html
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages 2>/dev/null || true
-          git checkout --orphan gh-pages-new
-          git rm -rf . --quiet 2>/dev/null || true
-          cp index.html .
-          cp latest.json .
-          git add index.html latest.json
-          git commit -m "Dashboard update — $(date -u +%Y-%m-%d)"
-          git push origin gh-pages-new:gh-pages --force
-          echo "Dashboard published to GitHub Pages"
+          mkdir -p deploy
+          cp dashboard/index.html deploy/index.html
+          cp latest.json deploy/latest.json
+          echo "Deploying to Netlify..."
+          curl -s --fail \
+            -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
+            -H "Content-Type: application/zip" \
+            --data-binary @<(cd deploy && zip -r - .) \
+            "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys" \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          if d.get('state') in ('ready','enqueued','processing'):
+              print(f'  Netlify deploy queued: {d.get(\"deploy_ssl_url\",\"\")}')
+          else:
+              print(f'  Netlify response: {d.get(\"state\",\"unknown\")}')
+          "
+
+      - name: Upload report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: morning-report-${{ github.run_id }}
+          path: morning_report.html
+          retention-days: 30
+
+      - name: Deploy dashboard to Netlify
+        if: success()
+        run: |
+          mkdir -p deploy
+          cp dashboard/index.html deploy/index.html
+          cp latest.json deploy/latest.json
+          echo "Deploying to Netlify..."
+          curl -s --fail \
+            -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
+            -H "Content-Type: application/zip" \
+            --data-binary @<(cd deploy && zip -r - .) \
+            "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys" \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          if d.get('state') in ('ready','enqueued','processing'):
+              print(f'  Netlify deploy queued: {d.get(\"deploy_ssl_url\",\"\")}')
+          else:
+              print(f'  Netlify response: {d.get(\"state\",\"unknown\")}')
+          "
 
       - name: Alert on failure
         if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Morning report failed - ${new Date().toISOString().slice(0,10)}`,
-              body: `Pipeline failed. Check run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              labels: ['report-failure']
-            })
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          TO_EMAILS: ${{ secrets.TO_EMAILS }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'EOF'
+          import os, requests
+          api_key  = os.environ["SENDGRID_API_KEY"]
+          from_addr = os.environ["FROM_EMAIL"].strip()
+          to_addrs  = [e.strip() for e in os.environ["TO_EMAILS"].split(",") if e.strip()]
+          run_url  = os.environ["RUN_URL"]
+          payload = {
+            "personalizations": [{"to": [{"email": a} for a in to_addrs], "subject": "HEN Morning Report — pipeline failed"}],
+            "from": {"email": from_addr, "name": "HEN Pipeline"},
+            "content": [{"type": "text/html", "value": f"<p>The morning report pipeline failed.</p><p><a href='{run_url}'>View run log</a></p>"}],
+          }
+          r = requests.post("https://api.sendgrid.com/v3/mail/send",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=payload, timeout=15)
+          print(f"Failure alert sent: {r.status_code}")
+          EOF
