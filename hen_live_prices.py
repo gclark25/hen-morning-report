@@ -223,5 +223,78 @@ def main():
     print(f"  live.json written — fleet avg ${fleet_avg:.2f}, "
           f"HE1-{max_hour_cleared} cleared")
 
+    # Intraday AI analysis — only run on the hour (HH:00) to save API calls
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if anthropic_key and NOW_CT.minute < 16:
+        print("  Generating intraday AI analysis...")
+        try:
+            # Load history for context
+            history = []
+            try:
+                with open("dashboard/history.json", "r") as f:
+                    history = json.load(f)
+            except Exception:
+                pass
+
+            # Build prompt inline (import from morning report module if available)
+            headers = {
+                "x-api-key":         anthropic_key,
+                "anthropic-version": "2023-06-01",
+                "content-type":      "application/json",
+            }
+            yest_rt = history[-1].get("fleet", {}).get("rt_avg", 0) if history else 0
+            prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN), operator of 32 BESS sites in ERCOT. It is {NOW_STR} CT and HE01-HE{max_hour_cleared:02d} have cleared today.
+
+TODAY'S DATA:
+- Fleet avg RT: ${fleet_avg}/MWh across {len(rt_today)} nodes
+- Spike nodes (>$100): {spike_nodes if spike_nodes else 'None'}
+- Negative price nodes: {neg_nodes if neg_nodes else 'None'}
+- Regional RT avgs: {json.dumps({r: v.get("avg_rt",0) for r,v in regional.items()})}
+- Yesterday fleet avg RT: ${yest_rt}/MWh
+
+Respond ONLY with valid JSON, no markdown:
+{{
+  "generated_at": "{NOW_STR}",
+  "type": "intraday",
+  "intraday_narrative": "2 sentences on how today's RT prices are tracking and what to watch for the rest of the day",
+  "vs_yesterday": "one sentence comparing today vs yesterday",
+  "charging_signal": "bullish|neutral|bearish",
+  "charging_rationale": "one sentence on RT levels and charging opportunity",
+  "alerts": [
+    {{"type": "spike|negative|opportunity|anomaly", "node": "NODE", "detail": "one sentence"}}
+  ]
+}}"""
+
+            r = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=headers,
+                json={"model": "claude-opus-4-5", "max_tokens": 800,
+                      "messages": [{"role": "user", "content": prompt}]},
+                timeout=30,
+            )
+            r.raise_for_status()
+            text = r.json()["content"][0]["text"].strip()
+            if text.startswith("```"):
+                text = text.split("```")[1]
+                if text.startswith("json"): text = text[4:]
+            intraday_analysis = json.loads(text.strip())
+            intraday_analysis["data_date"] = TODAY
+
+            # Merge with any existing morning analysis
+            existing = {}
+            try:
+                with open("dashboard/ai_analysis.json", "r") as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+            existing["intraday"] = intraday_analysis
+
+            os.makedirs("dashboard", exist_ok=True)
+            with open("dashboard/ai_analysis.json", "w") as f:
+                json.dump(existing, f, indent=2)
+            print("  Intraday AI analysis written")
+        except Exception as e:
+            print(f"  WARN: Intraday AI analysis failed — {e}")
+
 if __name__ == "__main__":
     main()
