@@ -1017,6 +1017,8 @@ def call_claude(prompt, api_key):
         json=payload,
         timeout=60,
     )
+    if not r.ok:
+        print(f"   Anthropic error {r.status_code}: {r.text[:500]}")
     r.raise_for_status()
     text = r.json()["content"][0]["text"].strip()
     # Strip any accidental markdown fences
