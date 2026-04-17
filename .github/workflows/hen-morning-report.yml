@@ -62,6 +62,6 @@ jobs:
           cp dashboard/history.json deploy/history.json
           npm install -g wrangler
           wrangler pages deploy deploy/ \
-            --project-name=${{ secrets.CF_PROJECT_NAME }} \
+            --project-name=hen-dashboard \
             --branch=main \
             --commit-dirty=true
