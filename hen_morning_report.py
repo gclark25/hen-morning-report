@@ -366,14 +366,14 @@ def collect_data(token, sub_key):
     data["da"]         = da_summary
     data["da_hourly"]  = da_hourly
 
-    # DART spreads — daily avg and hourly
+    # DART spreads — daily avg (DA − RT: positive = DA premium over RT)
     common = set(rt_summary) & set(da_summary)
     data["dart"] = {
-        n: round(rt_summary[n]["avg"] - da_summary[n]["avg"], 2)
+        n: round(da_summary[n]["avg"] - rt_summary[n]["avg"], 2)
         for n in common
     }
 
-    # Hourly DART spreads per node
+    # Hourly DART spreads per node (DA − RT per hour)
     dart_hourly = {}
     for n in common:
         rth = rt_hourly.get(n, {})
@@ -381,7 +381,7 @@ def collect_data(token, sub_key):
         shared_hrs = set(rth) & set(dah)
         if shared_hrs:
             dart_hourly[n] = {
-                hr: round(rth[hr] - dah[hr], 2)
+                hr: round(dah[hr] - rth[hr], 2)
                 for hr in sorted(shared_hrs)
             }
     data["dart_hourly"] = dart_hourly
@@ -396,41 +396,58 @@ def collect_data(token, sub_key):
 def compute_top_bottom(data):
     """
     For each node compute:
-      - Best hour (highest DART spread in $/MWh)
-      - Worst hour (lowest DART spread)
-      - Daily DART avg
-    Returns sorted lists for Top 10 and Bottom 10 across all nodes,
-    plus a regional summary.
+      - DART avg        = avg(DA hourly) − avg(RT hourly)  [positive = DA premium]
+      - Intraday spread = (max RT hour − min RT hour) / 24  [$/MWh normalized]
+      - Best DART hour  = hour with highest (DA − RT)
+      - Worst DART hour = hour with lowest (DA − RT)
+    Returns Top 10 and Bottom 10 ranked by DART avg, plus regional summary.
     """
     dart        = data.get("dart", {})
     dart_hourly = data.get("dart_hourly", {})
     rt_hourly   = data.get("rt_hourly", {})
+    da_hourly   = data.get("da_hourly", {})
 
     node_analysis = {}
     for node in dart:
         dh = dart_hourly.get(node, {})
         rh = rt_hourly.get(node, {})
-        if not dh:
+        dah = da_hourly.get(node, {})
+        if not dh or not rh:
             continue
-        best_hr  = max(dh, key=dh.get)
-        worst_hr = min(dh, key=dh.get)
-        neg_hrs  = [hr for hr, v in rh.items() if v < 0]
-        spike_hrs= [hr for hr, v in rh.items() if v > 100]
+
+        rt_values = list(rh.values())
+        best_hr   = max(dh, key=dh.get)
+        worst_hr  = min(dh, key=dh.get)
+        neg_hrs   = [hr for hr, v in rh.items() if v < 0]
+        spike_hrs = [hr for hr, v in rh.items() if v > 100]
+
+        # Intraday spread: (peak RT hour − trough RT hour) / 24
+        intraday_spread = round(
+            (max(rt_values) - min(rt_values)) / 24, 2
+        ) if rt_values else 0
+
+        # Best and worst DA hour prices for context
+        da_values = list(dah.values()) if dah else []
+
         node_analysis[node] = {
-            "dart_avg":      dart[node],
-            "best_hour":     int(best_hr),
-            "best_spread":   dh[best_hr],
-            "worst_hour":    int(worst_hr),
-            "worst_spread":  dh[worst_hr],
-            "neg_hours":     len(neg_hrs),
-            "spike_hours":   len(spike_hrs),
-            "region":        next((r for r, nodes in REGIONS.items()
-                                   if node in nodes), "Other"),
+            "dart_avg":        dart[node],          # DA avg − RT avg
+            "intraday_spread": intraday_spread,     # (RT max − RT min) / 24
+            "best_hour":       int(best_hr),        # hour with highest DA−RT
+            "best_spread":     dh[best_hr],         # that hour's DA−RT value
+            "worst_hour":      int(worst_hr),       # hour with lowest DA−RT
+            "worst_spread":    dh[worst_hr],        # that hour's DA−RT value
+            "rt_max":          round(max(rt_values), 2) if rt_values else 0,
+            "rt_min":          round(min(rt_values), 2) if rt_values else 0,
+            "da_avg":          round(sum(da_values)/len(da_values), 2) if da_values else 0,
+            "neg_hours":       len(neg_hrs),
+            "spike_hours":     len(spike_hrs),
+            "region":          next((r for r, nodes in REGIONS.items()
+                                     if node in nodes), "Other"),
         }
 
-    # Rank by daily DART avg
-    ranked = sorted(node_analysis.items(),
-                    key=lambda x: x[1]["dart_avg"], reverse=True)
+    # Rank by DART avg descending (highest DA premium at top)
+    ranked   = sorted(node_analysis.items(),
+                      key=lambda x: x[1]["dart_avg"], reverse=True)
     top10    = [{"node": n, **v} for n, v in ranked[:10]]
     bottom10 = [{"node": n, **v} for n, v in ranked[-10:]][::-1]
 
@@ -517,9 +534,10 @@ def build_report(data):
         <tr>
           <td class="node-name">{item['node']}</td>
           <td class="region-tag region-{item['region'].lower().replace(' ','-')}">{item['region']}</td>
-          <td class="rt-prem">+${item['dart_avg']:.2f}</td>
+          <td class="da-prem">+${item['dart_avg']:.2f}</td>
+          <td>${item['intraday_spread']:.2f}</td>
           <td>HE {item['best_hour']:02d}:00</td>
-          <td class="rt-prem">+${item['best_spread']:.2f}</td>
+          <td class="da-prem">+${item['best_spread']:.2f}</td>
           <td>{item['spike_hours']} hrs</td>
           <td>{item['neg_hours']} hrs</td>
         </tr>"""
@@ -530,9 +548,10 @@ def build_report(data):
         <tr>
           <td class="node-name">{item['node']}</td>
           <td class="region-tag region-{item['region'].lower().replace(' ','-')}">{item['region']}</td>
-          <td class="da-prem">${item['dart_avg']:.2f}</td>
+          <td class="rt-prem">${item['dart_avg']:.2f}</td>
+          <td>${item['intraday_spread']:.2f}</td>
           <td>HE {item['worst_hour']:02d}:00</td>
-          <td class="da-prem">${item['worst_spread']:.2f}</td>
+          <td class="rt-prem">${item['worst_spread']:.2f}</td>
           <td>{item['spike_hours']} hrs</td>
           <td>{item['neg_hours']} hrs</td>
         </tr>"""
@@ -647,10 +666,14 @@ def build_report(data):
     </div>
 
     <div class="section" style="margin-top:20px">
-      <div class="section-title">Top 10 DART performers — {YESTERDAY}</div>
+      <div class="section-title">Top 10 DART performers — {YESTERDAY}
+        <span style="font-weight:400;font-size:10px;color:#aaa;margin-left:8px">
+          DART = DA avg − RT avg · Intraday = (RT max − RT min) / 24
+        </span>
+      </div>
       <table><thead><tr>
         <th>Node</th><th>Region</th><th>DART avg</th>
-        <th>Best hour</th><th>Best spread</th>
+        <th>Intraday $/MWh</th><th>Best DART hour</th><th>Best spread</th>
         <th>Spike hrs</th><th>Neg hrs</th>
       </tr></thead><tbody>{top_rows}</tbody></table>
     </div>
@@ -659,7 +682,7 @@ def build_report(data):
       <div class="section-title">Bottom 10 DART performers — {YESTERDAY}</div>
       <table><thead><tr>
         <th>Node</th><th>Region</th><th>DART avg</th>
-        <th>Worst hour</th><th>Worst spread</th>
+        <th>Intraday $/MWh</th><th>Worst DART hour</th><th>Worst spread</th>
         <th>Spike hrs</th><th>Neg hrs</th>
       </tr></thead><tbody>{bot_rows}</tbody></table>
     </div>
