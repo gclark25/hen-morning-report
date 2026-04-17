@@ -34,8 +34,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
+          mkdir -p deploy-live
+          cp live.json deploy-live/live.json
           npm install -g wrangler
-          wrangler pages deploy live.json \
+          wrangler pages deploy deploy-live/ \
             --project-name=${{ secrets.CF_PROJECT_NAME }} \
             --branch=main \
             --commit-dirty=true
