@@ -308,7 +308,7 @@ def collect_data(token, sub_key):
     da_hourly  = {}   # node → {hour: price}
 
     for node in NODES:
-        time.sleep(2)
+        time.sleep(3)
         # RT prices — aggregate 4 x 15-min intervals into hourly averages
         try:
             rows = ercot_get("np6-905-cd/spp_node_zone_hub", token, sub_key,
@@ -335,7 +335,7 @@ def collect_data(token, sub_key):
         except Exception as e:
             print(f"    WARN: RT {node} — {e}")
 
-        time.sleep(2)
+        time.sleep(3)
         # DA prices — already hourly
         try:
             rows = ercot_get("np4-190-cd/dam_stlmnt_pnt_prices", token, sub_key,
@@ -873,6 +873,195 @@ def write_history_json(data, history_path="dashboard/history.json"):
         json.dump(history, f, indent=2)
     print(f"   History updated — {len(history)} days stored in {history_path}")
 
+# ── AI ANALYSIS ───────────────────────────────────────────────────────────────
+
+def build_ai_prompt_morning(data, history):
+    """Build the prompt for the morning AI analysis."""
+    tb      = compute_top_bottom(data)
+    rt      = data.get("rt", {})
+    da      = data.get("da", {})
+    dart    = data.get("dart", {})
+    load    = data.get("gross_load", {})
+    wind    = data.get("wind", {})
+    solar   = data.get("solar", {})
+
+    # Fleet summary
+    rt_vals  = [v["avg"] for v in rt.values()]
+    fleet_rt = round(sum(rt_vals)/len(rt_vals), 2) if rt_vals else 0
+    spikes   = [n for n, v in rt.items() if v["max"] > 100]
+    negs     = [n for n, v in rt.items() if v["min"] < 0]
+
+    # Top/Bottom nodes
+    top5  = tb.get("top10", [])[:5]
+    bot5  = tb.get("bottom10", [])[:5]
+    regional = tb.get("regional", {})
+
+    # 5-day history summary
+    hist_summary = []
+    for entry in history:
+        fleet_h = entry.get("fleet", {})
+        fund_h  = entry.get("fundamentals", {})
+        reg_h   = entry.get("regional", {})
+        hist_summary.append({
+            "date":       entry["date"],
+            "fleet_rt":   fleet_h.get("rt_avg", 0),
+            "spike_nodes":fleet_h.get("spike_nodes", 0),
+            "neg_nodes":  fleet_h.get("neg_nodes", 0),
+            "gross_load": fund_h.get("gross_load", 0),
+            "wind":       fund_h.get("wind", 0),
+            "solar":      fund_h.get("solar", 0),
+            "regions":    {r: v.get("avg_dart", 0) for r, v in reg_h.items()},
+        })
+
+    prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN), operator of 32 utility-scale battery energy storage systems (BESS) across ERCOT. Analyze the following data and produce a structured JSON response.
+
+YESTERDAY ({YESTERDAY}) SETTLED DATA:
+- Fleet avg RT price: ${fleet_rt}/MWh across {len(rt)} nodes
+- Spike nodes (>$100/MWh RT): {spikes if spikes else 'None'}
+- Negative RT price nodes: {negs if negs else 'None'}
+- Gross load: {load.get(YESTERDAY, 'N/A')} GW peak
+- Wind: {wind.get(YESTERDAY, 'N/A')} GW peak
+- Solar: {solar.get(YESTERDAY, 'N/A')} GW peak
+
+TOP 5 DART PERFORMERS (DA − RT, highest DA premium):
+{json.dumps([{"node": n["node"], "region": n["region"], "dart_avg": n["dart_avg"], "intraday_spread": n["intraday_spread"]} for n in top5], indent=2)}
+
+BOTTOM 5 DART PERFORMERS (RT most above DA):
+{json.dumps([{"node": n["node"], "region": n["region"], "dart_avg": n["dart_avg"], "intraday_spread": n["intraday_spread"]} for n in bot5], indent=2)}
+
+REGIONAL DART AVERAGES:
+{json.dumps({r: v.get("avg_dart", 0) for r, v in regional.items()}, indent=2)}
+
+5-DAY HISTORY:
+{json.dumps(hist_summary, indent=2)}
+
+Respond ONLY with a valid JSON object, no markdown, no preamble, using this exact structure:
+{{
+  "generated_at": "{YESTERDAY}",
+  "type": "morning",
+  "fleet_narrative": "2-3 sentence summary of yesterday's market conditions and what they mean commercially for HEN's BESS portfolio",
+  "trend_analysis": "2-3 sentences on patterns observed across the 5-day history window — regional trends, DART compression or expansion, load/renewable patterns",
+  "anomalies": [
+    {{"node": "NODE_NAME", "region": "region", "flag": "short flag label", "detail": "one sentence explanation"}},
+    ...up to 5 anomalies...
+  ],
+  "nodes_to_watch": [
+    {{"node": "NODE_NAME", "region": "region", "reason": "one sentence on why this node warrants attention today"}},
+    ...3 nodes...
+  ],
+  "market_conditions": "one sentence on overall ERCOT market conditions yesterday",
+  "charging_signal": "bullish|neutral|bearish",
+  "charging_rationale": "one sentence explaining the charging signal based on RT prices and renewable penetration"
+}}"""
+    return prompt
+
+
+def build_ai_prompt_intraday(live_data, history):
+    """Build the prompt for intraday AI update."""
+    fleet   = live_data.get("fleet", {})
+    rt      = live_data.get("rt", {})
+    regional= live_data.get("regional", {})
+    as_of   = live_data.get("as_of", "")
+    max_hr  = live_data.get("max_hour_cleared", 0)
+
+    rt_vals = [v["avg"] for v in rt.values()]
+    fleet_rt = round(sum(rt_vals)/len(rt_vals), 2) if rt_vals else 0
+
+    # Yesterday from history
+    yest = history[-1] if history else {}
+    yest_fleet_rt = yest.get("fleet", {}).get("rt_avg", 0)
+
+    prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN). It is currently {as_of} CT and HE01-HE{max_hr:02d} have cleared in ERCOT real-time today.
+
+TODAY'S INTRADAY DATA (hours cleared so far):
+- Fleet avg RT: ${fleet_rt}/MWh across {fleet.get("node_count", 0)} nodes
+- Spike nodes today: {fleet.get("spike_list", [])}
+- Negative price nodes today: {fleet.get("neg_list", [])}
+
+REGIONAL RT AVERAGES TODAY:
+{json.dumps({r: v.get("avg_rt", 0) for r, v in regional.items()}, indent=2)}
+
+YESTERDAY'S FLEET AVG RT FOR COMPARISON: ${yest_fleet_rt}/MWh
+
+Respond ONLY with a valid JSON object, no markdown, no preamble:
+{{
+  "generated_at": "{as_of}",
+  "type": "intraday",
+  "intraday_narrative": "2 sentences on how today's RT prices are tracking so far and what to watch for the remainder of the day",
+  "vs_yesterday": "one sentence comparing today's early RT performance to yesterday",
+  "charging_signal": "bullish|neutral|bearish",
+  "charging_rationale": "one sentence — is RT low enough to justify charging? Any negative price opportunities?",
+  "alerts": [
+    {{"type": "spike|negative|dart_opportunity|anomaly", "node": "NODE_NAME", "detail": "one sentence"}},
+    ...only if noteworthy, can be empty array...
+  ]
+}}"""
+    return prompt
+
+
+def call_claude(prompt, api_key):
+    """Call Anthropic API with the given prompt, return parsed JSON."""
+    headers = {
+        "x-api-key":         api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type":      "application/json",
+    }
+    payload = {
+        "model":      "claude-opus-4-5",
+        "max_tokens": 1500,
+        "messages":   [{"role": "user", "content": prompt}],
+    }
+    r = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers=headers,
+        json=payload,
+        timeout=60,
+    )
+    r.raise_for_status()
+    text = r.json()["content"][0]["text"].strip()
+    # Strip any accidental markdown fences
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+    return json.loads(text.strip())
+
+
+def write_ai_analysis(data, history, api_key, out_path="dashboard/ai_analysis.json"):
+    """Generate morning AI analysis and write to file."""
+    print("   Calling Claude for AI analysis...")
+    try:
+        prompt   = build_ai_prompt_morning(data, history)
+        analysis = call_claude(prompt, api_key)
+        analysis["data_date"] = YESTERDAY
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(analysis, f, indent=2)
+        print(f"   AI analysis written to {out_path}")
+        return analysis
+    except Exception as e:
+        print(f"   WARN: AI analysis failed — {e}")
+        # Write a fallback so dashboard doesn't break
+        fallback = {
+            "data_date": YESTERDAY,
+            "generated_at": YESTERDAY,
+            "type": "morning",
+            "fleet_narrative": "AI analysis unavailable for this report.",
+            "trend_analysis": "",
+            "anomalies": [],
+            "nodes_to_watch": [],
+            "market_conditions": "",
+            "charging_signal": "neutral",
+            "charging_rationale": "",
+        }
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(fallback, f, indent=2)
+        return fallback
+
+
+# ── MAIN ──────────────────────────────────────────────────────────────────────
+
 def main():
     print(f"\nHEN Morning Report v2 — {YESTERDAY}")
     print(f"Nodes: {len(NODES)} across {len(REGIONS)} regions")
@@ -915,15 +1104,29 @@ def main():
     write_dashboard_json(data)
     write_history_json(data)
 
+    # Load history for AI context
+    try:
+        with open("dashboard/history.json", "r") as f:
+            history = json.load(f)
+    except Exception:
+        history = []
+
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if anthropic_key:
+        print("\n4. Generating AI analysis...")
+        write_ai_analysis(data, history, anthropic_key)
+    else:
+        print("\n4. AI analysis skipped — ANTHROPIC_API_KEY not configured")
+
     if s3_bucket:
-        print(f"\n4. Archiving to S3...")
+        print(f"\n5. Archiving to S3...")
         try:
             archive_to_s3(html, data, s3_bucket)
         except Exception as e:
             print(f"   WARN: {e}")
 
     if email_enabled:
-        print("\n5. Sending email via SendGrid...")
+        print("\n6. Sending email via SendGrid...")
         dow = date.today().strftime("%A")
         try:
             send_email(html, f"HEN Morning Report — {dow} {YESTERDAY}",
@@ -931,7 +1134,7 @@ def main():
         except Exception as e:
             print(f"   WARN: Email failed — {e}")
     else:
-        print("\n5. Email skipped — SendGrid not configured")
+        print("\n6. Email skipped — SendGrid not configured")
 
     print(f"\nDone. Report delivered for {YESTERDAY}.\n")
 
