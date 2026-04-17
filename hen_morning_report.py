@@ -779,7 +779,99 @@ def write_dashboard_json(data):
         json.dump(payload, f, indent=2)
     print("   Dashboard data written to latest.json")
 
-# ── MAIN ──────────────────────────────────────────────────────────────────────
+# ── HISTORY JSON ─────────────────────────────────────────────────────────────
+
+def write_history_json(data, history_path="dashboard/history.json"):
+    """
+    Maintains a rolling 5-day history file.
+    Each day's entry contains fleet-level and per-node summaries.
+    Reads existing history, appends today, trims to 5 days, writes back.
+    """
+    # Build today's snapshot — compact so the file stays small
+    rt    = data.get("rt", {})
+    da    = data.get("da", {})
+    dart  = data.get("dart", {})
+    load  = data.get("gross_load", {})
+    wind  = data.get("wind", {})
+    solar = data.get("solar", {})
+    tb    = compute_top_bottom(data)
+
+    # Fleet-level fundamentals for yesterday
+    load_val  = load.get(YESTERDAY, 0)
+    wind_val  = wind.get(YESTERDAY, 0)
+    solar_val = solar.get(YESTERDAY, 0)
+    net_val   = round(load_val - wind_val - solar_val, 1) if load_val else 0
+
+    # Per-node summary: dart_avg, intraday_spread, rt_avg, da_avg
+    nodes_snapshot = {}
+    for node in dart:
+        r  = rt.get(node, {})
+        dv = da.get(node, {})
+        tb_node = next((n for n in tb.get("top10", []) + tb.get("bottom10", [])
+                        if n["node"] == node), {})
+        nodes_snapshot[node] = {
+            "dart":     dart[node],
+            "intraday": tb_node.get("intraday_spread", 0),
+            "rt_avg":   r.get("avg", 0),
+            "rt_max":   r.get("max", 0),
+            "rt_min":   r.get("min", 0),
+            "da_avg":   dv.get("avg", 0),
+            "region":   next((reg for reg, nodes in REGIONS.items()
+                              if node in nodes), "Other"),
+        }
+
+    # Regional averages
+    regional_snapshot = {}
+    for region, nodes in REGIONS.items():
+        rn = [n for n in nodes if n in dart]
+        if rn:
+            regional_snapshot[region] = {
+                "avg_dart":     round(sum(dart[n] for n in rn) / len(rn), 2),
+                "avg_rt":       round(sum(rt.get(n, {}).get("avg", 0) for n in rn) / len(rn), 2),
+                "avg_intraday": round(sum(
+                    next((x["intraday_spread"] for x in
+                          tb.get("top10", []) + tb.get("bottom10", [])
+                          if x["node"] == n), 0)
+                    for n in rn) / len(rn), 2),
+            }
+
+    today_entry = {
+        "date":       YESTERDAY,
+        "fleet": {
+            "rt_avg":   round(sum(v["avg"] for v in rt.values()) / len(rt), 2) if rt else 0,
+            "rt_max":   round(max(v["max"] for v in rt.values()), 2) if rt else 0,
+            "spike_nodes": len([n for n, v in rt.items() if v["max"] > 100]),
+            "neg_nodes":   len([n for n, v in rt.items() if v["min"] < 0]),
+        },
+        "fundamentals": {
+            "gross_load": load_val,
+            "wind":       wind_val,
+            "solar":      solar_val,
+            "net_load":   net_val,
+        },
+        "nodes":    nodes_snapshot,
+        "regional": regional_snapshot,
+    }
+
+    # Load existing history
+    history = []
+    try:
+        with open(history_path, "r", encoding="utf-8") as f:
+            history = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    # Remove any existing entry for the same date then append
+    history = [e for e in history if e.get("date") != YESTERDAY]
+    history.append(today_entry)
+
+    # Keep only the 5 most recent days
+    history = sorted(history, key=lambda e: e["date"])[-5:]
+
+    os.makedirs(os.path.dirname(history_path), exist_ok=True)
+    with open(history_path, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2)
+    print(f"   History updated — {len(history)} days stored in {history_path}")
 
 def main():
     print(f"\nHEN Morning Report v2 — {YESTERDAY}")
@@ -821,6 +913,7 @@ def main():
         f.write(html)
     print("   Report written to morning_report.html")
     write_dashboard_json(data)
+    write_history_json(data)
 
     if s3_bucket:
         print(f"\n4. Archiving to S3...")
