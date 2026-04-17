@@ -121,6 +121,7 @@ tr:hover td{background:#1e2130;cursor:pointer}
   <div class="tab" onclick="showPage('prices',this)">Node Prices</div>
   <div class="tab" onclick="showPage('fundamentals',this)">Fundamentals</div>
   <div class="tab" onclick="showPage('map',this)">Texas Map</div>
+  <div class="tab" onclick="showPage('history',this)">5-Day History</div>
 </div>
 
 <div class="main">
@@ -236,9 +237,49 @@ tr:hover td{background:#1e2130;cursor:pointer}
     </div>
   </div>
 
-</div>
+  <!-- 5-DAY HISTORY -->
+  <div class="page" id="page-history">
+    <div class="card">
+      <div class="card-title">Fleet metrics — 5-day trend</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div><div style="font-size:10px;color:#555;margin-bottom:8px">Fleet avg RT price ($/MWh)</div>
+          <div class="chart-wrap"><canvas id="hist-rt-chart"></canvas></div></div>
+        <div><div style="font-size:10px;color:#555;margin-bottom:8px">ERCOT fundamentals — daily peak (GW)</div>
+          <div class="chart-wrap"><canvas id="hist-fund-chart"></canvas></div></div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Regional avg DART (DA−RT $/MWh) — 5 days</div>
+        <div class="chart-wrap"><canvas id="hist-region-chart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Spike &amp; negative price node count — 5 days</div>
+        <div class="chart-wrap"><canvas id="hist-spike-chart"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">
+        Per-node DART trend (DA−RT $/MWh) — 5 days
+        <div class="region-filters" id="hist-region-filters">
+          <button class="rfilt active" onclick="histFilterRegion('all',this)">All</button>
+          <button class="rfilt" onclick="histFilterRegion('West Texas',this)">West Texas</button>
+          <button class="rfilt" onclick="histFilterRegion('North Texas',this)">North Texas</button>
+          <button class="rfilt" onclick="histFilterRegion('Coastal',this)">Coastal</button>
+          <button class="rfilt" onclick="histFilterRegion('Premium',this)">Premium</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table id="hist-node-table">
+          <thead><tr id="hist-node-header"></tr></thead>
+          <tbody id="hist-node-tbody"></tbody>
+        </table>
+      </div>
+      <div style="font-size:10px;color:#333;margin-top:8px">Green = DA premium · Red = RT premium · Click row to see node detail</div>
+    </div>
+  </div>
 
-<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+</div> id="modal-overlay" onclick="closeModal(event)">
   <div class="modal">
     <div class="modal-header">
       <div><div class="modal-title" id="modal-title">—</div>
@@ -595,8 +636,184 @@ function closeModal(e){if(e.target===document.getElementById('modal-overlay'))cl
 function closeModalDirect(){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';}
 function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 
+// ── HISTORY ───────────────────────────────────────────────────────────────────
+let H = null;
+let histRegion = 'all';
+
+async function loadHistory() {
+  try {
+    const r = await fetch(`history.json?_=${Date.now()}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    H = await r.json();
+  } catch(e) {
+    H = null;
+  }
+}
+
+function renderHistory() {
+  if (!H || !H.length) {
+    document.getElementById('page-history').innerHTML =
+      `<div class="error-box" style="margin-top:20px">
+        <div style="font-size:15px;margin-bottom:8px">No history yet</div>
+        <div style="color:#666">History builds up automatically — after 2+ daily runs you'll see trend lines here.</div>
+      </div>`;
+    return;
+  }
+
+  const dates  = H.map(e => e.date.slice(5));   // MM-DD
+  const fleet  = H.map(e => e.fleet  || {});
+  const fund   = H.map(e => e.fundamentals || {});
+  const reg    = H.map(e => e.regional || {});
+
+  const base = {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'#666',font:{size:10}}}},
+    scales:{
+      x:{ticks:{color:'#555',font:{size:10}},grid:{color:'#1e2130'}},
+      y:{ticks:{color:'#555',font:{size:10}},grid:{color:'#1e2130'}}
+    }
+  };
+
+  // Fleet RT trend
+  destroyChart('hist-rt-chart');
+  charts['hist-rt-chart'] = new Chart(document.getElementById('hist-rt-chart'), {
+    type:'line',
+    data:{labels:dates, datasets:[{
+      label:'Fleet avg RT ($/MWh)',
+      data:fleet.map(f=>f.rt_avg||null),
+      borderColor:'#3dba6f', backgroundColor:'rgba(61,186,111,.1)',
+      fill:true, tension:.3, pointRadius:4
+    }]},
+    options:base
+  });
+
+  // Fundamentals trend
+  destroyChart('hist-fund-chart');
+  charts['hist-fund-chart'] = new Chart(document.getElementById('hist-fund-chart'), {
+    type:'line',
+    data:{labels:dates, datasets:[
+      {label:'Gross load (GW)', data:fund.map(f=>f.gross_load||null),
+        borderColor:'#e8eaf0', fill:false, tension:.3, pointRadius:4},
+      {label:'Wind (GW)',  data:fund.map(f=>f.wind||null),
+        borderColor:'#4a9eff', fill:false, tension:.3, pointRadius:4},
+      {label:'Solar (GW)', data:fund.map(f=>f.solar||null),
+        borderColor:'#f0a500', fill:false, tension:.3, pointRadius:4},
+      {label:'Net load (GW)', data:fund.map(f=>f.net_load||null),
+        borderColor:'#e05050', fill:false, tension:.3, pointRadius:4, borderDash:[4,3]}
+    ]},
+    options:base
+  });
+
+  // Regional DART trend
+  const regions = ['West Texas','North Texas','Coastal','Premium'];
+  const regionColors = {'West Texas':'#6a9fff','North Texas':'#6abf6a','Coastal':'#4ab0ff','Premium':'#d47fbf'};
+  destroyChart('hist-region-chart');
+  charts['hist-region-chart'] = new Chart(document.getElementById('hist-region-chart'), {
+    type:'line',
+    data:{labels:dates, datasets: regions.map(region=>({
+      label: region,
+      data: reg.map(r => r[region]?.avg_dart ?? null),
+      borderColor: regionColors[region],
+      fill:false, tension:.3, pointRadius:4
+    }))},
+    options:{...base, plugins:{...base.plugins,
+      annotation:{annotations:{zero:{type:'line',yMin:0,yMax:0,
+        borderColor:'#555',borderWidth:1,borderDash:[4,3]}}}}}
+  });
+
+  // Spike / neg count trend
+  destroyChart('hist-spike-chart');
+  charts['hist-spike-chart'] = new Chart(document.getElementById('hist-spike-chart'), {
+    type:'bar',
+    data:{labels:dates, datasets:[
+      {label:'Spike nodes (>$100)',  data:fleet.map(f=>f.spike_nodes||0),
+        backgroundColor:'rgba(224,80,80,.7)', borderColor:'#e05050', borderWidth:1},
+      {label:'Neg price nodes', data:fleet.map(f=>f.neg_nodes||0),
+        backgroundColor:'rgba(74,158,255,.7)', borderColor:'#4a9eff', borderWidth:1}
+    ]},
+    options:base
+  });
+
+  renderHistNodeTable();
+}
+
+function histFilterRegion(region, btn) {
+  histRegion = region;
+  document.querySelectorAll('#hist-region-filters .rfilt')
+    .forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderHistNodeTable();
+}
+
+function renderHistNodeTable() {
+  if (!H || !H.length) return;
+  const dates = H.map(e => e.date);
+
+  // Collect all nodes across all days, filter by region
+  const allNodes = new Set();
+  H.forEach(entry => {
+    Object.keys(entry.nodes || {}).forEach(n => {
+      const region = (entry.nodes[n] || {}).region || 'Other';
+      if (histRegion === 'all' || region === histRegion) allNodes.add(n);
+    });
+  });
+
+  // Sort nodes by most recent day's DART desc
+  const lastDay = H[H.length - 1];
+  const sorted  = [...allNodes].sort((a, b) => {
+    const da = lastDay.nodes?.[a]?.dart || 0;
+    const db = lastDay.nodes?.[b]?.dart || 0;
+    return db - da;
+  });
+
+  // Header: Node | Region | date1 | date2 ... | Intraday (latest)
+  const header = document.getElementById('hist-node-header');
+  header.innerHTML = `
+    <th class="left">Node</th>
+    <th class="left">Region</th>
+    ${dates.map(d=>`<th>${d.slice(5)}<br><span style="font-weight:400;font-size:9px">DART</span></th>`).join('')}
+    <th>Intraday<br><span style="font-weight:400;font-size:9px">latest</span></th>
+    <th>RT avg<br><span style="font-weight:400;font-size:9px">latest</span></th>`;
+
+  const tbody = document.getElementById('hist-node-tbody');
+  tbody.innerHTML = sorted.map(node => {
+    const lastNodeData = lastDay.nodes?.[node] || {};
+    const region = lastNodeData.region || 'Other';
+    const rc = RC[region] || '';
+    const dartCells = dates.map(date => {
+      const entry  = H.find(e => e.date === date);
+      const nd     = entry?.nodes?.[node];
+      const dart   = nd?.dart;
+      if (dart == null) return `<td style="color:#444">—</td>`;
+      const cls    = dart > 5 ? 'da-prem' : dart < -5 ? 'rt-prem' : '';
+      const sign   = dart >= 0 ? '+' : '';
+      return `<td class="${cls}">${sign}$${dart.toFixed(2)}</td>`;
+    }).join('');
+    const intraday = lastNodeData.intraday || 0;
+    const rtAvg    = lastNodeData.rt_avg   || 0;
+    return `<tr onclick="openNodeModal('${node}')">
+      <td class="node-cell">${node}</td>
+      <td class="left"><span class="rbadge ${rc}">${region}</span></td>
+      ${dartCells}
+      <td>$${intraday.toFixed(2)}</td>
+      <td>$${rtAvg.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Extend showPage to load history when tab opens
+const _origShowPage = showPage;
+showPage = function(name, el) {
+  _origShowPage(name, el);
+  if (name === 'history') {
+    if (H) renderHistory();
+    else loadHistory().then(renderHistory);
+  }
+};
+
 loadData();
-setInterval(loadData,5*60*1000);
+loadHistory();
+setInterval(loadData, 5 * 60 * 1000);
 </script>
 </body>
 </html>
