@@ -268,7 +268,7 @@ Respond ONLY with valid JSON, no markdown:
             r = requests.post(
                 "https://api.anthropic.com/v1/messages",
                 headers=headers,
-                json={"model": "claude-opus-4-5", "max_tokens": 800,
+                json={"model": "claude-sonnet-4-5", "max_tokens": 800,
                       "messages": [{"role": "user", "content": prompt}]},
                 timeout=30,
             )
