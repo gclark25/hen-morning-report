@@ -1007,7 +1007,7 @@ def call_claude(prompt, api_key):
         "content-type":      "application/json",
     }
     payload = {
-        "model":      "claude-opus-4-5",
+        "model":      "claude-sonnet-4-5",
         "max_tokens": 1500,
         "messages":   [{"role": "user", "content": prompt}],
     }
