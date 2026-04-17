@@ -5,6 +5,9 @@ on:
     - cron: '0 11 * * 1-5'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   morning-report:
     runs-on: ubuntu-latest
@@ -12,6 +15,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,6 +34,15 @@ jobs:
           ERCOT_NODES: ${{ secrets.ERCOT_TEST_NODES }}
         run: python hen_morning_report.py
 
+      - name: Commit history.json back to repo
+        if: success()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dashboard/history.json
+          git diff --staged --quiet || git commit -m "History update — $(date -u +%Y-%m-%d)"
+          git push
+
       - name: Upload report as artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -43,6 +57,7 @@ jobs:
           mkdir -p deploy
           cp dashboard/index.html deploy/index.html
           cp latest.json deploy/latest.json
+          cp dashboard/history.json deploy/history.json
           echo "Deploying to Netlify..."
           curl -s --fail \
             -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
