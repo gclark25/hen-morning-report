@@ -32,15 +32,17 @@ jobs:
           ERCOT_PASSWORD: ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
           ERCOT_NODES: ${{ secrets.ERCOT_TEST_NODES }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python hen_morning_report.py
 
-      - name: Commit latest.json and history.json back to repo
+      - name: Commit data files back to repo
         if: success()
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           cp latest.json dashboard/latest.json
           git add dashboard/latest.json dashboard/history.json
+          git add dashboard/ai_analysis.json || true
           git diff --staged --quiet || git commit -m "Data update — $(date -u +%Y-%m-%d)"
           git push
 
@@ -58,9 +60,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           mkdir -p deploy
-          cp dashboard/index.html   deploy/index.html
-          cp dashboard/latest.json  deploy/latest.json
-          cp dashboard/history.json deploy/history.json
+          cp dashboard/index.html      deploy/index.html
+          cp dashboard/latest.json     deploy/latest.json
+          cp dashboard/history.json    deploy/history.json
+          cp dashboard/ai_analysis.json deploy/ai_analysis.json || true
           npm install -g wrangler
           wrangler pages deploy deploy/ \
             --project-name=hen-dashboard \
