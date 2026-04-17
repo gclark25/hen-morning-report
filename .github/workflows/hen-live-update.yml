@@ -2,9 +2,6 @@ name: HEN Live Price Update
 
 on:
   schedule:
-    # Every 15 minutes from 11:00 UTC (6 AM CT) to 03:45 UTC next day (10:45 PM CT)
-    # GitHub cron is UTC. CT = UTC-5 (standard) / UTC-6 (daylight)
-    # Running 11:00-04:00 UTC covers 6 AM - 11 PM CT conservatively
     - cron: '0,15,30,45 11-23 * * 1-5'
     - cron: '0,15,30,45 0-4  * * 2-6'
   workflow_dispatch:
@@ -33,16 +30,19 @@ jobs:
           ERCOT_NODES: ${{ secrets.ERCOT_TEST_NODES }}
         run: python hen_live_prices.py
 
-      - name: Deploy live.json to Netlify
+      - name: Deploy live.json to Cloudflare Pages
         run: |
-          echo "Deploying live.json to Netlify..."
+          echo "Deploying live.json to Cloudflare Pages..."
           curl -s --fail \
-            -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
-            -H "Content-Type: application/zip" \
-            --data-binary @<(zip -j - live.json) \
-            "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -F "branch=main" \
+            -F "files=@live.json;filename=live.json" \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CF_ACCOUNT_ID }}/pages/projects/${{ secrets.CF_PROJECT_NAME }}/deployments" \
             | python3 -c "
           import sys, json
           d = json.load(sys.stdin)
-          print(f'  Netlify: {d.get(\"state\",\"unknown\")}')
+          if d.get('success'):
+              print(f'  Cloudflare deploy success')
+          else:
+              print(f'  Cloudflare errors: {d.get(\"errors\")}')
           "
