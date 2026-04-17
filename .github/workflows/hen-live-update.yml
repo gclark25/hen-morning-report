@@ -28,6 +28,7 @@ jobs:
           ERCOT_PASSWORD: ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
           ERCOT_NODES: ${{ secrets.ERCOT_TEST_NODES }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python hen_live_prices.py
 
       - name: Deploy to Cloudflare Pages
@@ -35,10 +36,11 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           mkdir -p deploy
-          cp dashboard/index.html   deploy/index.html
-          cp dashboard/latest.json  deploy/latest.json
-          cp dashboard/history.json deploy/history.json
-          cp live.json              deploy/live.json
+          cp dashboard/index.html      deploy/index.html
+          cp dashboard/latest.json     deploy/latest.json
+          cp dashboard/history.json    deploy/history.json
+          cp dashboard/ai_analysis.json deploy/ai_analysis.json || true
+          cp live.json                 deploy/live.json
           npm install -g wrangler
           wrangler pages deploy deploy/ \
             --project-name=hen-dashboard \
