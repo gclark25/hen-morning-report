@@ -1,12 +1,59 @@
 {
-  "data_date": "2026-04-16",
   "generated_at": "2026-04-16",
   "type": "morning",
-  "fleet_narrative": "AI analysis unavailable for this report.",
-  "trend_analysis": "",
-  "anomalies": [],
-  "nodes_to_watch": [],
-  "market_conditions": "",
+  "fleet_narrative": "Yesterday's ERCOT session delivered a mild $21.36/MWh fleet RT average with 5 spike nodes exceeding $100/MWh, offset by 15 negative-price nodes indicating substantial renewable oversupply. North Texas dominated DART value at $9.29/MWh average, driven by MNWL_BESS_RN's exceptional $17.66 DA premium, positioning HEN well for arbitrage despite broad price compression in coastal and lower-tier regions.",
+  "trend_analysis": "With only one day of settled data in the 5-day window, directional patterns remain underdeveloped; however, the simultaneous emergence of 15 negative-price nodes and 28.4 GW solar peak suggests renewable curtailment pressure is intensifying. North Texas consistently outperforms other regions on DART spreads, indicating structural congestion or transmission constraints that favor BESS positioning in that region.",
+  "anomalies": [
+    {
+      "node": "OLNEYTN_RN",
+      "region": "North Texas",
+      "flag": "Dual-sided stress",
+      "detail": "Node appears in both spike list (>$100 RT) and worst DART performers (-$8.47 DA premium), suggesting volatile intraday repricing and potential settlement anomalies warranting verification."
+    },
+    {
+      "node": "MNWL_BESS_RN",
+      "region": "North Texas",
+      "flag": "Negative RT pricing contradiction",
+      "detail": "Node listed among negative-price nodes but simultaneously ranked #1 DART performer at +$17.66, indicating a strong DA pricing advantage that overcame RT weakness."
+    },
+    {
+      "node": "GRDNE_ESR_RN",
+      "region": "North Texas",
+      "flag": "Spike + negative pricing",
+      "detail": "Appears in both spike nodes (>$100 RT) and negative-price list, signaling extreme intraday volatility and possible data reconciliation issues."
+    },
+    {
+      "node": "MAINLAND_RN",
+      "region": "Coastal",
+      "flag": "High intraday spread",
+      "detail": "DART spread of 3.54 is significantly elevated relative to coastal region average (5.11 regional), indicating unpredictable real-time deviations from day-ahead commitments."
+    },
+    {
+      "node": "CATARINA_B1",
+      "region": "West Texas",
+      "flag": "Isolated spike",
+      "detail": "Only West Texas node in spike list at >$100 RT, suggesting localized constraint or generator outage not evident in fleet-wide metrics."
+    }
+  ],
+  "nodes_to_watch": [
+    {
+      "node": "MNWL_BESS_RN",
+      "region": "North Texas",
+      "reason": "Leading DART performer with $17.66 premium and lowest intraday spread (1.01), making it the most reliable arbitrage candidate for today's commitment strategy."
+    },
+    {
+      "node": "OLNEYTN_RN",
+      "region": "North Texas",
+      "reason": "Extreme DART compression (-$8.47) combined with spike pricing and high volatility (4.92 spread) requires close real-time monitoring to avoid overcommitment losses."
+    },
+    {
+      "node": "DIBOL_RN",
+      "region": "North Texas",
+      "reason": "Second-highest DART performer at $14.40 with tight 0.9 intraday spread indicates consistent North Texas regional strength that should drive increased discharge commitments."
+    }
+  ],
+  "market_conditions": "ERCOT experienced elevated renewable penetration (55.1 GW combined wind + solar vs. 67.8 GW load) driving widespread negative pricing in 47% of HEN's fleet nodes, while constrained congestion zones produced extreme RT spikes.",
   "charging_signal": "neutral",
-  "charging_rationale": ""
+  "charging_rationale": "Widespread negative RT pricing ($21.36 fleet average with 15 negative nodes) favors aggressive charging to capture recovery value, but the 5-node spike phenomenon and North Texas DART premiums suggest selective discharge timing will yield better net returns than blanket charging.",
+  "data_date": "2026-04-16"
 }
