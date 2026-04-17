@@ -139,21 +139,26 @@ tr:hover td{background:#1e2130;cursor:pointer}
   </div>
 
   <div class="page" id="page-topbottom">
+    <div style="font-size:11px;color:#555;margin-bottom:12px;padding:10px 14px;background:#1a1d27;border-radius:8px;border:1px solid #2a2d3a">
+      <strong style="color:#aaa">Formula guide:</strong>
+      &nbsp;DART = DA avg − RT avg (positive = DA cleared above RT) &nbsp;·&nbsp;
+      Intraday spread = (highest RT hour − lowest RT hour) / 24 $/MWh
+    </div>
     <div class="two-col">
-      <div class="card"><div class="card-title">Top 10 — highest RT premium ($/MWh)</div>
+      <div class="card"><div class="card-title">Top 10 — highest DA premium over RT ($/MWh)</div>
         <div class="table-scroll"><table><thead><tr>
           <th class="left">Node</th><th class="left">Region</th>
-          <th>DART avg</th><th>Best hour</th><th>Best spread</th>
+          <th>DART avg</th><th>Intraday</th><th>Best hour</th><th>Best spread</th>
           <th>Spike hrs</th><th>Neg hrs</th>
         </tr></thead><tbody id="top10-tbody"></tbody></table></div></div>
-      <div class="card"><div class="card-title">Bottom 10 — largest DA premium ($/MWh)</div>
+      <div class="card"><div class="card-title">Bottom 10 — highest RT premium over DA ($/MWh)</div>
         <div class="table-scroll"><table><thead><tr>
           <th class="left">Node</th><th class="left">Region</th>
-          <th>DART avg</th><th>Worst hour</th><th>Worst spread</th>
+          <th>DART avg</th><th>Intraday</th><th>Worst hour</th><th>Worst spread</th>
           <th>Spike hrs</th><th>Neg hrs</th>
         </tr></thead><tbody id="bot10-tbody"></tbody></table></div></div>
     </div>
-    <div class="card"><div class="card-title">All nodes — DART spread ($/MWh) · click to drill in</div>
+    <div class="card"><div class="card-title">All nodes — DART spread DA−RT ($/MWh) · click to drill in</div>
       <div class="chart-wrap tall"><canvas id="dart-bar-chart"></canvas></div></div>
   </div>
 
@@ -318,18 +323,20 @@ function renderKPIs(){
 function renderCallouts(){
   const dart=D.dart||{},rt=D.rt||{};
   const ent=Object.entries(dart);
-  const best=ent.length?ent.reduce((a,b)=>b[1]>a[1]?b:a):null;
-  const worst=ent.length?ent.reduce((a,b)=>b[1]<a[1]?b:a):null;
+  // Highest DART = DA most above RT (best DA seller)
+  // Lowest DART  = RT most above DA (best RT performer)
+  const bestDA =ent.length?ent.reduce((a,b)=>b[1]>a[1]?b:a):null;
+  const bestRT =ent.length?ent.reduce((a,b)=>b[1]<a[1]?b:a):null;
   const sp=Object.entries(rt).filter(([,v])=>v.max>100).map(([n])=>n);
   const ng=Object.entries(rt).filter(([,v])=>v.min<0).map(([n])=>n);
   document.getElementById('callout-grid').innerHTML=`
-    <div class="callout green"><div class="callout-label">Best DART performer</div>
-      <div class="callout-value">${best?`${best[0]}<br>+$${best[1].toFixed(2)}/MWh`:'N/A'}</div></div>
-    <div class="callout amber"><div class="callout-label">Largest DA premium</div>
-      <div class="callout-value">${worst?`${worst[0]}<br>$${worst[1].toFixed(2)}/MWh below RT`:'N/A'}</div></div>
-    <div class="callout red"><div class="callout-label">Spike nodes (&gt;$100/MWh)</div>
+    <div class="callout amber"><div class="callout-label">Best DA premium (DA−RT)</div>
+      <div class="callout-value">${bestDA?`${bestDA[0]}<br>+$${bestDA[1].toFixed(2)}/MWh DA over RT`:'N/A'}</div></div>
+    <div class="callout green"><div class="callout-label">Best RT performer (RT&gt;DA)</div>
+      <div class="callout-value">${bestRT?`${bestRT[0]}<br>$${Math.abs(bestRT[1]).toFixed(2)}/MWh RT above DA`:'N/A'}</div></div>
+    <div class="callout red"><div class="callout-label">Spike nodes (&gt;$100/MWh RT)</div>
       <div class="callout-value">${sp.length?sp.join(', '):'None'}</div></div>
-    <div class="callout blue"><div class="callout-label">Negative price nodes</div>
+    <div class="callout blue"><div class="callout-label">Negative RT price nodes</div>
       <div class="callout-value">${ng.length?ng.join(', '):'None'}</div></div>`;
 }
 
@@ -401,29 +408,47 @@ function renderPriceTable(){
 function renderTopBottom(){
   if(!D) return;
   const tb=D.top_bottom||{};
-  const mk=(item,isTop)=>{
-    const rc=RC[item.region]||'',dc=isTop?'rt-prem':'da-prem',sign=isTop?'+':'';
-    const val=isTop?item.best_spread:item.worst_spread;
+  // Top 10: highest DART (DA > RT) — positive is good for DA sellers
+  // Bottom 10: lowest DART (RT > DA) — negative means RT outperformed
+  const mkTop=(item)=>{
+    const rc=RC[item.region]||'';
+    const dartCls=item.dart_avg>0?'da-prem':'rt-prem';
+    const sign=item.dart_avg>0?'+':'';
     return`<tr onclick="openNodeModal('${item.node}')">
       <td class="node-cell">${item.node}</td>
       <td class="left"><span class="rbadge ${rc}">${item.region}</span></td>
-      <td class="${dc}">${sign}$${item.dart_avg.toFixed(2)}</td>
-      <td>HE${String(isTop?item.best_hour:item.worst_hour).padStart(2,'0')}</td>
-      <td class="${dc}">${sign}$${val.toFixed(2)}</td>
+      <td class="${dartCls}">${sign}$${item.dart_avg.toFixed(2)}</td>
+      <td>$${(item.intraday_spread||0).toFixed(2)}</td>
+      <td>HE${String(item.best_hour).padStart(2,'0')}</td>
+      <td class="${dartCls}">${sign}$${item.best_spread.toFixed(2)}</td>
       <td>${item.spike_hours}</td><td>${item.neg_hours}</td></tr>`;
   };
-  document.getElementById('top10-tbody').innerHTML=(tb.top10||[]).map(i=>mk(i,true)).join('');
-  document.getElementById('bot10-tbody').innerHTML=(tb.bottom10||[]).map(i=>mk(i,false)).join('');
+  const mkBot=(item)=>{
+    const rc=RC[item.region]||'';
+    const dartCls=item.dart_avg<0?'rt-prem':'da-prem';
+    const sign=item.dart_avg>0?'+':'';
+    return`<tr onclick="openNodeModal('${item.node}')">
+      <td class="node-cell">${item.node}</td>
+      <td class="left"><span class="rbadge ${rc}">${item.region}</span></td>
+      <td class="${dartCls}">${sign}$${item.dart_avg.toFixed(2)}</td>
+      <td>$${(item.intraday_spread||0).toFixed(2)}</td>
+      <td>HE${String(item.worst_hour).padStart(2,'0')}</td>
+      <td class="${dartCls}">$${item.worst_spread.toFixed(2)}</td>
+      <td>${item.spike_hours}</td><td>${item.neg_hours}</td></tr>`;
+  };
+  document.getElementById('top10-tbody').innerHTML=(tb.top10||[]).map(mkTop).join('');
+  document.getElementById('bot10-tbody').innerHTML=(tb.bottom10||[]).map(mkBot).join('');
   const dart=D.dart||{},allN=Object.entries(dart).sort((a,b)=>b[1]-a[1]);
   destroyChart('dart-bar-chart');
   charts['dart-bar-chart']=new Chart(document.getElementById('dart-bar-chart'),{
     type:'bar',
-    data:{labels:allN.map(([n])=>n),datasets:[{label:'DART ($/MWh)',data:allN.map(([,v])=>v),
-      backgroundColor:allN.map(([,v])=>v>0?'rgba(61,186,111,.7)':'rgba(224,80,80,.7)'),
-      borderColor:allN.map(([,v])=>v>0?'#3dba6f':'#e05050'),borderWidth:1}]},
+    data:{labels:allN.map(([n])=>n),datasets:[{label:'DART DA−RT ($/MWh)',data:allN.map(([,v])=>v),
+      backgroundColor:allN.map(([,v])=>v>0?'rgba(200,120,0,.7)':'rgba(61,186,111,.7)'),
+      borderColor:allN.map(([,v])=>v>0?'#c87800':'#3dba6f'),borderWidth:1}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{ticks:{color:'#555',font:{size:9},maxRotation:60},grid:{color:'#1e2130'}},
-              y:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'}}},
+              y:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'},
+                 title:{display:true,text:'DA − RT ($/MWh)',color:'#555',font:{size:10}}}},
       onClick:(_,els)=>{if(els.length) openNodeModal(allN[els[0].index][0]);}}
   });
 }
