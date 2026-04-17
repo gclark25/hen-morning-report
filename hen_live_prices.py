@@ -145,7 +145,7 @@ def main():
 
     print(f"  Pulling today's RT prices ({len(NODES)} nodes)...")
     for node in NODES:
-        time.sleep(2)
+        time.sleep(3)
         try:
             rows = ercot_get(
                 "np6-905-cd/spp_node_zone_hub", token, sub_key,
