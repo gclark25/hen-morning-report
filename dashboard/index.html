@@ -117,6 +117,7 @@ tr:hover td{background:#1e2130;cursor:pointer}
 
 <div class="nav-tabs">
   <div class="tab active" onclick="showPage('overview',this)">Overview</div>
+  <div class="tab" onclick="showPage('live',this)">Today — Live</div>
   <div class="tab" onclick="showPage('topbottom',this)">Top / Bottom</div>
   <div class="tab" onclick="showPage('prices',this)">Node Prices</div>
   <div class="tab" onclick="showPage('fundamentals',this)">Fundamentals</div>
@@ -139,7 +140,50 @@ tr:hover td{background:#1e2130;cursor:pointer}
       <div id="regional-summary"></div></div>
   </div>
 
-  <div class="page" id="page-topbottom">
+  <!-- TODAY LIVE -->
+  <div class="page" id="page-live">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div id="live-status-bar" style="font-size:12px;color:#555">Loading live data…</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span id="live-countdown" style="font-size:11px;color:#555;font-family:monospace"></span>
+        <button class="refresh-btn" onclick="loadLive(true)">Refresh now</button>
+      </div>
+    </div>
+    <div class="kpi-grid" id="live-kpi-strip"></div>
+    <div class="callout-grid" id="live-callout-grid"></div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Today's RT price by hour — fleet avg ($/MWh)
+          <span id="live-hours-badge" style="font-size:10px;color:#3dba6f;font-weight:400"></span>
+        </div>
+        <div class="chart-wrap"><canvas id="live-hourly-chart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Today vs yesterday — RT avg by node ($/MWh)</div>
+        <div class="chart-wrap"><canvas id="live-vs-yest-chart"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">
+        Today's RT prices — all nodes (intervals cleared so far)
+        <div class="sort-btns">
+          <button class="sort-btn active" onclick="sortLive('rt_avg',this)">RT avg</button>
+          <button class="sort-btn" onclick="sortLive('rt_max',this)">RT max</button>
+          <button class="sort-btn" onclick="sortLive('node',this)">Name</button>
+          <button class="sort-btn" onclick="sortLive('vs_yest',this)">vs Yesterday</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table><thead><tr>
+          <th class="left">Node</th><th class="left">Region</th>
+          <th>RT avg today</th><th>RT max today</th><th>RT min today</th>
+          <th>Yest RT avg</th><th>vs Yesterday</th><th>Intervals</th>
+        </tr></thead>
+        <tbody id="live-price-tbody"></tbody></table>
+      </div>
+      <div style="font-size:10px;color:#333;margin-top:8px">Click any row to see today's hourly curve · Updates every 15 min</div>
+    </div>
+  </div>
     <div style="font-size:11px;color:#555;margin-bottom:12px;padding:10px 14px;background:#1a1d27;border-radius:8px;border:1px solid #2a2d3a">
       <strong style="color:#aaa">Formula guide:</strong>
       &nbsp;DART = DA avg − RT avg (positive = DA cleared above RT) &nbsp;·&nbsp;
@@ -636,7 +680,313 @@ function closeModal(e){if(e.target===document.getElementById('modal-overlay'))cl
 function closeModalDirect(){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';}
 function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 
-// ── HISTORY ───────────────────────────────────────────────────────────────────
+// ── LIVE INTRADAY DATA ────────────────────────────────────────────────────────
+let L = null;
+let liveSort = 'rt_avg';
+let liveCountdown = 900; // 15 minutes in seconds
+let liveTimer = null;
+
+async function loadLive(manual=false) {
+  try {
+    const r = await fetch(`live.json?_=${Date.now()}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    L = await r.json();
+    if (document.getElementById('page-live').classList.contains('active')) {
+      renderLive();
+    }
+    // Reset countdown on successful load
+    liveCountdown = 900;
+  } catch(e) {
+    if (manual) {
+      document.getElementById('live-status-bar').textContent =
+        `Live data unavailable — ${e.message}`;
+    }
+  }
+}
+
+function startLiveCountdown() {
+  if (liveTimer) clearInterval(liveTimer);
+  liveTimer = setInterval(() => {
+    liveCountdown--;
+    const el = document.getElementById('live-countdown');
+    if (el) {
+      const m = Math.floor(liveCountdown / 60);
+      const s = liveCountdown % 60;
+      el.textContent = `Next refresh in ${m}:${String(s).padStart(2,'0')}`;
+    }
+    if (liveCountdown <= 0) {
+      liveCountdown = 900;
+      loadLive();
+    }
+  }, 1000);
+}
+
+function renderLive() {
+  if (!L) {
+    document.getElementById('live-status-bar').textContent =
+      'No live data yet — live updates run every 15 min during market hours (6 AM–11 PM CT)';
+    return;
+  }
+
+  const liveRt  = L.rt       || {};
+  const liveRth = L.rt_hourly || {};
+  const fleet   = L.fleet    || {};
+  const hours   = L.hours_cleared || [];
+  const maxHr   = L.max_hour_cleared || 0;
+
+  // Status bar
+  document.getElementById('live-status-bar').innerHTML =
+    `<span style="color:#3dba6f">&#9679;</span>&nbsp;
+     <strong style="color:#e8eaf0">Today ${L.date}</strong> &nbsp;·&nbsp;
+     As of <strong style="color:#e8eaf0">${L.as_of}</strong> &nbsp;·&nbsp;
+     HE01–HE${String(maxHr).padStart(2,'0')} cleared &nbsp;·&nbsp;
+     ${fleet.node_count || 0} nodes`;
+
+  document.getElementById('live-hours-badge').textContent =
+    `HE01–HE${String(maxHr).padStart(2,'0')} cleared`;
+
+  // KPIs
+  document.getElementById('live-kpi-strip').innerHTML = `
+    <div class="kpi-card green"><div class="kpi-label">Fleet avg RT today</div>
+      <div class="kpi-value">$${(fleet.rt_avg||0).toFixed(2)}</div>
+      <div class="kpi-sub">${fleet.node_count||0} nodes · ${hours.length} hrs cleared</div></div>
+    <div class="kpi-card amber"><div class="kpi-label">Fleet peak RT today</div>
+      <div class="kpi-value">$${(fleet.rt_max||0).toFixed(2)}</div>
+      <div class="kpi-sub">$/MWh highest interval</div></div>
+    <div class="kpi-card red"><div class="kpi-label">Spike nodes today</div>
+      <div class="kpi-value">${fleet.spike_nodes||0}</div>
+      <div class="kpi-sub">&gt;$100/MWh so far</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Negative price nodes</div>
+      <div class="kpi-value">${fleet.neg_nodes||0}</div>
+      <div class="kpi-sub">charging opportunities today</div></div>`;
+
+  // Callouts
+  const liveEntries = Object.entries(liveRt);
+  const bestToday  = liveEntries.length ? liveEntries.reduce((a,b)=>b[1].avg>a[1].avg?b:a) : null;
+  const worstToday = liveEntries.length ? liveEntries.reduce((a,b)=>b[1].avg<a[1].avg?b:a) : null;
+  document.getElementById('live-callout-grid').innerHTML = `
+    <div class="callout green"><div class="callout-label">Highest RT avg today</div>
+      <div class="callout-value">${bestToday?`${bestToday[0]}<br>$${bestToday[1].avg.toFixed(2)}/MWh`:'N/A'}</div></div>
+    <div class="callout blue"><div class="callout-label">Lowest RT avg today</div>
+      <div class="callout-value">${worstToday?`${worstToday[0]}<br>$${worstToday[1].avg.toFixed(2)}/MWh`:'N/A'}</div></div>
+    <div class="callout red"><div class="callout-label">Spike nodes (&gt;$100)</div>
+      <div class="callout-value">${(fleet.spike_list||[]).join(', ')||'None'}</div></div>
+    <div class="callout amber"><div class="callout-label">Negative price nodes</div>
+      <div class="callout-value">${(fleet.neg_list||[]).join(', ')||'None'}</div></div>`;
+
+  // Hourly fleet avg chart — average across all nodes per hour
+  const hrsAll = Array.from({length: maxHr}, (_, i) => String(i + 1));
+  const fleetHourly = hrsAll.map(hr => {
+    const vals = Object.values(liveRth)
+      .map(nh => nh[hr])
+      .filter(v => v != null);
+    return vals.length ? round2(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
+  });
+
+  destroyChart('live-hourly-chart');
+  charts['live-hourly-chart'] = new Chart(document.getElementById('live-hourly-chart'), {
+    type: 'line',
+    data: {
+      labels: hrsAll.map(h => `HE${h.padStart(2,'0')}`),
+      datasets: [{
+        label: 'Fleet avg RT ($/MWh)',
+        data: fleetHourly,
+        borderColor: '#3dba6f', backgroundColor: 'rgba(61,186,111,.1)',
+        fill: true, tension: .3, pointRadius: 3
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {labels: {color:'#666', font:{size:10}}}},
+      scales: {
+        x: {ticks:{color:'#555',font:{size:9},maxRotation:45}, grid:{color:'#1e2130'}},
+        y: {ticks:{color:'#555',font:{size:9}}, grid:{color:'#1e2130'}}
+      }
+    }
+  });
+
+  // Today vs yesterday comparison — top 10 nodes by |difference|
+  const yesterdayRt = (D && D.rt) ? D.rt : {};
+  const nodesDiff = Object.keys(liveRt)
+    .filter(n => yesterdayRt[n])
+    .map(n => ({
+      node: n,
+      today: liveRt[n].avg,
+      yest:  yesterdayRt[n].avg,
+      diff:  round2(liveRt[n].avg - yesterdayRt[n].avg)
+    }))
+    .sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff))
+    .slice(0, 12);
+
+  destroyChart('live-vs-yest-chart');
+  charts['live-vs-yest-chart'] = new Chart(document.getElementById('live-vs-yest-chart'), {
+    type: 'bar',
+    data: {
+      labels: nodesDiff.map(n => n.node),
+      datasets: [{
+        label: 'Today vs yesterday ($/MWh)',
+        data: nodesDiff.map(n => n.diff),
+        backgroundColor: nodesDiff.map(n => n.diff >= 0 ? 'rgba(224,80,80,.7)' : 'rgba(74,158,255,.7)'),
+        borderColor:     nodesDiff.map(n => n.diff >= 0 ? '#e05050' : '#4a9eff'),
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {display: false}},
+      scales: {
+        x: {ticks:{color:'#555',font:{size:9},maxRotation:60}, grid:{color:'#1e2130'}},
+        y: {ticks:{color:'#555',font:{size:9}}, grid:{color:'#1e2130'},
+            title:{display:true,text:'Today − Yesterday ($/MWh)',color:'#555',font:{size:10}}}
+      }
+    }
+  });
+
+  renderLivePriceTable();
+}
+
+function round2(v) { return Math.round(v * 100) / 100; }
+
+function sortLive(key, btn) {
+  liveSort = key;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderLivePriceTable();
+}
+
+function renderLivePriceTable() {
+  if (!L) return;
+  const liveRt  = L.rt || {};
+  const yesterdayRt = (D && D.rt) ? D.rt : {};
+
+  let nodes = Object.keys(liveRt);
+  nodes.sort((a, b) => {
+    if (liveSort === 'node')     return a.localeCompare(b);
+    if (liveSort === 'rt_avg')   return (liveRt[b]?.avg||0) - (liveRt[a]?.avg||0);
+    if (liveSort === 'rt_max')   return (liveRt[b]?.max||0) - (liveRt[a]?.max||0);
+    if (liveSort === 'vs_yest') {
+      const da = round2((liveRt[a]?.avg||0) - (yesterdayRt[a]?.avg||0));
+      const db = round2((liveRt[b]?.avg||0) - (yesterdayRt[b]?.avg||0));
+      return Math.abs(db) - Math.abs(da);
+    }
+    return 0;
+  });
+
+  document.getElementById('live-price-tbody').innerHTML = nodes.map(node => {
+    const r     = liveRt[node] || {};
+    const yest  = yesterdayRt[node] || {};
+    const diff  = yest.avg ? round2(r.avg - yest.avg) : null;
+    const region = getRegion(node);
+    const rc     = RC[region] || '';
+    const skCls  = r.max > 100 ? 'class="spike"' : '';
+    const ngCls  = r.min < 0   ? 'class="neg"'   : '';
+    const diffCls = diff == null ? '' : diff > 5 ? 'class="spike"' : diff < -5 ? 'class="neg"' : '';
+    const diffStr = diff == null ? '—' : (diff >= 0 ? `+$${diff.toFixed(2)}` : `-$${Math.abs(diff).toFixed(2)}`);
+    return `<tr onclick="openLiveNodeModal('${node}')">
+      <td class="node-cell">${node}</td>
+      <td class="left"><span class="rbadge ${rc}">${region}</span></td>
+      <td ${skCls}>$${(r.avg||0).toFixed(2)}</td>
+      <td ${skCls}>$${(r.max||0).toFixed(2)}</td>
+      <td ${ngCls}>$${(r.min||0).toFixed(2)}</td>
+      <td>$${(yest.avg||0).toFixed(2)}</td>
+      <td ${diffCls}>${diffStr}</td>
+      <td style="color:#555">${r.intervals||0}</td>
+    </tr>`;
+  }).join('');
+}
+
+function openLiveNodeModal(node) {
+  if (!L) return;
+  const r     = (L.rt||{})[node]        || {};
+  const rth   = (L.rt_hourly||{})[node] || {};
+  const yestR = (D?.rt||{})[node]        || {};
+  const yestH = (D?.rt_hourly||{})[node] || {};
+  const region = getRegion(node);
+  const maxHr  = L.max_hour_cleared || 0;
+
+  document.getElementById('modal-title').textContent = `${node} — Today Live`;
+  document.getElementById('modal-meta').textContent  =
+    `${region} · ${L.date} · As of ${L.as_of} · HE01–HE${String(maxHr).padStart(2,'0')} cleared`;
+
+  const diff = yestR.avg ? round2(r.avg - yestR.avg) : null;
+  document.getElementById('modal-kpis').innerHTML = `
+    <div class="mkpi"><div class="mkpi-label">RT avg today</div>
+      <div class="mkpi-val" style="color:#3dba6f">$${(r.avg||0).toFixed(2)}</div></div>
+    <div class="mkpi"><div class="mkpi-label">RT max today</div>
+      <div class="mkpi-val" style="color:${(r.max||0)>100?'#e05050':'#c8cad4'}">$${(r.max||0).toFixed(2)}</div></div>
+    <div class="mkpi"><div class="mkpi-label">RT min today</div>
+      <div class="mkpi-val" style="color:${(r.min||0)<0?'#4a9eff':'#c8cad4'}">$${(r.min||0).toFixed(2)}</div></div>
+    <div class="mkpi"><div class="mkpi-label">Intervals cleared</div>
+      <div class="mkpi-val">${r.intervals||0}</div></div>
+    <div class="mkpi"><div class="mkpi-label">Yest RT avg</div>
+      <div class="mkpi-val" style="color:#4a9eff">$${(yestR.avg||0).toFixed(2)}</div></div>
+    <div class="mkpi"><div class="mkpi-label">vs Yesterday</div>
+      <div class="mkpi-val" style="color:${(diff||0)>0?'#e05050':'#4a9eff'}">${diff!=null?(diff>=0?'+$'+diff.toFixed(2):'-$'+Math.abs(diff).toFixed(2)):'—'}</div></div>
+    <div class="mkpi"><div class="mkpi-label">Yest RT max</div>
+      <div class="mkpi-val">$${(yestR.max||0).toFixed(2)}</div></div>
+    <div class="mkpi"><div class="mkpi-label">Yest RT min</div>
+      <div class="mkpi-val" style="color:${(yestR.min||0)<0?'#4a9eff':'#c8cad4'}">$${(yestR.min||0).toFixed(2)}</div></div>`;
+
+  const hrs     = Array.from({length: maxHr}, (_, i) => String(i + 1));
+  const labels  = hrs.map(h => `HE${h.padStart(2,'0')}`);
+  const rtData  = hrs.map(h => rth[h]  ?? null);
+  const yestData= hrs.map(h => yestH[h] ?? null);
+
+  const base = {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'#666',font:{size:10}}}},
+    scales:{
+      x:{ticks:{color:'#555',font:{size:9},maxRotation:45},grid:{color:'#1e2130'}},
+      y:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'}}
+    }
+  };
+
+  destroyChart('modal-price-chart');
+  charts['modal-price-chart'] = new Chart(document.getElementById('modal-price-chart'), {
+    type:'line',
+    data:{labels, datasets:[
+      {label:`Today RT ($/MWh)`, data:rtData,
+        borderColor:'#3dba6f', fill:false, tension:.3, pointRadius:3},
+      {label:`Yesterday RT ($/MWh)`, data:yestData,
+        borderColor:'#4a9eff', fill:false, tension:.3, borderDash:[4,3], pointRadius:2}
+    ]},
+    options:base
+  });
+
+  // Diff chart
+  const diffData = hrs.map(h => {
+    const t = rth[h], y = yestH[h];
+    return (t != null && y != null) ? round2(t - y) : null;
+  });
+  destroyChart('modal-dart-chart');
+  charts['modal-dart-chart'] = new Chart(document.getElementById('modal-dart-chart'), {
+    type:'bar',
+    data:{labels, datasets:[{
+      label:'Today − Yesterday ($/MWh)', data:diffData,
+      backgroundColor:diffData.map(v=>v==null?'transparent':v>=0?'rgba(224,80,80,.7)':'rgba(74,158,255,.7)'),
+      borderColor:diffData.map(v=>v==null?'transparent':v>=0?'#e05050':'#4a9eff'),
+      borderWidth:1
+    }]},
+    options:{...base, plugins:{...base.plugins}}
+  });
+
+  document.getElementById('modal-table-body').innerHTML = hrs.map(h => {
+    const tv = rth[h], yv = yestH[h];
+    const dv = (tv!=null&&yv!=null) ? round2(tv-yv) : null;
+    const sc = (tv||0)>100?'class="spike"':'', nc=(tv||0)<0?'class="neg"':'';
+    const dc = dv==null?'':(dv>5?'class="spike"':dv<-5?'class="neg"':'');
+    const ds = dv!=null?(dv>=0?`+$${dv.toFixed(2)}`:`-$${Math.abs(dv).toFixed(2)}`):'—';
+    return `<tr>
+      <td class="left" style="font-family:monospace">HE${h.padStart(2,'0')}:00</td>
+      <td ${sc}>${tv!=null?`$${tv.toFixed(2)}`:'—'}</td>
+      <td ${nc}>${yv!=null?`$${yv.toFixed(2)}`:'—'}</td>
+      <td ${dc}>${ds}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
 let H = null;
 let histRegion = 'all';
 
@@ -801,10 +1151,15 @@ function renderHistNodeTable() {
   }).join('');
 }
 
-// Extend showPage to load history when tab opens
+// Extend showPage to handle live and history tabs
 const _origShowPage = showPage;
 showPage = function(name, el) {
   _origShowPage(name, el);
+  if (name === 'live') {
+    if (L) renderLive();
+    else loadLive(true);
+    startLiveCountdown();
+  }
   if (name === 'history') {
     if (H) renderHistory();
     else loadHistory().then(renderHistory);
@@ -812,6 +1167,7 @@ showPage = function(name, el) {
 };
 
 loadData();
+loadLive();
 loadHistory();
 setInterval(loadData, 5 * 60 * 1000);
 </script>
