@@ -51,24 +51,27 @@ jobs:
           path: morning_report.html
           retention-days: 30
 
-      - name: Deploy dashboard to Netlify
+      - name: Deploy dashboard to Cloudflare Pages
         if: success()
         run: |
           mkdir -p deploy
           cp dashboard/index.html deploy/index.html
-          cp latest.json deploy/latest.json
+          cp latest.json         deploy/latest.json
           cp dashboard/history.json deploy/history.json
-          echo "Deploying to Netlify..."
+          echo "Deploying to Cloudflare Pages..."
           curl -s --fail \
-            -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
-            -H "Content-Type: application/zip" \
-            --data-binary @<(cd deploy && zip -r - .) \
-            "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -F "branch=main" \
+            -F "files=@deploy/index.html;filename=index.html" \
+            -F "files=@deploy/latest.json;filename=latest.json" \
+            -F "files=@deploy/history.json;filename=history.json" \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CF_ACCOUNT_ID }}/pages/projects/${{ secrets.CF_PROJECT_NAME }}/deployments" \
             | python3 -c "
           import sys, json
           d = json.load(sys.stdin)
-          if d.get('state') in ('ready','enqueued','processing'):
-              print(f'  Netlify deploy queued: {d.get(\"deploy_ssl_url\",\"\")}')
+          if d.get('success'):
+              url = d.get('result',{}).get('url','')
+              print(f'  Cloudflare deploy success: {url}')
           else:
-              print(f'  Netlify response: {d.get(\"state\",\"unknown\")}')
+              print(f'  Cloudflare errors: {d.get(\"errors\")}')
           "
