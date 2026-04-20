@@ -1,59 +1,59 @@
 {
-  "generated_at": "2026-04-16",
+  "generated_at": "2026-04-19",
   "type": "morning",
-  "fleet_narrative": "Yesterday's ERCOT session delivered a mild $21.36/MWh fleet RT average with 5 spike nodes exceeding $100/MWh, offset by 15 negative-price nodes indicating substantial renewable oversupply. North Texas dominated DART value at $9.29/MWh average, driven by MNWL_BESS_RN's exceptional $17.66 DA premium, positioning HEN well for arbitrage despite broad price compression in coastal and lower-tier regions.",
-  "trend_analysis": "With only one day of settled data in the 5-day window, directional patterns remain underdeveloped; however, the simultaneous emergence of 15 negative-price nodes and 28.4 GW solar peak suggests renewable curtailment pressure is intensifying. North Texas consistently outperforms other regions on DART spreads, indicating structural congestion or transmission constraints that favor BESS positioning in that region.",
+  "fleet_narrative": "Yesterday's market saw elevated real-time prices (33.33/MWh fleet avg) driven by low wind (14.5 GW) and moderate solar (25.1 GW) against peak load of 48.9 GW, creating 29 spike nodes above $100/MWh. However, widespread negative pricing (22 nodes) in over-supplied pockets signals severe regional congestion and renewable curtailment, presenting a challenging arbitrage environment with compressed DA-RT spreads across most of the portfolio.",
+  "trend_analysis": "DART performance has deteriorated sharply from 2026-04-16 (positive regional spreads of 5\u201310/MWh) to yesterday (all regions negative, -1.58 to -15.73/MWh), indicating RT prices are increasingly spiking above DA forecasts in distressed pockets while collapsing below DA in renewable-heavy zones. The five-day pattern reveals wind variability (26.7 GW to 14.5 GW) is the primary driver of price volatility; Coastal and West Texas regions are most vulnerable to negative arbitrage, suggesting forecasting or operational repositioning may be needed.",
   "anomalies": [
     {
-      "node": "OLNEYTN_RN",
-      "region": "North Texas",
-      "flag": "Dual-sided stress",
-      "detail": "Node appears in both spike list (>$100 RT) and worst DART performers (-$8.47 DA premium), suggesting volatile intraday repricing and potential settlement anomalies warranting verification."
-    },
-    {
-      "node": "MNWL_BESS_RN",
-      "region": "North Texas",
-      "flag": "Negative RT pricing contradiction",
-      "detail": "Node listed among negative-price nodes but simultaneously ranked #1 DART performer at +$17.66, indicating a strong DA pricing advantage that overcame RT weakness."
-    },
-    {
-      "node": "GRDNE_ESR_RN",
-      "region": "North Texas",
-      "flag": "Spike + negative pricing",
-      "detail": "Appears in both spike nodes (>$100 RT) and negative-price list, signaling extreme intraday volatility and possible data reconciliation issues."
-    },
-    {
-      "node": "MAINLAND_RN",
-      "region": "Coastal",
-      "flag": "High intraday spread",
-      "detail": "DART spread of 3.54 is significantly elevated relative to coastal region average (5.11 regional), indicating unpredictable real-time deviations from day-ahead commitments."
-    },
-    {
       "node": "CATARINA_B1",
-      "region": "West Texas",
-      "flag": "Isolated spike",
-      "detail": "Only West Texas node in spike list at >$100 RT, suggesting localized constraint or generator outage not evident in fleet-wide metrics."
+      "region": "Premium",
+      "flag": "Extreme negative DART",
+      "detail": "Despite Premium region classification and $100+ RT spike, CATARINA_B1 shows -25.52 DART, indicating DA was significantly overpriced or real-time rebidding caused sharp price collapse\u2014investigate DA forecast accuracy."
+    },
+    {
+      "node": "RUSSEKST_RN",
+      "region": "Premium",
+      "flag": "Outlier positive DART",
+      "detail": "Only node in top 5 DART with +13.07 spread and $100+ RT spike, suggesting strong DA premium capture\u2014validate whether this represents replicable market position or one-off event."
+    },
+    {
+      "node": "COASTAL_REGION",
+      "region": "Coastal",
+      "flag": "Regional DART collapse",
+      "detail": "Five of bottom five DART performers are Coastal nodes (FALFUR, TYNAN, WLTC_ESR, POTEETS) with -15.73 regional average, pointing to systemic over-generation or transmission congestion in that region."
+    },
+    {
+      "node": "JUNCTION_RN",
+      "region": "Premium",
+      "flag": "Dual spike + negative pricing",
+      "detail": "JUNCTION_RN appears in both $100+ spike list and negative RT pricing list with +7.59 DART, indicating extreme intraday volatility and possible flash event\u2014review hour-by-hour settlement."
+    },
+    {
+      "node": "NORTH_TEXAS_CLUSTER",
+      "region": "North Texas",
+      "flag": "Marginal negative DART",
+      "detail": "North Texas shows -1.58 regional DART but contains 3 of top 5 DART nodes (DIBOL, LFSTH, FRMRSVLW), suggesting localized pockets of strength offset by broader regional weakness."
     }
   ],
   "nodes_to_watch": [
     {
-      "node": "MNWL_BESS_RN",
-      "region": "North Texas",
-      "reason": "Leading DART performer with $17.66 premium and lowest intraday spread (1.01), making it the most reliable arbitrage candidate for today's commitment strategy."
+      "node": "CATARINA_B1",
+      "region": "Premium",
+      "reason": "Extreme -25.52 DART despite $100+ RT pricing warrants urgent investigation into DA vs. RT settlement mechanics and potential margin risk on Premium-region positions."
     },
     {
-      "node": "OLNEYTN_RN",
-      "region": "North Texas",
-      "reason": "Extreme DART compression (-$8.47) combined with spike pricing and high volatility (4.92 spread) requires close real-time monitoring to avoid overcommitment losses."
+      "node": "FALFUR_RN",
+      "region": "Coastal",
+      "reason": "Persistent negative DART (-19.50) and negative RT pricing suggest chronic over-supply or transmission bottleneck in Coastal region; test repositioning or hedging strategies."
     },
     {
-      "node": "DIBOL_RN",
-      "region": "North Texas",
-      "reason": "Second-highest DART performer at $14.40 with tight 0.9 intraday spread indicates consistent North Texas regional strength that should drive increased discharge commitments."
+      "node": "RUSSEKST_RN",
+      "region": "Premium",
+      "reason": "Sole +13.07 DART outperformer with $100+ RT spike and strong intraday spread (9.27) indicates a market opportunity node\u2014monitor whether conditions persist for replication across similar nodes."
     }
   ],
-  "market_conditions": "ERCOT experienced elevated renewable penetration (55.1 GW combined wind + solar vs. 67.8 GW load) driving widespread negative pricing in 47% of HEN's fleet nodes, while constrained congestion zones produced extreme RT spikes.",
-  "charging_signal": "neutral",
-  "charging_rationale": "Widespread negative RT pricing ($21.36 fleet average with 15 negative nodes) favors aggressive charging to capture recovery value, but the 5-node spike phenomenon and North Texas DART premiums suggest selective discharge timing will yield better net returns than blanket charging.",
-  "data_date": "2026-04-16"
+  "market_conditions": "ERCOT experienced a bifurcated market on 2026-04-19: acute real-time scarcity (29 spike nodes, low renewable output) competing with pockets of severe oversupply (22 negative-price nodes), resulting in compressed DA-RT arbitrage and regional price fragmentation.",
+  "charging_signal": "bearish",
+  "charging_rationale": "Fleet-wide RT average of 33.33/MWh coupled with deeply negative DART spreads (-1.58 to -15.73 across regions) and 22 negative-price nodes indicates limited discharge value and substantial charging losses; low wind forecast (14.5 GW) reduces tomorrow's spike probability, favoring conservative positioning.",
+  "data_date": "2026-04-19"
 }
