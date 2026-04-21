@@ -1407,15 +1407,6 @@ function renderBattery() {
         <div class="chart-wrap"><canvas id="bat-rt-chart"></canvas></div>
       </div>
     </div>
-      <div class="card-title">Regional dispatch signal — current hour</div>
-      <div class="table-scroll"><table>
-        <thead><tr>
-          <th class="left">Region</th><th class="left">Avg RT</th>
-          <th class="left">Signal</th><th>Nodes</th>
-        </tr></thead>
-        <tbody>${regionalRows}</tbody>
-      </table></div>
-    </div>
 
     <!-- Per-node dispatch -->
     <div class="card">
@@ -1472,6 +1463,8 @@ function renderBattery() {
   });
 
   destroyChart('soc-curve-chart');
+  const socMin = Math.max(0, Math.min(...socData) - 10);
+  const socMax = Math.min(100, Math.max(...socData) + 10);
   charts['soc-curve-chart'] = new Chart(document.getElementById('soc-curve-chart'), {
     type: 'line',
     data: {
@@ -1490,7 +1483,7 @@ function renderBattery() {
       plugins: { legend: { labels: { color:'#666', font:{size:10} } } },
       scales: {
         x: { ticks:{color:'#555',font:{size:9},maxRotation:45}, grid:{color:'#1e2130'} },
-        y: { min:0, max:100, ticks:{color:'#555',font:{size:9},callback:v=>v+'%'}, grid:{color:'#1e2130'} }
+        y: { min: socMin, max: socMax, ticks:{color:'#555',font:{size:9},callback:v=>v+'%'}, grid:{color:'#1e2130'} }
       }
     }
   });
