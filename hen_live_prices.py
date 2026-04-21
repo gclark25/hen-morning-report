@@ -277,8 +277,23 @@ def main():
 
     CHARGE_THRESHOLD    = 15.0   # $/MWh — below this, batteries likely charging
     DISCHARGE_THRESHOLD = 50.0   # $/MWh — above this, batteries likely discharging
-    SOC_START           = 50.0   # assume 50% SOC at start of day
     SOC_STEP            = 4.0    # % SOC change per hour at full signal
+
+    # Load yesterday's ending SOC from history as today's starting point
+    SOC_START = 50.0  # default fallback
+    try:
+        with open("dashboard/history.json", "r") as f:
+            history = json.load(f)
+        if history:
+            last_entry = sorted(history, key=lambda e: e["date"])[-1]
+            stored_soc = last_entry.get("battery", {}).get("ending_soc")
+            if stored_soc is not None:
+                SOC_START = float(stored_soc)
+                print(f"  SOC start: {SOC_START}% (rolled from {last_entry['date']})")
+            else:
+                print(f"  SOC start: {SOC_START}% (no prior SOC in history, using default)")
+    except Exception as e:
+        print(f"  SOC start: {SOC_START}% (history unavailable: {e})")
 
     # Build fleet avg RT by hour
     fleet_hourly_avg = {}
