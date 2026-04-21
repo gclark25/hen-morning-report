@@ -36,11 +36,24 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           mkdir -p deploy
-          cp dashboard/index.html      deploy/index.html
-          cp dashboard/latest.json     deploy/latest.json
-          cp dashboard/history.json    deploy/history.json
+          cp dashboard/index.html       deploy/index.html
+          cp dashboard/latest.json      deploy/latest.json
+          cp dashboard/history.json     deploy/history.json
           cp dashboard/ai_analysis.json deploy/ai_analysis.json || true
-          cp live.json                 deploy/live.json
+          cp live.json                  deploy/live.json
+
+          # Tell Cloudflare never to cache the JSON data files
+          cat > deploy/_headers << 'HEADERS'
+/live.json
+  Cache-Control: no-store, no-cache, must-revalidate
+/latest.json
+  Cache-Control: no-store, no-cache, must-revalidate
+/history.json
+  Cache-Control: no-store, no-cache, must-revalidate
+/ai_analysis.json
+  Cache-Control: no-store, no-cache, must-revalidate
+HEADERS
+
           npm install -g wrangler
           wrangler pages deploy deploy/ \
             --project-name=hen-dashboard \
