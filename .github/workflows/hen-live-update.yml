@@ -1,18 +1,22 @@
-name: HEN Live Price Update
+name: HEN Daily Morning Report
 
 on:
   schedule:
-    - cron: '0,15,30,45 11-23 * * 1-5'
-    - cron: '0,15,30,45 0-4  * * 2-6'
+    - cron: '0 11 * * 1-5'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  live-update:
+  morning-report:
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -22,16 +26,36 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Pull live RT prices
+      - name: Run morning report
         env:
           ERCOT_USERNAME: ${{ secrets.ERCOT_USERNAME }}
           ERCOT_PASSWORD: ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
           ERCOT_NODES: ${{ secrets.ERCOT_TEST_NODES }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python hen_live_prices.py
+        run: python hen_morning_report.py
 
-      - name: Deploy to Cloudflare Pages
+      - name: Commit data files back to repo
+        if: success()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp latest.json dashboard/latest.json
+          git add dashboard/latest.json dashboard/history.json
+          git add dashboard/ai_analysis.json || true
+          git diff --staged --quiet || git commit -m "Data update — $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Upload report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: morning-report-${{ github.run_id }}
+          path: morning_report.html
+          retention-days: 30
+
+      - name: Deploy dashboard to Cloudflare Pages
+        if: success()
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
@@ -40,7 +64,6 @@ jobs:
           cp dashboard/latest.json      deploy/latest.json
           cp dashboard/history.json     deploy/history.json
           cp dashboard/ai_analysis.json deploy/ai_analysis.json || true
-          cp live.json                  deploy/live.json
           printf '/live.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/latest.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/history.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/ai_analysis.json\n  Cache-Control: no-store, no-cache, must-revalidate\n' > deploy/_headers
           npm install -g wrangler
           wrangler pages deploy deploy/ \
