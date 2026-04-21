@@ -114,6 +114,69 @@ def extract_rt_price_hour(row):
         return hour, price if price != 0 else None
     return None, None
 
+def pull_esr_data(token, sub_key):
+    """Pull ERCOT grid-wide ESR charging MW data (4-sec samples, last 2 hours).
+    Returns dict of hour -> avg ESR net MW (negative=charging, positive=discharging)
+    and the most recent ESR charging MW reading.
+    """
+    # Pull last 2 hours of 4-sec ESR data
+    time_from = (NOW_CT - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
+    time_to   = NOW_CT.strftime("%Y-%m-%dT%H:%M:%S")
+    try:
+        rows = ercot_get(
+            "rptesr-m/4_sec_esr_charging_mw",
+            token, sub_key,
+            params={
+                "AGCExecTimeUTCFrom": (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "AGCExecTimeUTCTo":   datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "size": 1000,
+            }
+        )
+        if not rows:
+            return {}, None
+
+        # Parse rows — each row has AGCExecTime and ESRChargingMW
+        # ESRChargingMW: negative = charging, positive = discharging
+        by_hour = defaultdict(list)
+        latest_mw = None
+        latest_time = None
+
+        for row in rows:
+            if isinstance(row, dict):
+                mw_val = row.get("ESRChargingMW") or row.get("esrChargingMw") or row.get("esrchargingmw")
+                exec_time = row.get("AGCExecTime") or row.get("agcExecTime") or row.get("agcexectime") or ""
+            elif isinstance(row, list) and len(row) >= 2:
+                # Try to find the MW value — usually last numeric field
+                nums = [x for x in row if isinstance(x, (int, float)) and not isinstance(x, bool)]
+                mw_val = nums[-1] if nums else None
+                exec_time = str(row[0]) if row else ""
+            else:
+                continue
+
+            if mw_val is None:
+                continue
+
+            mw = safe_float(mw_val)
+
+            # Extract hour from exec_time string (format: 2026-04-21T14:30:00)
+            try:
+                if "T" in str(exec_time):
+                    hr = int(str(exec_time).split("T")[1].split(":")[0]) + 1  # convert to HE
+                    by_hour[hr].append(mw)
+                    if latest_time is None or str(exec_time) > str(latest_time):
+                        latest_time = exec_time
+                        latest_mw = mw
+            except Exception:
+                pass
+
+        hourly_esr = {hr: round(sum(v)/len(v), 1) for hr, v in by_hour.items()}
+        print(f"  ESR data: {len(rows)} samples · latest={latest_mw} MW")
+        return hourly_esr, latest_mw
+
+    except Exception as e:
+        print(f"  WARN: ESR data pull failed — {e}")
+        return {}, None
+
 def main():
     print(f"\nHEN Live Price Update — {TODAY} {NOW_STR}")
     print(f"Nodes: {len(NODES)}")
@@ -137,6 +200,10 @@ def main():
     except Exception as e:
         print(f"  Auth FAILED: {e}")
         sys.exit(1)
+
+    # Pull ERCOT grid-wide ESR charging data
+    print("  Pulling ESR grid-wide battery data...")
+    esr_hourly, esr_latest_mw = pull_esr_data(token, sub_key)
 
     # Pull today's RT prices for all nodes
     rt_today     = {}   # node → {avg, max, min, intervals}
@@ -199,6 +266,95 @@ def main():
     # Hours cleared — for progress indicator on dashboard
     max_hour_cleared = max(hours_seen) if hours_seen else 0
 
+    # ── IMPLIED STATE OF CHARGE ───────────────────────────────────────────────
+    # Use RT price patterns to infer charge/discharge behavior per hour:
+    #   RT < $0      → strong charging (negative price = must charge)
+    #   $0–$15       → mild charging signal
+    #   $15–$40      → neutral
+    #   $40–$75      → mild discharge signal
+    #   RT > $75     → strong discharging
+    # Integrate across the day to build an implied SOC curve (starts at 50%)
+
+    CHARGE_THRESHOLD    = 15.0   # $/MWh — below this, batteries likely charging
+    DISCHARGE_THRESHOLD = 50.0   # $/MWh — above this, batteries likely discharging
+    SOC_START           = 50.0   # assume 50% SOC at start of day
+    SOC_STEP            = 4.0    # % SOC change per hour at full signal
+
+    # Build fleet avg RT by hour
+    fleet_hourly_avg = {}
+    for hr in range(1, max_hour_cleared + 1):
+        vals = [rt_hourly[n][str(hr)] for n in rt_hourly if str(hr) in rt_hourly[n]]
+        if vals:
+            fleet_hourly_avg[hr] = round(sum(vals) / len(vals), 2)
+
+    # Classify each hour and build SOC curve
+    soc_curve = {}
+    dispatch_curve = {}
+    soc = SOC_START
+    for hr in range(1, max_hour_cleared + 1):
+        price = fleet_hourly_avg.get(hr)
+        if price is None:
+            soc_curve[hr] = round(soc, 1)
+            dispatch_curve[hr] = "unknown"
+            continue
+        if price < 0:
+            delta = SOC_STEP * 1.5    # strong charge
+            dispatch = "charging_strong"
+        elif price < CHARGE_THRESHOLD:
+            delta = SOC_STEP           # mild charge
+            dispatch = "charging"
+        elif price < DISCHARGE_THRESHOLD:
+            delta = 0                  # neutral
+            dispatch = "neutral"
+        elif price < 100:
+            delta = -SOC_STEP          # mild discharge
+            dispatch = "discharging"
+        else:
+            delta = -SOC_STEP * 1.5    # strong discharge (spike)
+            dispatch = "discharging_strong"
+        soc = max(0, min(100, soc + delta))
+        soc_curve[hr] = round(soc, 1)
+        dispatch_curve[hr] = dispatch
+
+    # Current implied SOC
+    current_soc = soc_curve.get(max_hour_cleared, SOC_START)
+
+    # Per-region implied dispatch signal (based on regional avg RT)
+    regional_dispatch = {}
+    for region, rv in regional.items():
+        avg = rv.get("avg_rt", 25)
+        if avg < 0:
+            signal = "charging_strong"
+        elif avg < CHARGE_THRESHOLD:
+            signal = "charging"
+        elif avg < DISCHARGE_THRESHOLD:
+            signal = "neutral"
+        elif avg < 100:
+            signal = "discharging"
+        else:
+            signal = "discharging_strong"
+        regional_dispatch[region] = {
+            "signal":  signal,
+            "avg_rt":  avg,
+            "node_count": rv.get("node_count", 0),
+        }
+
+    # Per-node dispatch signal
+    node_dispatch = {}
+    for node, rv in rt_today.items():
+        avg = rv["avg"]
+        if avg < 0:
+            signal = "charging_strong"
+        elif avg < CHARGE_THRESHOLD:
+            signal = "charging"
+        elif avg < DISCHARGE_THRESHOLD:
+            signal = "neutral"
+        elif avg < 100:
+            signal = "discharging"
+        else:
+            signal = "discharging_strong"
+        node_dispatch[node] = signal
+
     payload = {
         "date":              TODAY,
         "as_of":             NOW_STR,
@@ -216,6 +372,21 @@ def main():
         "rt":        rt_today,
         "rt_hourly": rt_hourly,
         "regional":  regional,
+        "battery": {
+            "current_soc":         current_soc,
+            "soc_curve":           soc_curve,
+            "dispatch_curve":      dispatch_curve,
+            "fleet_hourly_avg":    fleet_hourly_avg,
+            "regional_dispatch":   regional_dispatch,
+            "node_dispatch":       node_dispatch,
+            "charge_threshold":    CHARGE_THRESHOLD,
+            "discharge_threshold": DISCHARGE_THRESHOLD,
+            "esr_actual": {
+                "latest_mw":   esr_latest_mw,
+                "hourly":      esr_hourly,
+                "data_source": "ERCOT ESR API" if esr_latest_mw is not None else "price-implied only",
+            },
+        },
     }
 
     with open("live.json", "w", encoding="utf-8") as f:
