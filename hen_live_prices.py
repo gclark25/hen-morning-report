@@ -267,17 +267,12 @@ def main():
     max_hour_cleared = max(hours_seen) if hours_seen else 0
 
     # ── IMPLIED STATE OF CHARGE ───────────────────────────────────────────────
-    # Use RT price patterns to infer charge/discharge behavior per hour:
-    #   RT < $0      → strong charging (negative price = must charge)
-    #   $0–$15       → mild charging signal
-    #   $15–$40      → neutral
-    #   $40–$75      → mild discharge signal
-    #   RT > $75     → strong discharging
-    # Integrate across the day to build an implied SOC curve (starts at 50%)
+    # Build SOC curve: prefer ESR actual MW data, fall back to price inference
 
-    CHARGE_THRESHOLD    = 15.0   # $/MWh — below this, batteries likely charging
-    DISCHARGE_THRESHOLD = 50.0   # $/MWh — above this, batteries likely discharging
-    SOC_STEP            = 4.0    # % SOC change per hour at full signal
+    CHARGE_THRESHOLD    = 15.0
+    DISCHARGE_THRESHOLD = 50.0
+    SOC_STEP            = 4.0
+    ERCOT_BESS_CAP_MW   = 14000.0  # approximate installed ERCOT BESS capacity
 
     # Load yesterday's ending SOC from history as today's starting point
     SOC_START = 50.0  # default fallback
@@ -295,43 +290,55 @@ def main():
     except Exception as e:
         print(f"  SOC start: {SOC_START}% (history unavailable: {e})")
 
-    # Build fleet avg RT by hour
+    # Build fleet avg RT by hour (always computed for context)
     fleet_hourly_avg = {}
     for hr in range(1, max_hour_cleared + 1):
         vals = [rt_hourly[n][str(hr)] for n in rt_hourly if str(hr) in rt_hourly[n]]
         if vals:
             fleet_hourly_avg[hr] = round(sum(vals) / len(vals), 2)
 
-    # Classify each hour and build SOC curve
+    # Build SOC curve
     soc_curve = {}
     dispatch_curve = {}
     soc = SOC_START
+
+    # Use ESR hourly MW if available
+    esr_h = esr_hourly if esr_hourly else {}
+    use_esr = len(esr_h) > 0
+
     for hr in range(1, max_hour_cleared + 1):
-        price = fleet_hourly_avg.get(hr)
-        if price is None:
-            soc_curve[hr] = round(soc, 1)
-            dispatch_curve[hr] = "unknown"
-            continue
-        if price < 0:
-            delta = SOC_STEP * 1.5    # strong charge
-            dispatch = "charging_strong"
-        elif price < CHARGE_THRESHOLD:
-            delta = SOC_STEP           # mild charge
-            dispatch = "charging"
-        elif price < DISCHARGE_THRESHOLD:
-            delta = 0                  # neutral
-            dispatch = "neutral"
-        elif price < 100:
-            delta = -SOC_STEP          # mild discharge
-            dispatch = "discharging"
+        if use_esr and hr in esr_h:
+            # ESR MW integration: negative=charging, positive=discharging
+            mw    = esr_h[hr]
+            delta = -(mw / ERCOT_BESS_CAP_MW) * 100.0
+            dispatch = "charging" if mw < 0 else ("discharging" if mw > 0 else "neutral")
         else:
-            delta = -SOC_STEP * 1.5    # strong discharge (spike)
-            dispatch = "discharging_strong"
+            # Price inference fallback
+            price = fleet_hourly_avg.get(hr)
+            if price is None:
+                soc_curve[hr] = round(soc, 1)
+                dispatch_curve[hr] = "unknown"
+                continue
+            if price < 0:
+                delta = SOC_STEP * 1.5
+                dispatch = "charging_strong"
+            elif price < CHARGE_THRESHOLD:
+                delta = SOC_STEP
+                dispatch = "charging"
+            elif price < DISCHARGE_THRESHOLD:
+                delta = 0
+                dispatch = "neutral"
+            elif price < 100:
+                delta = -SOC_STEP
+                dispatch = "discharging"
+            else:
+                delta = -SOC_STEP * 1.5
+                dispatch = "discharging_strong"
+
         soc = max(0, min(100, soc + delta))
         soc_curve[hr] = round(soc, 1)
         dispatch_curve[hr] = dispatch
 
-    # Current implied SOC
     current_soc = soc_curve.get(max_hour_cleared, SOC_START)
 
     # Per-region implied dispatch signal (based on regional avg RT)
