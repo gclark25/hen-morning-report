@@ -64,19 +64,7 @@ jobs:
           cp dashboard/latest.json      deploy/latest.json
           cp dashboard/history.json     deploy/history.json
           cp dashboard/ai_analysis.json deploy/ai_analysis.json || true
-
-          # Tell Cloudflare never to cache the JSON data files
-          cat > deploy/_headers << 'HEADERS'
-/live.json
-  Cache-Control: no-store, no-cache, must-revalidate
-/latest.json
-  Cache-Control: no-store, no-cache, must-revalidate
-/history.json
-  Cache-Control: no-store, no-cache, must-revalidate
-/ai_analysis.json
-  Cache-Control: no-store, no-cache, must-revalidate
-HEADERS
-
+          printf '/live.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/latest.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/history.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/ai_analysis.json\n  Cache-Control: no-store, no-cache, must-revalidate\n' > deploy/_headers
           npm install -g wrangler
           wrangler pages deploy deploy/ \
             --project-name=hen-dashboard \
