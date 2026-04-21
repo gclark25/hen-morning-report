@@ -1310,214 +1310,150 @@ function renderBattery() {
   }
 
   const bat = L.battery;
-  const soc = bat.current_soc || 50;
-  const socColor = soc < 25 ? '#e05050' : soc < 50 ? '#f0a500' : '#3dba6f';
   const esr = bat.esr_actual || {};
   const esrMW = esr.latest_mw;
   const hasRealESR = esrMW !== null && esrMW !== undefined;
-  const esrColor = !hasRealESR ? '#555' : esrMW < -500 ? '#4a9eff' : esrMW < 0 ? '#7fc8ff' : esrMW < 500 ? '#f0a500' : '#e05050';
-  const esrLabel = !hasRealESR ? '— No data' : esrMW < 0 ? `${Math.abs(esrMW).toFixed(0)} MW Charging` : `${esrMW.toFixed(0)} MW Discharging`;
-
-  const dispatchLabels = {
-    charging_strong:    { label: '⚡ Strong Charging',    color: '#4a9eff' },
-    charging:           { label: '↑ Charging',            color: '#7fc8ff' },
-    neutral:            { label: '◎ Neutral',             color: '#555' },
-    discharging:        { label: '↓ Discharging',         color: '#f0a500' },
-    discharging_strong: { label: '🔥 Strong Discharging', color: '#e05050' },
-    unknown:            { label: '— Unknown',             color: '#444' },
-  };
-
   const currentHr = L.max_hour_cleared || 0;
-  const currentDispatch = bat.dispatch_curve?.[currentHr] || 'neutral';
-  const dispInfo = dispatchLabels[currentDispatch] || dispatchLabels.neutral;
 
-  // Regional dispatch table
-  const regionalRows = Object.entries(bat.regional_dispatch || {}).map(([region, rv]) => {
-    const rc = RC[region] || '';
-    const di = dispatchLabels[rv.signal] || dispatchLabels.neutral;
-    return `<tr>
-      <td class="left"><span class="rbadge ${rc}">${region}</span></td>
-      <td style="color:#888">$${rv.avg_rt.toFixed(2)}/MWh</td>
-      <td style="color:${di.color};font-weight:600">${di.label}</td>
-      <td>${rv.node_count} nodes</td>
-    </tr>`;
-  }).join('');
+  // SOC — use ESR-integrated value if available, else price-implied
+  const soc = bat.current_soc || 50;
+  const socColor = soc < 25 ? '#e05050' : soc < 50 ? '#f0a500' : '#3dba6f';
 
-  // Node dispatch table
-  const nodeRows = Object.entries(bat.node_dispatch || {})
-    .sort((a, b) => {
-      const order = ['discharging_strong','discharging','neutral','charging','charging_strong'];
-      return order.indexOf(a[1]) - order.indexOf(b[1]);
-    })
-    .map(([node, signal]) => {
-      const region = getRegion(node);
-      const rc = RC[region] || '';
-      const di = dispatchLabels[signal] || dispatchLabels.neutral;
-      const rtAvg = (L.rt?.[node]?.avg || 0).toFixed(2);
-      return `<tr>
-        <td class="node-cell">${node}</td>
-        <td class="left"><span class="rbadge ${rc}">${region}</span></td>
-        <td style="font-family:monospace">$${rtAvg}</td>
-        <td style="color:${di.color}">${di.label}</td>
-      </tr>`;
-    }).join('');
+  // ESR net MW display
+  const esrColor = !hasRealESR ? '#555' : esrMW < -1000 ? '#4a9eff' : esrMW < 0 ? '#7fc8ff' : esrMW < 1000 ? '#f0a500' : '#e05050';
+  const esrLabel = !hasRealESR ? '— Awaiting data'
+    : esrMW < 0 ? `${Math.abs(esrMW).toFixed(0)} MW Charging`
+    : `${esrMW.toFixed(0)} MW Discharging`;
+  const esrSubtitle = hasRealESR ? 'ERCOT ESR API' : 'ESR API not yet returning data';
+
+  // Build SOC curve from ESR hourly if available, else price-implied
+  const esrHrs = Object.keys(esr.hourly || {}).map(Number).sort((a,b)=>a-b);
+  const esrData = esrHrs.map(h => esr.hourly[h]);
+  const socHrs  = Object.keys(bat.soc_curve || {}).map(Number).sort((a,b)=>a-b);
+  const socData  = socHrs.map(h => bat.soc_curve[h]);
+  const socSource = hasRealESR ? 'ESR MW integration' : 'price-implied (ESR API pending)';
 
   el.innerHTML = `
     <!-- KPI Strip -->
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
       <div class="card" style="border-left:3px solid ${socColor}">
         <div class="kpi-label">Implied Grid SOC — HE${String(currentHr).padStart(2,'0')}</div>
-        <div style="font-size:32px;font-weight:700;color:${socColor};margin:8px 0">${soc}%</div>
-        <div style="background:#1e2130;border-radius:6px;height:10px;margin-top:8px">
+        <div style="font-size:36px;font-weight:700;color:${socColor};margin:10px 0">${soc.toFixed(1)}%</div>
+        <div style="background:#1e2130;border-radius:6px;height:12px;margin-bottom:8px">
           <div style="background:${socColor};width:${soc}%;height:100%;border-radius:6px;transition:width .5s"></div>
         </div>
-        <div style="font-size:11px;color:#555;margin-top:6px">Price-implied · Rolls forward from prior day's ending SOC</div>
+        <div style="font-size:11px;color:#555">Source: ${socSource} · Rolls forward from prior day</div>
       </div>
       <div class="card" style="border-left:3px solid ${esrColor}">
-        <div class="kpi-label">ERCOT Grid ESR — Live</div>
-        <div style="font-size:22px;font-weight:700;color:${esrColor};margin:8px 0">${esrLabel}</div>
-        <div style="font-size:11px;color:#555">${esr.data_source || 'price-implied only'} · As of ${L.as_of}</div>
+        <div class="kpi-label">ERCOT Grid ESR Net Output — Current</div>
+        <div style="font-size:28px;font-weight:700;color:${esrColor};margin:10px 0">${esrLabel}</div>
+        <div style="font-size:11px;color:#555">${esrSubtitle} · As of ${L.as_of}</div>
+        <div style="font-size:11px;color:#444;margin-top:6px">Negative = charging · Positive = discharging</div>
       </div>
+    </div>
+
+    <!-- ESR Net Output + SOC Curve side by side -->
+    <div class="two-col" style="margin-bottom:16px">
       <div class="card">
-        <div class="kpi-label">Thresholds</div>
-        <div style="font-size:12px;color:#c8cad4;line-height:2;margin-top:8px">
-          <span style="color:#4a9eff">⚡ Charge</span> below $${bat.charge_threshold}/MWh<br>
-          <span style="color:#555">◎ Neutral</span> $${bat.charge_threshold}–$${bat.discharge_threshold}/MWh<br>
-          <span style="color:#f0a500">↓ Discharge</span> above $${bat.discharge_threshold}/MWh
+        <div class="card-title">
+          ERCOT grid ESR net output by hour (MW)
+          <span style="font-size:10px;color:${hasRealESR?'#3dba6f':'#555'}">${hasRealESR?'● Live':'● No ESR data yet'}</span>
         </div>
-      </div>
-    </div>
-
-    <!-- ESR Actual + SOC Curve -->
-    <div class="two-col" style="margin-bottom:16px">
-      <div class="card">
-        <div class="card-title">ERCOT grid ESR net output by hour (MW) ${hasRealESR ? '<span style="color:#3dba6f;font-size:10px">● Live data</span>' : '<span style="color:#555;font-size:10px">● No ESR data</span>'}</div>
         <div class="chart-wrap"><canvas id="esr-actual-chart"></canvas></div>
+        <div style="font-size:10px;color:#333;margin-top:6px">Blue = charging (negative MW) · Red = discharging (positive MW)</div>
       </div>
       <div class="card">
-        <div class="card-title">Implied SOC curve — today intraday (%)</div>
+        <div class="card-title">Rolling implied SOC — today intraday (%)</div>
         <div class="chart-wrap"><canvas id="soc-curve-chart"></canvas></div>
+        <div style="font-size:10px;color:#333;margin-top:6px">${socSource}</div>
       </div>
     </div>
 
-    <!-- RT price + regional/node tables -->
-    <div class="two-col" style="margin-bottom:16px">
-      <div class="card">
-        <div class="card-title">Fleet avg RT price by hour ($/MWh)</div>
-        <div class="chart-wrap"><canvas id="bat-rt-chart"></canvas></div>
-      </div>
-    </div>
-
-    <!-- Per-node dispatch -->
-    <div class="card">
-      <div class="card-title">HEN fleet node dispatch — current implied status</div>
+    <!-- ESR hourly data table -->
+    ${hasRealESR ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">ERCOT ESR net output — hourly detail (MW)</div>
       <div class="table-scroll"><table>
         <thead><tr>
-          <th class="left">Node</th><th class="left">Region</th>
-          <th>RT Avg</th><th class="left">Dispatch Signal</th>
+          <th class="left">Hour Ending</th>
+          <th>ESR Net (MW)</th>
+          <th>Status</th>
+          <th>Implied SOC (%)</th>
         </tr></thead>
-        <tbody>${nodeRows}</tbody>
+        <tbody>
+          ${socHrs.map(h => {
+            const mw  = (esr.hourly || {})[h];
+            const s   = bat.soc_curve?.[h] ?? '—';
+            const col = mw == null ? '#555' : mw < 0 ? '#4a9eff' : '#e05050';
+            const lbl = mw == null ? '—' : mw < 0 ? `Charging` : `Discharging`;
+            return `<tr>
+              <td class="left" style="font-family:monospace">HE${String(h).padStart(2,'0')}</td>
+              <td style="color:${col};font-family:monospace">${mw != null ? (mw > 0 ? '+' : '') + mw.toFixed(0) + ' MW' : '—'}</td>
+              <td style="color:${col}">${lbl}</td>
+              <td style="font-family:monospace">${typeof s === 'number' ? s.toFixed(1) + '%' : s}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
       </table></div>
-      <div style="font-size:10px;color:#333;margin-top:8px">
-        Inferred from RT price vs charge/discharge thresholds · Updates every 15 min
+    </div>` : `
+    <div class="card" style="border:1px solid #2a2d3a;padding:24px;text-align:center;margin-bottom:16px">
+      <div style="font-size:13px;color:#555;margin-bottom:8px">ERCOT ESR API data pending</div>
+      <div style="font-size:12px;color:#444;line-height:1.7">
+        The <code style="color:#7fc8ff">rptesr-m/4_sec_esr_charging_mw</code> endpoint is being queried each run.<br>
+        Once it returns data, this page will show actual grid-wide battery charge/discharge MW<br>
+        and the SOC curve will be driven by real ESR net output integration.
       </div>
-    </div>`;
+    </div>`}`;
 
-  // ESR actual chart
-  const esrHrs = Object.keys(esr.hourly || {}).map(Number).sort((a,b)=>a-b);
-  const esrData = esrHrs.map(h => esr.hourly[h]);
+  // ESR net output chart
   destroyChart('esr-actual-chart');
-  charts['esr-actual-chart'] = new Chart(document.getElementById('esr-actual-chart'), {
-    type: 'bar',
-    data: {
-      labels: esrHrs.map(h => `HE${String(h).padStart(2,'0')}`),
-      datasets: [{
-        label: 'ESR Net Output (MW)',
-        data: esrData,
-        backgroundColor: esrData.map(v => v < 0 ? 'rgba(74,158,255,.7)' : 'rgba(224,80,80,.7)'),
-        borderColor:     esrData.map(v => v < 0 ? '#4a9eff' : '#e05050'),
-        borderWidth: 1,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: ctx => `${ctx.raw > 0 ? 'Discharging' : 'Charging'}: ${Math.abs(ctx.raw).toFixed(0)} MW` } }
+  if (esrHrs.length) {
+    charts['esr-actual-chart'] = new Chart(document.getElementById('esr-actual-chart'), {
+      type: 'bar',
+      data: {
+        labels: esrHrs.map(h => `HE${String(h).padStart(2,'0')}`),
+        datasets: [{ label: 'ESR Net MW', data: esrData,
+          backgroundColor: esrData.map(v => v < 0 ? 'rgba(74,158,255,.75)' : 'rgba(224,80,80,.75)'),
+          borderColor:     esrData.map(v => v < 0 ? '#4a9eff' : '#e05050'), borderWidth:1 }]
       },
-      scales: {
-        x: { ticks:{color:'#555',font:{size:9},maxRotation:45}, grid:{color:'#1e2130'} },
-        y: { ticks:{color:'#555',font:{size:9},callback: v => (v>0?'+':'')+v+' MW'}, grid:{color:'#1e2130'},
-             title:{display:true,text:'MW (negative=charging)',color:'#555',font:{size:10}} }
+      options: { responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{callbacks:{label: ctx => `${ctx.raw<0?'Charging':'Discharging'}: ${Math.abs(ctx.raw).toFixed(0)} MW`}}},
+        scales:{
+          x:{ticks:{color:'#555',font:{size:9},maxRotation:45},grid:{color:'#1e2130'}},
+          y:{ticks:{color:'#555',font:{size:9},callback:v=>(v>0?'+':'')+v+' MW'},grid:{color:'#1e2130'},
+             title:{display:true,text:'MW (negative = charging)',color:'#555',font:{size:10}}}
+        }
       }
-    }
-  });
+    });
+  } else {
+    const ctx = document.getElementById('esr-actual-chart').getContext('2d');
+    ctx.fillStyle = '#2a2d3a'; ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
+    ctx.fillStyle = '#444'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Awaiting ESR API data', ctx.canvas.width/2, ctx.canvas.height/2);
+  }
 
   // SOC curve chart
-  const socHrs = Object.keys(bat.soc_curve || {}).map(Number).sort((a,b)=>a-b);
-  const socData = socHrs.map(h => bat.soc_curve[h]);
-  const dispColors = socHrs.map(h => {
-    const d = bat.dispatch_curve?.[h];
-    return d==='charging_strong'?'#4a9eff':d==='charging'?'#7fc8ff':
-           d==='discharging'?'#f0a500':d==='discharging_strong'?'#e05050':'#555';
-  });
-
   destroyChart('soc-curve-chart');
-  const socMin = Math.max(0, Math.min(...socData) - 10);
-  const socMax = Math.min(100, Math.max(...socData) + 10);
-  charts['soc-curve-chart'] = new Chart(document.getElementById('soc-curve-chart'), {
-    type: 'line',
-    data: {
-      labels: socHrs.map(h => `HE${String(h).padStart(2,'0')}`),
-      datasets: [{
-        label: 'Implied SOC (%)',
-        data: socData,
-        borderColor: socColor,
-        backgroundColor: `${socColor}22`,
-        fill: true, tension: .3, pointRadius: 4,
-        pointBackgroundColor: dispColors,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color:'#666', font:{size:10} } } },
-      scales: {
-        x: { ticks:{color:'#555',font:{size:9},maxRotation:45}, grid:{color:'#1e2130'} },
-        y: { min: socMin, max: socMax, ticks:{color:'#555',font:{size:9},callback:v=>v+'%'}, grid:{color:'#1e2130'} }
+  if (socData.length) {
+    const socMin = Math.max(0,  Math.min(...socData) - 5);
+    const socMax = Math.min(100, Math.max(...socData) + 5);
+    charts['soc-curve-chart'] = new Chart(document.getElementById('soc-curve-chart'), {
+      type: 'line',
+      data: {
+        labels: socHrs.map(h => `HE${String(h).padStart(2,'0')}`),
+        datasets: [{ label: 'Implied SOC (%)', data: socData,
+          borderColor: socColor, backgroundColor: `${socColor}20`,
+          fill:true, tension:.3, pointRadius:3, pointBackgroundColor: socColor }]
+      },
+      options: { responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{labels:{color:'#666',font:{size:10}}}},
+        scales:{
+          x:{ticks:{color:'#555',font:{size:9},maxRotation:45},grid:{color:'#1e2130'}},
+          y:{min:socMin, max:socMax, ticks:{color:'#555',font:{size:9},callback:v=>v+'%'},grid:{color:'#1e2130'}}
+        }
       }
-    }
-  });
-
-  // RT price chart with charge/discharge zones
-  const rtHrs = Object.keys(bat.fleet_hourly_avg || {}).map(Number).sort((a,b)=>a-b);
-  const rtData = rtHrs.map(h => bat.fleet_hourly_avg[h]);
-  destroyChart('bat-rt-chart');
-  charts['bat-rt-chart'] = new Chart(document.getElementById('bat-rt-chart'), {
-    type: 'bar',
-    data: {
-      labels: rtHrs.map(h => `HE${String(h).padStart(2,'0')}`),
-      datasets: [{
-        label: 'Fleet avg RT ($/MWh)',
-        data: rtData,
-        backgroundColor: rtData.map(v =>
-          v < 0 ? 'rgba(74,158,255,.8)' :
-          v < bat.charge_threshold ? 'rgba(74,158,255,.5)' :
-          v < bat.discharge_threshold ? 'rgba(85,85,85,.5)' :
-          v < 100 ? 'rgba(240,165,0,.7)' : 'rgba(224,80,80,.8)'
-        ),
-        borderWidth: 0,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks:{color:'#555',font:{size:9},maxRotation:45}, grid:{color:'#1e2130'} },
-        y: { ticks:{color:'#555',font:{size:9}}, grid:{color:'#1e2130'} }
-      }
-    }
-  });
-}
+    });
+  }
 
 loadData();
 loadLive();
