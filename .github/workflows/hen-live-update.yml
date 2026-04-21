@@ -2,8 +2,8 @@ name: HEN Live Price Update
 
 on:
   schedule:
-    - cron: '0,15,30,45 11-23 * * 1-5'
-    - cron: '0,15,30,45 0-4  * * 2-6'
+    - cron: '0,15,30,45 11-23 * * *'
+    - cron: '0,15,30,45 0-4  * * *'
   workflow_dispatch:
 
 jobs:
