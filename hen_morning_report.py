@@ -781,7 +781,120 @@ def write_dashboard_json(data):
 
 # ── HISTORY JSON ─────────────────────────────────────────────────────────────
 
-def write_history_json(data, history_path="dashboard/history.json"):
+def _calc_daily_ending_soc(rt, data, token=None, sub_key=None, soc_start=50.0):
+    """
+    Calculate the implied ending SOC for yesterday using actual ERCOT ESR
+    charging MW data. Falls back to price-inference if API pull fails.
+
+    ESR endpoint returns ESRChargingMW:
+      negative = grid batteries net charging (SOC rises)
+      positive = grid batteries net discharging (SOC falls)
+
+    We normalize against total installed ERCOT battery capacity (~14,000 MW)
+    to convert MW to a % SOC change per hour.
+    """
+    ERCOT_BESS_CAPACITY_MW = 14000.0  # approximate installed ERCOT battery capacity
+    SOC_STEP_PER_MW_HR     = 100.0 / ERCOT_BESS_CAPACITY_MW  # % per MWh
+
+    # ── Try real ESR API first ──────────────────────────────────────────────
+    if token and sub_key:
+        try:
+            ESR_BASE = "https://api.ercot.com/api/public-data"
+            headers  = {
+                "Authorization":           f"Bearer {token}",
+                "Ocp-Apim-Subscription-Key": sub_key,
+                "Accept":                   "application/json",
+            }
+            # Pull yesterday's full day of ESR 4-second data
+            params = {
+                "AGCExecTimeUTCFrom": f"{YESTERDAY}T06:00:00Z",  # ERCOT day starts ~HE01 CT
+                "AGCExecTimeUTCTo":   f"{TODAY_STR}T05:59:59Z",
+                "size": 10000,
+            }
+            r = requests.get(
+                f"{ESR_BASE}/rptesr-m/4_sec_esr_charging_mw",
+                headers=headers, params=params, timeout=30
+            )
+            if r.ok:
+                body = r.json()
+                rows = body if isinstance(body, list) else body.get("data", [])
+                if rows:
+                    # Bucket by CT hour
+                    by_hour = defaultdict(list)
+                    for row in rows:
+                        if isinstance(row, dict):
+                            mw_val   = (row.get("ESRChargingMW") or
+                                       row.get("esrChargingMw") or
+                                       row.get("esrchargingmw"))
+                            exec_utc = (row.get("AGCExecTimeUTC") or
+                                       row.get("agcExecTimeUTC") or
+                                       row.get("agcexectimeutc") or "")
+                        elif isinstance(row, list) and len(row) >= 2:
+                            nums   = [x for x in row if isinstance(x, (int,float))
+                                      and not isinstance(x, bool)]
+                            mw_val = nums[-1] if nums else None
+                            exec_utc = str(row[0]) if row else ""
+                        else:
+                            continue
+                        if mw_val is None:
+                            continue
+                        try:
+                            # Convert UTC hour to CT hour (UTC-5)
+                            if "T" in str(exec_utc):
+                                utc_hr = int(str(exec_utc).split("T")[1].split(":")[0])
+                                ct_hr  = (utc_hr - 5) % 24
+                                he     = ct_hr + 1  # hour ending
+                                by_hour[he].append(float(mw_val))
+                        except Exception:
+                            pass
+
+                    if by_hour:
+                        soc = soc_start
+                        for he in range(1, 25):
+                            vals = by_hour.get(he, [])
+                            if not vals:
+                                continue
+                            avg_mw = sum(vals) / len(vals)
+                            # negative MW = charging → SOC up
+                            # positive MW = discharging → SOC down
+                            delta = -avg_mw * SOC_STEP_PER_MW_HR
+                            soc   = max(0, min(100, soc + delta))
+                        ending = round(soc, 1)
+                        print(f"   ESR SOC calc: {len(rows)} samples · "
+                              f"ending SOC = {ending}%")
+                        return ending
+        except Exception as e:
+            print(f"   WARN: ESR SOC pull failed — {e}, falling back to price inference")
+
+    # ── Fallback: price-inference ───────────────────────────────────────────
+    print("   SOC calc: using price inference fallback")
+    CHARGE_THRESHOLD    = 15.0
+    DISCHARGE_THRESHOLD = 50.0
+    SOC_STEP            = 4.0
+    rt_hourly = data.get("rt_hourly", {})
+    soc = soc_start
+    for hr in range(1, 25):
+        vals = [rt_hourly.get(node, {}).get(str(hr))
+                for node in rt_hourly
+                if rt_hourly.get(node, {}).get(str(hr)) is not None]
+        if not vals:
+            continue
+        price = sum(vals) / len(vals)
+        if price < 0:
+            delta = SOC_STEP * 1.5
+        elif price < CHARGE_THRESHOLD:
+            delta = SOC_STEP
+        elif price < DISCHARGE_THRESHOLD:
+            delta = 0
+        elif price < 100:
+            delta = -SOC_STEP
+        else:
+            delta = -SOC_STEP * 1.5
+        soc = max(0, min(100, soc + delta))
+    return round(soc, 1)
+
+
+def write_history_json(data, history_path="dashboard/history.json", token=None, sub_key=None):
     """
     Maintains a rolling 5-day history file.
     Each day's entry contains fleet-level and per-node summaries.
@@ -851,6 +964,9 @@ def write_history_json(data, history_path="dashboard/history.json"):
         },
         "nodes":    nodes_snapshot,
         "regional": regional_snapshot,
+        "battery": {
+            "ending_soc": _calc_daily_ending_soc(rt, data, token=token, sub_key=sub_key),
+        },
     }
 
     # Load existing history
@@ -1104,7 +1220,7 @@ def main():
         f.write(html)
     print("   Report written to morning_report.html")
     write_dashboard_json(data)
-    write_history_json(data)
+    write_history_json(data, token=token, sub_key=sub_key)
 
     # Load history for AI context
     try:
