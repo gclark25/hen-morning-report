@@ -1,47 +1,59 @@
 {
-  "generated_at": "2026-04-20",
+  "generated_at": "2026-04-21",
   "type": "morning",
-  "fleet_narrative": "Yesterday (04-20) delivered exceptional pricing with all 32 HEN nodes hitting RT >$100/MWh\u2014a rare all-spike event\u2014driving fleet average to $61.4/MWh amid moderate load (50.4 GW) and declining renewables (14.8 GW wind, 18.2 GW solar). This represents a sharp pivot from recent oversupply days and signals strong discharge economics across the entire portfolio, particularly in West Texas where DART compression reached \u221236.77.",
-  "trend_analysis": "Over five days, ERCOT transitioned from negative DART (oversupply on 04-16) through volatile mixed conditions (04-19) to yesterday's sustained spike regime with zero negative-price nodes. West Texas has compressed hardest (\u221236.77 DART avg yesterday vs. +10.18 on 04-16), indicating congestion and renewable curtailment; North Texas remains less volatile but consistently negative in DART. Load has stabilized near 50 GW while wind dropped 45% from peak, reducing the renewable cushion.",
+  "fleet_narrative": "Yesterday (4/21) delivered modest DART arbitrage with West Texas nodes capturing $7.87/MWh avg premium while fleet RT settled at $39.6/MWh\u2014a recovery from two consecutive days of severe compression. The fleet faced competing forces: elevated wind (19.5 GW) and moderate solar (13.5 GW) suppressed overall RT prices, yet only 3 spike nodes emerged, suggesting constrained scarcity value but stable regional margins for selective deployment.",
+  "trend_analysis": "The 5-day window reveals volatile DART swings: West Texas collapsed from +$10.18 (4/16) to -$36.77 (4/20) before rebounding to +$7.87 (4/21), indicating severe intraday compression dynamics tied to renewable timing mismatches. Spike node frequency spiked to 32 nodes on 4/20 (the high-stress day) but contracted to just 3 on 4/21, while negative-price nodes normalized from 22 (4/19) to zero (4/20) to 2 (4/21), suggesting stabilizing supply-demand balance. Wind volatility (26.7 GW down to 14.5 GW then back to 19.5 GW) is the primary driver of regional DART compression.",
   "anomalies": [
     {
       "node": "GRDNE_ESR_RN",
       "region": "West Texas",
-      "flag": "Extreme DART compression",
-      "detail": "DART of \u221249.43 is outlier-level, suggesting severe localized congestion or transmission constraint pricing in West Texas that warrants real-time dispatch review."
+      "flag": "Extreme intraday volatility",
+      "detail": "Largest negative DART (-$9.08) paired with highest intraday spread (9.59) and simultaneous spike-node status (>$100 RT) indicates severe congestion or local constraint relief cycles within the same settlement day."
     },
     {
-      "node": "OLNEYTN_RN",
-      "region": "North Texas",
-      "flag": "DART anomaly positive spread",
-      "detail": "Only top-5 DART node with \u22129.39 (least negative) despite spiking to >$100/MWh RT, indicating DA underpriced this location relative to intraday tightening."
+      "node": "GOMZ_RN",
+      "region": "West Texas",
+      "flag": "Negative RT pricing paradox",
+      "detail": "Achieved top DART performer status (+$9.73) despite registering negative RT prices, suggesting DA bids were significantly above clearing while intraday oversupply resolved\u2014strong arbitrage signal but unusual pattern."
     },
     {
-      "node": "PAULN_RN",
+      "node": "TOYAH_RN",
+      "region": "West Texas",
+      "flag": "Negative RT pricing paradox",
+      "detail": "Second-best DART node (+$9.69) also experienced negative RT pricing, reinforcing West Texas oversupply conditions that reward forward-position holders at DA stage."
+    },
+    {
+      "node": "LFSTH_RN",
       "region": "North Texas",
-      "flag": "High intraday volatility",
-      "detail": "Despite \u221211.33 DART, intraday spread of 5.76 suggests real-time price swings within the settlement hour; monitor for operational hedging opportunities."
+      "flag": "Weak DART despite high spread",
+      "detail": "North Texas shows anemic DART (+0.08 regional avg) despite individual intraday spreads of 1.58, suggesting DA prices are being set too low relative to subsequent RT realizations."
+    },
+    {
+      "node": "WLTC_ESR_RN",
+      "region": "Coastal",
+      "flag": "Coastal underperformance",
+      "detail": "Coastal region DART (2.66 avg) lags West Texas by 5.21/MWh; persistent low pricing in this region across the 5-day window suggests structural headwinds or transmission constraints limiting arbitrage potential."
     }
   ],
   "nodes_to_watch": [
     {
       "node": "GRDNE_ESR_RN",
       "region": "West Texas",
-      "reason": "Extreme \u221249.43 DART and 10.55 intraday spread signal a structurally constrained node where discharge timing and volume can move margin significantly; prioritize for today's dispatch."
+      "reason": "Monitor for repeat of 9.59 intraday volatility and spike-node concurrence; if pattern repeats, represents highest-risk/highest-reward deployment opportunity but may indicate local reliability stress requiring strategic reserve positioning."
     },
     {
-      "node": "JDKNS_RN",
+      "node": "GOMZ_RN",
       "region": "West Texas",
-      "reason": "\u221237.3 DART with low intraday volatility (4.5) suggests stable, predictable high RT pricing; monitor load forecast for sustained premium conditions through today."
+      "reason": "Top DART performer with negative RT pricing suggests future negative-price windows are likely; front-load charging DA bids here and prepare for deep discharge cycles if wind ramps cause intraday oversupply."
     },
     {
-      "node": "MNWL_BESS_RN",
+      "node": "LFSTH_RN",
       "region": "North Texas",
-      "reason": "Top-5 DART performer (\u221211.52) with tight 5.65 intraday spread indicates DA-RT price discovery is working; track if North Texas renewable curtailment eases today."
+      "reason": "Worst-performing region (North Texas 0.08 avg DART) despite measurable intraday spreads indicates DA underpricing; test higher DA charge bids here to capture tail-risk RT rally potential from load spikes or sudden wind drops."
     }
   ],
-  "market_conditions": "Extremely tight ERCOT market yesterday with 100% of HEN nodes spiking (>$100/MWh RT), zero negative-price pockets, and West Texas experiencing severe localized congestion, all driven by load near 50 GW and renewable output in structural decline.",
+  "market_conditions": "ERCOT experienced moderate stress with normalized wind and solar output (19.5 GW, 13.5 GW respectively) supporting 51.4 GW load without widespread scarcity, resulting in balanced but regionally fragmented pricing with West Texas commanding strong forward premiums while North Texas and Coastal remained depressed.",
   "charging_signal": "bullish",
-  "charging_rationale": "With $61.4/MWh fleet average RT, zero negative-price nodes, and all 32 locations >$100/MWh, today's discharge is more lucrative than charging; aggressive discharge posture is warranted unless DA pricing signals mean reversion by mid-day.",
-  "data_date": "2026-04-20"
+  "charging_rationale": "West Texas DART premium of +$7.87 combined with elevated wind (19.5 GW) and moderate solar penetration create favorable DA charge conditions; negative-node clustering suggests intraday oversupply risk, rewarding overnight/early-morning DA charging positions for discharge into afternoon/evening scarcity.",
+  "data_date": "2026-04-21"
 }
