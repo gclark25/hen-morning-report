@@ -1332,9 +1332,39 @@ function renderBattery() {
   const socHrs  = Object.keys(bat.soc_curve || {}).map(Number).sort((a,b)=>a-b);
   const socData  = socHrs.map(h => bat.soc_curve[h]);
   const socSource = hasRealESR ? 'ESR MW integration' : 'price-implied (ESR API pending)';
+  const esrDotColor = hasRealESR ? '#3dba6f' : '#555';
+  const esrDotLabel = hasRealESR ? '● Live' : '● No ESR data yet';
+
+  // Build detail section as variable to avoid nested template literal issues
+  let detailHTML = '';
+  if (hasRealESR) {
+    const tableRows = socHrs.map(h => {
+      const mw  = (esr.hourly || {})[h];
+      const s   = bat.soc_curve ? bat.soc_curve[h] : '—';
+      const col = mw == null ? '#555' : mw < 0 ? '#4a9eff' : '#e05050';
+      const lbl = mw == null ? '—' : mw < 0 ? 'Charging' : 'Discharging';
+      const mwStr = mw != null ? (mw > 0 ? '+' : '') + mw.toFixed(0) + ' MW' : '—';
+      const socStr = typeof s === 'number' ? s.toFixed(1) + '%' : String(s);
+      return '<tr><td class="left" style="font-family:monospace">HE' + String(h).padStart(2,'0') + '</td>'
+        + '<td style="color:' + col + ';font-family:monospace">' + mwStr + '</td>'
+        + '<td style="color:' + col + '">' + lbl + '</td>'
+        + '<td style="font-family:monospace">' + socStr + '</td></tr>';
+    }).join('');
+    detailHTML = '<div class="card" style="margin-bottom:16px">'
+      + '<div class="card-title">ERCOT ESR net output — hourly detail (MW)</div>'
+      + '<div class="table-scroll"><table><thead><tr>'
+      + '<th class="left">Hour Ending</th><th>ESR Net (MW)</th><th>Status</th><th>Implied SOC (%)</th>'
+      + '</tr></thead><tbody>' + tableRows + '</tbody></table></div></div>';
+  } else {
+    detailHTML = '<div class="card" style="border:1px solid #2a2d3a;padding:24px;text-align:center;margin-bottom:16px">'
+      + '<div style="font-size:13px;color:#555;margin-bottom:8px">ERCOT ESR API data pending</div>'
+      + '<div style="font-size:12px;color:#444;line-height:1.7">'
+      + 'The <code style="color:#7fc8ff">rptesr-m/4_sec_esr_charging_mw</code> endpoint is being queried each run. '
+      + 'Once it returns data, the SOC curve will be driven by real ESR net output integration.'
+      + '</div></div>';
+  }
 
   el.innerHTML = `
-    <!-- KPI Strip -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
       <div class="card" style="border-left:3px solid ${socColor}">
         <div class="kpi-label">Implied Grid SOC — HE${String(currentHr).padStart(2,'0')}</div>
@@ -1351,13 +1381,10 @@ function renderBattery() {
         <div style="font-size:11px;color:#444;margin-top:6px">Negative = charging · Positive = discharging</div>
       </div>
     </div>
-
-    <!-- ESR Net Output + SOC Curve side by side -->
     <div class="two-col" style="margin-bottom:16px">
       <div class="card">
-        <div class="card-title">
-          ERCOT grid ESR net output by hour (MW)
-          <span style="font-size:10px;color:${hasRealESR?'#3dba6f':'#555'}">${hasRealESR?'● Live':'● No ESR data yet'}</span>
+        <div class="card-title">ERCOT grid ESR net output by hour (MW)
+          <span style="font-size:10px;color:${esrDotColor}">${esrDotLabel}</span>
         </div>
         <div class="chart-wrap"><canvas id="esr-actual-chart"></canvas></div>
         <div style="font-size:10px;color:#333;margin-top:6px">Blue = charging (negative MW) · Red = discharging (positive MW)</div>
@@ -1368,42 +1395,7 @@ function renderBattery() {
         <div style="font-size:10px;color:#333;margin-top:6px">${socSource}</div>
       </div>
     </div>
-
-    <!-- ESR hourly data table -->
-    ${hasRealESR ? `
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-title">ERCOT ESR net output — hourly detail (MW)</div>
-      <div class="table-scroll"><table>
-        <thead><tr>
-          <th class="left">Hour Ending</th>
-          <th>ESR Net (MW)</th>
-          <th>Status</th>
-          <th>Implied SOC (%)</th>
-        </tr></thead>
-        <tbody>
-          ${socHrs.map(h => {
-            const mw  = (esr.hourly || {})[h];
-            const s   = bat.soc_curve?.[h] ?? '—';
-            const col = mw == null ? '#555' : mw < 0 ? '#4a9eff' : '#e05050';
-            const lbl = mw == null ? '—' : mw < 0 ? 'Charging' : 'Discharging';
-            return `<tr>
-              <td class="left" style="font-family:monospace">HE${String(h).padStart(2,'0')}</td>
-              <td style="color:${col};font-family:monospace">${mw != null ? (mw > 0 ? '+' : '') + mw.toFixed(0) + ' MW' : '—'}</td>
-              <td style="color:${col}">${lbl}</td>
-              <td style="font-family:monospace">${typeof s === 'number' ? s.toFixed(1) + '%' : s}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table></div>
-    </div>` : `
-    <div class="card" style="border:1px solid #2a2d3a;padding:24px;text-align:center;margin-bottom:16px">
-      <div style="font-size:13px;color:#555;margin-bottom:8px">ERCOT ESR API data pending</div>
-      <div style="font-size:12px;color:#444;line-height:1.7">
-        The <code style="color:#7fc8ff">rptesr-m/4_sec_esr_charging_mw</code> endpoint is being queried each run.<br>
-        Once it returns data, this page will show actual grid-wide battery charge/discharge MW<br>
-        and the SOC curve will be driven by real ESR net output integration.
-      </div>
-    </div>`}`;
+    ${detailHTML}`;
 
   // ESR net output chart
   destroyChart('esr-actual-chart');
