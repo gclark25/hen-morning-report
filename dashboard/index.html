@@ -1385,7 +1385,7 @@ function renderBattery() {
             const mw  = (esr.hourly || {})[h];
             const s   = bat.soc_curve?.[h] ?? '—';
             const col = mw == null ? '#555' : mw < 0 ? '#4a9eff' : '#e05050';
-            const lbl = mw == null ? '—' : mw < 0 ? `Charging` : `Discharging`;
+            const lbl = mw == null ? '—' : mw < 0 ? 'Charging' : 'Discharging';
             return `<tr>
               <td class="left" style="font-family:monospace">HE${String(h).padStart(2,'0')}</td>
               <td style="color:${col};font-family:monospace">${mw != null ? (mw > 0 ? '+' : '') + mw.toFixed(0) + ' MW' : '—'}</td>
