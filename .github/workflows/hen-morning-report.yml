@@ -9,9 +9,15 @@ jobs:
   morning-report:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+      issues: write
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,11 +34,6 @@ jobs:
           ERCOT_PASSWORD:         ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
           ERCOT_NODES:            ${{ secrets.ERCOT_TEST_NODES }}
-
-          # ── Email ────────────────────────────────────────────────────────
-          SENDGRID_API_KEY:       ${{ secrets.SENDGRID_API_KEY }}
-          FROM_EMAIL:             ${{ secrets.FROM_EMAIL }}
-          TO_EMAILS:              ${{ secrets.TO_EMAILS }}
 
           # ── Claude AI ────────────────────────────────────────────────────
           ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
@@ -54,6 +55,16 @@ jobs:
 
         run: python hen_morning_report.py
 
+      - name: Commit dashboard data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp latest.json dashboard/latest.json
+          git add dashboard/latest.json dashboard/history.json
+          git add dashboard/ai_analysis.json || true
+          git diff --staged --quiet || git commit -m "Data update — $(date -u +%Y-%m-%d)"
+          git push
+
       - name: Upload report as artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -69,8 +80,8 @@ jobs:
           script: |
             await github.rest.issues.create({
               owner: context.repo.owner,
-              repo: context.repo.repo,
+              repo:  context.repo.repo,
               title: `Morning report failed - ${new Date().toISOString().slice(0,10)}`,
-              body: `Pipeline failed. Check run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              body:  `Pipeline failed. Check run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               labels: ['report-failure']
             })
