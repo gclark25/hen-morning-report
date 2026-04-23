@@ -2,11 +2,8 @@ name: HEN Daily Morning Report
 
 on:
   schedule:
-    - cron: '0 11 * * *'
+    - cron: '0 11 * * 1-5'
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   morning-report:
@@ -15,8 +12,6 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,23 +23,36 @@ jobs:
 
       - name: Run morning report
         env:
-          ERCOT_USERNAME: ${{ secrets.ERCOT_USERNAME }}
-          ERCOT_PASSWORD: ${{ secrets.ERCOT_PASSWORD }}
+          # ── ERCOT ────────────────────────────────────────────────────────
+          ERCOT_USERNAME:         ${{ secrets.ERCOT_USERNAME }}
+          ERCOT_PASSWORD:         ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
-          ERCOT_NODES: ${{ secrets.ERCOT_TEST_NODES }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python hen_morning_report.py
+          ERCOT_NODES:            ${{ secrets.ERCOT_TEST_NODES }}
 
-      - name: Commit data files back to repo
-        if: success()
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp latest.json dashboard/latest.json
-          git add dashboard/latest.json dashboard/history.json
-          git add dashboard/ai_analysis.json || true
-          git diff --staged --quiet || git commit -m "Data update — $(date -u +%Y-%m-%d)"
-          git push
+          # ── Email ────────────────────────────────────────────────────────
+          SENDGRID_API_KEY:       ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL:             ${{ secrets.FROM_EMAIL }}
+          TO_EMAILS:              ${{ secrets.TO_EMAILS }}
+
+          # ── Claude AI ────────────────────────────────────────────────────
+          ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # ── AG2 Trader weather & load forecasts ──────────────────────────
+          AG2_ACCOUNT:            ${{ secrets.AG2_ACCOUNT }}
+          AG2_PROFILE:            ${{ secrets.AG2_PROFILE }}
+          AG2_PASSWORD:           ${{ secrets.AG2_PASSWORD }}
+
+          # ── Modo Energy custom indices ───────────────────────────────────
+          MODO_API_KEY:           ${{ secrets.MODO_API_KEY }}
+          MODO_INDEX_IDS:         ${{ secrets.MODO_INDEX_IDS }}
+
+          # ── PowerTools asset availability ────────────────────────────────
+          POWERTOOLS_URL:         ${{ secrets.POWERTOOLS_URL }}
+          POWERTOOLS_API_KEY:     ${{ secrets.POWERTOOLS_API_KEY }}
+          POWERTOOLS_USERNAME:    ${{ secrets.POWERTOOLS_USERNAME }}
+          POWERTOOLS_PASSWORD:    ${{ secrets.POWERTOOLS_PASSWORD }}
+
+        run: python hen_morning_report.py
 
       - name: Upload report as artifact
         if: always()
@@ -54,19 +62,15 @@ jobs:
           path: morning_report.html
           retention-days: 30
 
-      - name: Deploy dashboard to Cloudflare Pages
-        if: success()
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: |
-          mkdir -p deploy
-          cp dashboard/index.html       deploy/index.html
-          cp dashboard/latest.json      deploy/latest.json
-          cp dashboard/history.json     deploy/history.json
-          cp dashboard/ai_analysis.json deploy/ai_analysis.json || true
-          printf '/live.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/latest.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/history.json\n  Cache-Control: no-store, no-cache, must-revalidate\n/ai_analysis.json\n  Cache-Control: no-store, no-cache, must-revalidate\n' > deploy/_headers
-          npm install -g wrangler
-          wrangler pages deploy deploy/ \
-            --project-name=hen-dashboard \
-            --branch=main \
-            --commit-dirty=true
+      - name: Alert on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Morning report failed - ${new Date().toISOString().slice(0,10)}`,
+              body: `Pipeline failed. Check run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              labels: ['report-failure']
+            })
