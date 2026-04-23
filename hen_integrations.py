@@ -1377,6 +1377,8 @@ def collect_ercot_forecasts(token, sub_key):
     today     = date.today()
     day7_end  = (today + timedelta(days=7)).isoformat()
     day2_end  = (today + timedelta(days=2)).isoformat()
+    yesterday = (today - timedelta(days=1))
+    yesterday_str = yesterday.isoformat()
     today_str = today.isoformat()
 
     def _ercot_get(path, params):
@@ -1431,21 +1433,21 @@ def collect_ercot_forecasts(token, sub_key):
     print("  Pulling ERCOT short-term load forecast...")
     load_rows = _ercot_get(
         "np3-565-cd/lf_by_model_weather_zone",
-        {"deliveryDateFrom": today_str, "deliveryDateTo": day7_end,
+        {"deliveryDateFrom": yesterday_str, "deliveryDateTo": day7_end,
          "size": 5000}
     )
 
     print("  Pulling ERCOT wind power forecast...")
     wind_rows = _ercot_get(
         "np4-732-cd/wpp_hrly_avrg_actl_fcast",
-        {"deliveryDateFrom": today_str, "deliveryDateTo": day7_end,
+        {"deliveryDateFrom": yesterday_str, "deliveryDateTo": day7_end,
          "size": 5000}
     )
 
     print("  Pulling ERCOT solar PV forecast...")
     solar_rows = _ercot_get(
         "np4-745-cd/spp_hrly_actual_fcast_geo",
-        {"deliveryDateFrom": today_str, "deliveryDateTo": day7_end,
+        {"deliveryDateFrom": yesterday_str, "deliveryDateTo": day7_end,
          "size": 5000}
     )
 
@@ -1526,7 +1528,7 @@ def collect_ercot_forecasts(token, sub_key):
     # ── Build 24-hour hourly series (today + tomorrow) ─────────────────────
     hourly_keys = sorted(set(
         list(load_by_dt.keys()) + list(wind_by_dt.keys()) + list(solar_by_dt.keys())
-    ))[:48]  # cap at 48 hours
+    ))[:216]  # yesterday + today + 7 days = ~9 days max
 
     h24_timestamps = []
     h24_load = []
@@ -1548,7 +1550,7 @@ def collect_ercot_forecasts(token, sub_key):
     # ── Build 7-day daily series ───────────────────────────────────────────
     all_dates = sorted(set(k[:10] for k in
         list(load_by_dt.keys()) + list(wind_by_dt.keys()) + list(solar_by_dt.keys())
-    ))[:7]
+    ))[:9]  # yesterday + today + 7 forward
 
     d7_dates     = []
     d7_load_peak = []
