@@ -1,24 +1,39 @@
 """
-HEN — Daily ERCOT Morning Report v2
+HEN — Daily ERCOT Morning Report v3
 =====================================
-Enhancements over v1:
-  - Hourly RT and DA price curves per node (96 intervals → 24 hourly averages)
-  - Top/Bottom DART spread analysis with regional groupings
-  - Hourly gross load, wind, solar curves for duck curve visibility
-  - Regional node map data for dashboard Texas map
-  - Full latest.json schema for dashboard click-through node view
+
+Enhancements over v2:
+- Integrated AG2 Trader weather + ERCOT load forecasts (wsitrader.com)
+- ERCOT binding constraint summary with per-asset shift factors
+- Modo Energy custom index performance (4 HEN indices)
+- PowerTools asset availability and outage schedule
+- Extended AI morning analysis with all new data sources
 
 REQUIRED ENVIRONMENT VARIABLES:
-  ERCOT_USERNAME          apiexplorer.ercot.com email
-  ERCOT_PASSWORD          apiexplorer.ercot.com password
-  ERCOT_SUBSCRIPTION_KEY  API Explorer primary key
-  ERCOT_NODES             comma-separated settlement point names
+
+  ERCOT_USERNAME            apiexplorer.ercot.com email
+  ERCOT_PASSWORD            apiexplorer.ercot.com password
+  ERCOT_SUBSCRIPTION_KEY    API Explorer primary key
+  ERCOT_NODES               comma-separated settlement point names
+
+  AG2_ACCOUNT               wsitrader.com username
+  AG2_PROFILE               wsitrader.com email address
+  AG2_PASSWORD              wsitrader.com password
+
+  MODO_API_KEY              Modo Energy X-Token (modoenergy.com/profile/developers)
+  MODO_INDEX_IDS            Optional — "Name:id,Name:id,..." to skip discovery
+
+  POWERTOOLS_URL            Full URL to your PowerTools platform
+  POWERTOOLS_API_KEY        PowerTools Bearer token (if API key auth)
+  POWERTOOLS_USERNAME       PowerTools username (if basic auth)
+  POWERTOOLS_PASSWORD       PowerTools password (if basic auth)
 
 OPTIONAL:
-  SENDGRID_API_KEY        SendGrid API key
-  FROM_EMAIL              verified sender address
-  TO_EMAILS               comma-separated recipient list
-  S3_BUCKET               archives report + JSON to S3
+  SENDGRID_API_KEY          SendGrid API key
+  FROM_EMAIL                verified sender address
+  TO_EMAILS                 comma-separated recipient list
+  S3_BUCKET                 archives report + JSON to S3
+  ANTHROPIC_API_KEY         Claude AI analysis
 """
 
 import os
@@ -29,6 +44,8 @@ import requests
 from datetime import date, timedelta
 from urllib.parse import quote
 from collections import defaultdict
+
+from hen_integrations import collect_all_integrations
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
@@ -67,38 +84,38 @@ REGIONS = {
 
 # Approximate lat/lon for each node — for Texas map on dashboard
 NODE_COORDS = {
-    "TOYAH_RN":     (31.32, -103.80),
-    "SADLBACK_RN":  (31.10, -103.50),
-    "FAULKNER_RN":  (31.45, -103.20),
-    "COYOTSPR_RN":  (30.95, -103.65),
-    "LONESTAR_RN":  (31.60, -102.90),
-    "RTLSNAKE_BT":  (31.75, -102.70),
-    "CEDRVALE_RN":  (31.20, -102.80),
-    "SBEAN_BESS":   (31.35, -102.50),
-    "GOMZ_RN":      (31.55, -102.20),
-    "GRDNE_ESR_RN": (31.80, -101.90),
-    "JDKNS_RN":     (32.10, -101.60),
-    "SANDLAKE_RN":  (31.65, -101.40),
-    "OLNEYTN_RN":   (33.37, -98.75),
-    "DIBOL_RN":     (33.10, -98.50),
-    "FRMRSVLW_RN":  (33.65, -98.10),
-    "MNWL_BESS_RN": (33.20, -97.90),
-    "LFSTH_RN":     (33.55, -97.65),
-    "PAULN_RN":     (33.80, -97.40),
-    "CISC_RN":      (32.85, -98.00),
-    "MV_VALV4_RN":  (28.70, -97.10),
-    "WLTC_ESR_RN":  (28.45, -97.40),
-    "MAINLAND_RN":  (29.55, -95.10),
-    "FALFUR_RN":    (27.22, -98.14),
-    "PAVLOV_BT_RN": (27.80, -97.50),
-    "POTEETS_RN":   (29.05, -98.57),
-    "TYNAN_RN":     (28.20, -97.80),
-    "CATARINA_B1":  (28.35, -99.62),
-    "HOLCOMB_RN1":  (32.70, -102.10),
-    "HAMI_BESS_RN": (31.68, -100.13),
-    "JUNCTION_RN":  (30.49, -99.77),
-    "RUSSEKST_RN":  (29.85, -98.50),
-    "FTDUNCAN_RN":  (29.37, -100.44),
+    "TOYAH_RN":      (31.32, -103.80),
+    "SADLBACK_RN":   (31.10, -103.50),
+    "FAULKNER_RN":   (31.45, -103.20),
+    "COYOTSPR_RN":   (30.95, -103.65),
+    "LONESTAR_RN":   (31.60, -102.90),
+    "RTLSNAKE_BT":   (31.75, -102.70),
+    "CEDRVALE_RN":   (31.20, -102.80),
+    "SBEAN_BESS":    (31.35, -102.50),
+    "GOMZ_RN":       (31.55, -102.20),
+    "GRDNE_ESR_RN":  (31.80, -101.90),
+    "JDKNS_RN":      (32.10, -101.60),
+    "SANDLAKE_RN":   (31.65, -101.40),
+    "OLNEYTN_RN":    (33.37,  -98.75),
+    "DIBOL_RN":      (33.10,  -98.50),
+    "FRMRSVLW_RN":   (33.65,  -98.10),
+    "MNWL_BESS_RN":  (33.20,  -97.90),
+    "LFSTH_RN":      (33.55,  -97.65),
+    "PAULN_RN":      (33.80,  -97.40),
+    "CISC_RN":       (32.85,  -98.00),
+    "MV_VALV4_RN":   (28.70,  -97.10),
+    "WLTC_ESR_RN":   (28.45,  -97.40),
+    "MAINLAND_RN":   (29.55,  -95.10),
+    "FALFUR_RN":     (27.22,  -98.14),
+    "PAVLOV_BT_RN":  (27.80,  -97.50),
+    "POTEETS_RN":    (29.05,  -98.57),
+    "TYNAN_RN":      (28.20,  -97.80),
+    "CATARINA_B1":   (28.35,  -99.62),
+    "HOLCOMB_RN1":   (32.70, -102.10),
+    "HAMI_BESS_RN":  (31.68, -100.13),
+    "JUNCTION_RN":   (30.49,  -99.77),
+    "RUSSEKST_RN":   (29.85,  -98.50),
+    "FTDUNCAN_RN":   (29.37, -100.44),
 }
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
@@ -128,9 +145,9 @@ def get_token(username, password, sub_key):
 
 def ercot_get(path, token, sub_key, params=None):
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization":             f"Bearer {token}",
         "Ocp-Apim-Subscription-Key": sub_key,
-        "Accept": "application/json",
+        "Accept":                    "application/json",
     }
     p = {"size": 1000}
     if params:
@@ -155,7 +172,7 @@ def safe_float(val):
 
 def extract_price_with_interval(row):
     """
-    Extract (hour, interval, price) from an RT price row.
+    Extract (hour, price) from an RT price row.
     RT row positional format: [deliveryDate, hour, interval, settlementPoint, type, price, ...]
     Returns (hour_int, price_float) or (None, None)
     """
@@ -211,22 +228,18 @@ def collect_data(token, sub_key):
         for row in rows:
             if not isinstance(row, list) or len(row) < 3:
                 continue
-            d    = str(row[0])[:10]
-            # row[1] is the hour string e.g. "14:00"
+            d = str(row[0])[:10]
             try:
                 hr = int(str(row[1]).split(":")[0])
             except (ValueError, AttributeError):
                 hr = 0
             nums = [x for x in row[1:] if isinstance(x, (int, float))
                     and not isinstance(x, bool)]
-            val  = nums[-1] if nums else 0
+            val = nums[-1] if nums else 0
             if d and val:
                 by_day_hour[d][hr].append(float(val))
                 by_day[d].append(float(val))
-        # Daily peak (GW)
-        data["gross_load"] = {d: round(max(v) / 1000, 1)
-                              for d, v in by_day.items() if v}
-        # Hourly curve for most recent day (GW)
+        data["gross_load"] = {d: round(max(v) / 1000, 1) for d, v in by_day.items() if v}
         if by_day_hour:
             latest_load_day = sorted(by_day_hour.keys())[-1]
             data["gross_load_hourly"] = {
@@ -239,7 +252,7 @@ def collect_data(token, sub_key):
         print(f"    {len(data['gross_load'])} days · hourly curve built")
     except Exception as e:
         print(f"    WARN: load failed — {e}")
-        data["gross_load"] = {}
+        data["gross_load"]        = {}
         data["gross_load_hourly"] = {}
 
     # ── Wind — hourly ────────────────────────────────────────────────────────
@@ -268,7 +281,7 @@ def collect_data(token, sub_key):
         print(f"    {len(data['wind'])} days · hourly curve built")
     except Exception as e:
         print(f"    WARN: wind failed — {e}")
-        data["wind"] = {}
+        data["wind"]        = {}
         data["wind_hourly"] = {}
 
     # ── Solar — hourly ───────────────────────────────────────────────────────
@@ -297,24 +310,25 @@ def collect_data(token, sub_key):
         print(f"    {len(data['solar'])} days · hourly curve built")
     except Exception as e:
         print(f"    WARN: solar failed — {e}")
-        data["solar"] = {}
+        data["solar"]        = {}
         data["solar_hourly"] = {}
 
     # ── RT + DA prices — hourly per node ────────────────────────────────────
     print(f"  Pulling RT + DA prices for {len(NODES)} nodes (hourly)...")
-    rt_summary = {}   # node → {avg, max, min}
-    rt_hourly  = {}   # node → {hour: avg_price}
-    da_summary = {}   # node → {avg, max}
-    da_hourly  = {}   # node → {hour: price}
+    rt_summary = {}
+    rt_hourly  = {}
+    da_summary = {}
+    da_hourly  = {}
 
     for node in NODES:
         time.sleep(3)
+
         # RT prices — aggregate 4 x 15-min intervals into hourly averages
         try:
             rows = ercot_get("np6-905-cd/spp_node_zone_hub", token, sub_key,
-                             {"settlementPoint": node,
-                              "deliveryDateFrom": YESTERDAY,
-                              "deliveryDateTo":   YESTERDAY})
+                             {"settlementPoint":   node,
+                              "deliveryDateFrom":  YESTERDAY,
+                              "deliveryDateTo":    YESTERDAY})
             hour_buckets = defaultdict(list)
             all_prices   = []
             for row in rows:
@@ -336,12 +350,13 @@ def collect_data(token, sub_key):
             print(f"    WARN: RT {node} — {e}")
 
         time.sleep(3)
+
         # DA prices — already hourly
         try:
             rows = ercot_get("np4-190-cd/dam_stlmnt_pnt_prices", token, sub_key,
-                             {"settlementPoint": node,
-                              "deliveryDateFrom": YESTERDAY,
-                              "deliveryDateTo":   YESTERDAY})
+                             {"settlementPoint":   node,
+                              "deliveryDateFrom":  YESTERDAY,
+                              "deliveryDateTo":    YESTERDAY})
             hour_prices = {}
             all_prices  = []
             for row in rows:
@@ -361,10 +376,10 @@ def collect_data(token, sub_key):
         except Exception as e:
             print(f"    WARN: DA {node} — {e}")
 
-    data["rt"]         = rt_summary
-    data["rt_hourly"]  = rt_hourly
-    data["da"]         = da_summary
-    data["da_hourly"]  = da_hourly
+    data["rt"]       = rt_summary
+    data["rt_hourly"] = rt_hourly
+    data["da"]       = da_summary
+    data["da_hourly"] = da_hourly
 
     # DART spreads — daily avg (DA − RT: positive = DA premium over RT)
     common = set(rt_summary) & set(da_summary)
@@ -386,8 +401,17 @@ def collect_data(token, sub_key):
             }
     data["dart_hourly"] = dart_hourly
 
-    print(f"    RT: {len(rt_summary)} nodes  DA: {len(da_summary)} nodes  "
+    print(f"  RT: {len(rt_summary)} nodes DA: {len(da_summary)} nodes "
           f"DART hourly: {len(dart_hourly)} nodes")
+
+    # ── Additional integrations ────────────────────────────────────────────
+    print("\n── Collecting additional integrations ──")
+    extras = collect_all_integrations(
+        token=token,
+        sub_key=sub_key,
+        asset_nodes=NODES,
+    )
+    data.update(extras)
 
     return data
 
@@ -396,16 +420,17 @@ def collect_data(token, sub_key):
 def compute_top_bottom(data):
     """
     For each node compute:
-      - DART avg        = avg(DA hourly) − avg(RT hourly)  [positive = DA premium]
-      - Intraday spread = (max RT hour − min RT hour) / 24  [$/MWh normalized]
-      - Best DART hour  = hour with highest (DA − RT)
-      - Worst DART hour = hour with lowest (DA − RT)
+    - DART avg       = avg(DA hourly) − avg(RT hourly)  [positive = DA premium]
+    - Intraday spread = (max RT hour − min RT hour) / 24 [$/MWh normalized]
+    - Best DART hour  = hour with highest (DA − RT)
+    - Worst DART hour = hour with lowest  (DA − RT)
+
     Returns Top 10 and Bottom 10 ranked by DART avg, plus regional summary.
     """
-    dart        = data.get("dart", {})
+    dart       = data.get("dart", {})
     dart_hourly = data.get("dart_hourly", {})
-    rt_hourly   = data.get("rt_hourly", {})
-    da_hourly   = data.get("da_hourly", {})
+    rt_hourly  = data.get("rt_hourly", {})
+    da_hourly  = data.get("da_hourly", {})
 
     node_analysis = {}
     for node in dart:
@@ -421,37 +446,33 @@ def compute_top_bottom(data):
         neg_hrs   = [hr for hr, v in rh.items() if v < 0]
         spike_hrs = [hr for hr, v in rh.items() if v > 100]
 
-        # Intraday spread: (peak RT hour − trough RT hour) / 24
         intraday_spread = round(
             (max(rt_values) - min(rt_values)) / 24, 2
         ) if rt_values else 0
 
-        # Best and worst DA hour prices for context
         da_values = list(dah.values()) if dah else []
 
         node_analysis[node] = {
-            "dart_avg":        dart[node],          # DA avg − RT avg
-            "intraday_spread": intraday_spread,     # (RT max − RT min) / 24
-            "best_hour":       int(best_hr),        # hour with highest DA−RT
-            "best_spread":     dh[best_hr],         # that hour's DA−RT value
-            "worst_hour":      int(worst_hr),       # hour with lowest DA−RT
-            "worst_spread":    dh[worst_hr],        # that hour's DA−RT value
-            "rt_max":          round(max(rt_values), 2) if rt_values else 0,
-            "rt_min":          round(min(rt_values), 2) if rt_values else 0,
-            "da_avg":          round(sum(da_values)/len(da_values), 2) if da_values else 0,
-            "neg_hours":       len(neg_hrs),
-            "spike_hours":     len(spike_hrs),
-            "region":          next((r for r, nodes in REGIONS.items()
-                                     if node in nodes), "Other"),
+            "dart_avg":       dart[node],
+            "intraday_spread": intraday_spread,
+            "best_hour":      int(best_hr),
+            "best_spread":    dh[best_hr],
+            "worst_hour":     int(worst_hr),
+            "worst_spread":   dh[worst_hr],
+            "rt_max":         round(max(rt_values), 2) if rt_values else 0,
+            "rt_min":         round(min(rt_values), 2) if rt_values else 0,
+            "da_avg":         round(sum(da_values)/len(da_values), 2) if da_values else 0,
+            "neg_hours":      len(neg_hrs),
+            "spike_hours":    len(spike_hrs),
+            "region":         next((r for r, nodes in REGIONS.items()
+                                    if node in nodes), "Other"),
         }
 
-    # Rank by DART avg descending (highest DA premium at top)
-    ranked   = sorted(node_analysis.items(),
-                      key=lambda x: x[1]["dart_avg"], reverse=True)
-    top10    = [{"node": n, **v} for n, v in ranked[:10]]
+    ranked  = sorted(node_analysis.items(),
+                     key=lambda x: x[1]["dart_avg"], reverse=True)
+    top10   = [{"node": n, **v} for n, v in ranked[:10]]
     bottom10 = [{"node": n, **v} for n, v in ranked[-10:]][::-1]
 
-    # Regional summary
     regional = {}
     for region in REGIONS:
         region_nodes = [n for n in dart if n in REGIONS[region]]
@@ -464,11 +485,7 @@ def compute_top_bottom(data):
                 "node_count": len(region_nodes),
             }
 
-    return {
-        "top10":    top10,
-        "bottom10": bottom10,
-        "regional": regional,
-    }
+    return {"top10": top10, "bottom10": bottom10, "regional": regional}
 
 # ── REPORT BUILDER ────────────────────────────────────────────────────────────
 
@@ -481,20 +498,21 @@ def build_report(data):
     solar = data.get("solar", {})
     tb    = compute_top_bottom(data)
 
-    all_rt_avg  = [v["avg"] for v in rt.values()] if rt else [0]
-    fleet_avg   = round(sum(all_rt_avg) / len(all_rt_avg), 2) if all_rt_avg else 0
-    fleet_max   = round(max(v["max"] for v in rt.values()), 2) if rt else 0
+    all_rt_avg = [v["avg"] for v in rt.values()] if rt else [0]
+    fleet_avg  = round(sum(all_rt_avg) / len(all_rt_avg), 2) if all_rt_avg else 0
+    fleet_max  = round(max(v["max"] for v in rt.values()), 2) if rt else 0
     spike_nodes = [n for n, v in rt.items() if v["max"] > 100]
     neg_nodes   = [n for n, v in rt.items() if v["min"] < 0]
     best_dart   = max(dart, key=dart.get) if dart else None
     worst_dart  = min(dart, key=dart.get) if dart else None
 
     shared_days = sorted(set(load) & set(wind) & set(solar))[-7:]
+
     fund_rows = ""
     for d in shared_days:
-        g = load.get(d, 0)
-        w = wind.get(d, 0)
-        s = solar.get(d, 0)
+        g   = load.get(d, 0)
+        w   = wind.get(d, 0)
+        s   = solar.get(d, 0)
         net = round(g - w - s, 1)
         flag = "charging-window" if net < 30 else ""
         fund_rows += f"""
@@ -505,17 +523,16 @@ def build_report(data):
 
     price_rows = ""
     for node in sorted(rt.keys(), key=lambda n: rt[n]["avg"], reverse=True):
-        r  = rt.get(node, {})
-        dv = da.get(node, {})
-        sp = dart.get(node)
-        region = next((reg for reg, nodes in REGIONS.items()
-                       if node in nodes), "Other")
+        r      = rt.get(node, {})
+        dv     = da.get(node, {})
+        sp     = dart.get(node)
+        region = next((reg for reg, nodes in REGIONS.items() if node in nodes), "Other")
         spike_cls = ' class="spike"' if r.get("max", 0) > 100 else ""
         neg_cls   = ' class="neg"'   if r.get("min", 0) < 0   else ""
-        dart_cls  = ' class="rt-prem"' if (sp or 0) > 5 else (
-                    ' class="da-prem"' if (sp or 0) < -5 else "")
-        sp_str    = f"+${sp:.2f}" if sp and sp > 0 else (
-                    f"-${abs(sp):.2f}" if sp else "—")
+        dart_cls  = (' class="rt-prem"' if (sp or 0) > 5 else
+                     ' class="da-prem"' if (sp or 0) < -5 else "")
+        sp_str = (f"+${sp:.2f}" if sp and sp > 0 else
+                  f"-${abs(sp):.2f}" if sp else "—")
         price_rows += f"""
         <tr>
           <td class="node-name">{node}</td>
@@ -527,7 +544,6 @@ def build_report(data):
           <td{dart_cls}>{sp_str}</td>
         </tr>"""
 
-    # Top/Bottom table rows
     top_rows = ""
     for item in tb["top10"]:
         top_rows += f"""
@@ -556,7 +572,7 @@ def build_report(data):
           <td>{item['neg_hours']} hrs</td>
         </tr>"""
 
-    best_str  = f"{best_dart} +${dart[best_dart]:.2f}/MWh" if best_dart else "N/A"
+    best_str  = f"{best_dart} +${dart[best_dart]:.2f}/MWh"  if best_dart  else "N/A"
     worst_str = f"{worst_dart} ${dart[worst_dart]:.2f}/MWh" if worst_dart else "N/A"
     dow = date.today().strftime("%A")
 
@@ -566,70 +582,64 @@ def build_report(data):
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>HEN Morning Report — {YESTERDAY}</title>
 <style>
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-        background:#f4f5f7;margin:0;padding:24px 16px;color:#1a1a2e}}
-  .outer{{max-width:900px;margin:0 auto}}
-  .header{{background:#0a3d2e;border-radius:10px 10px 0 0;padding:20px 28px;
-           display:flex;justify-content:space-between;align-items:center}}
-  .header h1{{margin:0;font-size:20px;color:#fff;font-weight:600}}
-  .header p{{margin:4px 0 0;font-size:12px;color:#7fc8a0}}
-  .header-right .date{{font-size:13px;color:#b8dfc8;font-family:monospace}}
-  .header-right .gen{{font-size:11px;color:#5a9e78;margin-top:2px}}
-  .body{{background:#fff;padding:0 0 24px}}
-  .kpi-strip{{display:grid;grid-template-columns:repeat(4,1fr);
-              border-bottom:1px solid #eee}}
-  .kpi{{padding:16px 18px;border-right:1px solid #eee}}
-  .kpi:last-child{{border-right:none}}
-  .kpi-label{{font-size:10px;font-weight:600;color:#888;
-              text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}}
-  .kpi-value{{font-size:22px;font-weight:600;color:#1a1a2e;font-family:monospace}}
-  .kpi-sub{{font-size:11px;color:#888;margin-top:3px}}
-  .section{{padding:20px 24px 0}}
-  .section-title{{font-size:11px;font-weight:700;color:#888;
-                  text-transform:uppercase;letter-spacing:.07em;
-                  margin-bottom:12px;padding-bottom:8px;
-                  border-bottom:1px solid #f0f0f0}}
-  table{{width:100%;border-collapse:collapse;font-size:12px}}
-  th{{background:#f8f9fa;padding:7px 10px;text-align:right;font-weight:600;
-      color:#555;font-size:11px;border-bottom:2px solid #e8e8e8}}
-  th:first-child,th:nth-child(2){{text-align:left}}
-  td{{padding:7px 10px;text-align:right;border-bottom:1px solid #f4f4f4;
-      color:#2a2a3e}}
-  td:first-child{{text-align:left}}
-  td:nth-child(2){{text-align:left}}
-  tr:hover td{{background:#fafbfc}}
-  .node-name{{font-family:monospace;font-size:11px;color:#444}}
-  .spike{{color:#b33000;font-weight:600}}
-  .neg{{color:#0066cc}}
-  .rt-prem{{color:#1a7a3f;font-weight:600}}
-  .da-prem{{color:#7a3a1a}}
-  .charging-window td{{background:#f0faf4}}
-  .region-tag{{font-size:10px;padding:2px 6px;border-radius:3px;
-               display:inline-block;white-space:nowrap}}
-  .region-west-texas{{background:#e8f0fe;color:#1a3a8a}}
-  .region-north-texas{{background:#e8f5e9;color:#1a5c2a}}
-  .region-coastal{{background:#e3f2fd;color:#0d47a1}}
-  .region-premium{{background:#fce4ec;color:#880e4f}}
-  .callout-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;
-                 margin-top:14px}}
-  .callout{{background:#f8f9fa;border-radius:6px;padding:12px 14px;
-            border-left:3px solid #ddd}}
-  .callout.green{{border-left-color:#1a7a3f}}
-  .callout.amber{{border-left-color:#c87800}}
-  .callout.red{{border-left-color:#b33000}}
-  .callout.blue{{border-left-color:#0055aa}}
-  .callout-label{{font-size:10px;font-weight:700;color:#888;
-                  text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}}
-  .callout-value{{font-size:12px;color:#1a1a2e;font-family:monospace}}
-  .footer{{background:#f8f9fa;border-radius:0 0 10px 10px;
-           padding:12px 24px;display:flex;justify-content:space-between;
-           border-top:1px solid #eee;font-size:11px;color:#aaa}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     background:#f4f5f7;margin:0;padding:24px 16px;color:#1a1a2e}}
+.outer{{max-width:900px;margin:0 auto}}
+.header{{background:#0a3d2e;border-radius:10px 10px 0 0;padding:20px 28px;
+         display:flex;justify-content:space-between;align-items:center}}
+.header h1{{margin:0;font-size:20px;color:#fff;font-weight:600}}
+.header p{{margin:4px 0 0;font-size:12px;color:#7fc8a0}}
+.header-right .date{{font-size:13px;color:#b8dfc8;font-family:monospace}}
+.header-right .gen{{font-size:11px;color:#5a9e78;margin-top:2px}}
+.body{{background:#fff;padding:0 0 24px}}
+.kpi-strip{{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #eee}}
+.kpi{{padding:16px 18px;border-right:1px solid #eee}}
+.kpi:last-child{{border-right:none}}
+.kpi-label{{font-size:10px;font-weight:600;color:#888;text-transform:uppercase;
+            letter-spacing:.05em;margin-bottom:6px}}
+.kpi-value{{font-size:22px;font-weight:600;color:#1a1a2e;font-family:monospace}}
+.kpi-sub{{font-size:11px;color:#888;margin-top:3px}}
+.section{{padding:20px 24px 0}}
+.section-title{{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;
+                letter-spacing:.07em;margin-bottom:12px;padding-bottom:8px;
+                border-bottom:1px solid #f0f0f0}}
+table{{width:100%;border-collapse:collapse;font-size:12px}}
+th{{background:#f8f9fa;padding:7px 10px;text-align:right;font-weight:600;
+    color:#555;font-size:11px;border-bottom:2px solid #e8e8e8}}
+th:first-child,th:nth-child(2){{text-align:left}}
+td{{padding:7px 10px;text-align:right;border-bottom:1px solid #f4f4f4;color:#2a2a3e}}
+td:first-child{{text-align:left}}
+td:nth-child(2){{text-align:left}}
+tr:hover td{{background:#fafbfc}}
+.node-name{{font-family:monospace;font-size:11px;color:#444}}
+.spike{{color:#b33000;font-weight:600}}
+.neg{{color:#0066cc}}
+.rt-prem{{color:#1a7a3f;font-weight:600}}
+.da-prem{{color:#7a3a1a}}
+.charging-window td{{background:#f0faf4}}
+.region-tag{{font-size:10px;padding:2px 6px;border-radius:3px;display:inline-block;white-space:nowrap}}
+.region-west-texas{{background:#e8f0fe;color:#1a3a8a}}
+.region-north-texas{{background:#e8f5e9;color:#1a5c2a}}
+.region-coastal{{background:#e3f2fd;color:#0d47a1}}
+.region-premium{{background:#fce4ec;color:#880e4f}}
+.callout-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}}
+.callout{{background:#f8f9fa;border-radius:6px;padding:12px 14px;border-left:3px solid #ddd}}
+.callout.green{{border-left-color:#1a7a3f}}
+.callout.amber{{border-left-color:#c87800}}
+.callout.red{{border-left-color:#b33000}}
+.callout.blue{{border-left-color:#0055aa}}
+.callout-label{{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;
+                letter-spacing:.05em;margin-bottom:4px}}
+.callout-value{{font-size:12px;color:#1a1a2e;font-family:monospace}}
+.footer{{background:#f8f9fa;border-radius:0 0 10px 10px;padding:12px 24px;
+         display:flex;justify-content:space-between;border-top:1px solid #eee;
+         font-size:11px;color:#aaa}}
 </style>
 </head><body>
 <div class="outer">
   <div class="header">
     <div><h1>Hunt Energy Network</h1>
-      <p>ERCOT Commercial Morning Report</p></div>
+    <p>ERCOT Commercial Morning Report</p></div>
     <div class="header-right">
       <div class="date">{dow}, {YESTERDAY}</div>
       <div class="gen">Generated {TODAY_STR} · Data through 24:00 CT</div>
@@ -706,12 +716,14 @@ def build_report(data):
       </tbody></table>
     </div>
   </div>
+
   <div class="footer">
     <span>Hunt Energy Network · Commercial Operations · Confidential</span>
     <span style="font-family:monospace">ERCOT Public API · {TODAY_STR}</span>
   </div>
 </div>
 </body></html>"""
+
     return html
 
 # ── EMAIL VIA SENDGRID ────────────────────────────────────────────────────────
@@ -720,13 +732,13 @@ def send_email(html, subject, from_addr, to_addrs, api_key):
     payload = {
         "personalizations": [{"to": [{"email": a} for a in to_addrs],
                                "subject": subject}],
-        "from": {"email": from_addr, "name": "HEN Morning Report"},
+        "from":    {"email": from_addr, "name": "HEN Morning Report"},
         "content": [{"type": "text/html", "value": html}],
     }
     r = requests.post(
         "https://api.sendgrid.com/v3/mail/send",
         headers={"Authorization": f"Bearer {api_key}",
-                 "Content-Type": "application/json"},
+                 "Content-Type":  "application/json"},
         json=payload, timeout=30,
     )
     if r.status_code not in (200, 202):
@@ -757,27 +769,32 @@ def archive_to_s3(html, data_json, bucket):
 def write_dashboard_json(data):
     tb = compute_top_bottom(data)
     payload = {
-        "data_date":         YESTERDAY,
-        "generated_at":      TODAY_STR,
-        "regions":           REGIONS,
-        "node_coords":       NODE_COORDS,
-        "rt":                data.get("rt", {}),
-        "rt_hourly":         data.get("rt_hourly", {}),
-        "da":                data.get("da", {}),
-        "da_hourly":         data.get("da_hourly", {}),
-        "dart":              data.get("dart", {}),
-        "dart_hourly":       data.get("dart_hourly", {}),
-        "gross_load":        data.get("gross_load", {}),
-        "gross_load_hourly": data.get("gross_load_hourly", {}),
-        "wind":              data.get("wind", {}),
-        "wind_hourly":       data.get("wind_hourly", {}),
-        "solar":             data.get("solar", {}),
-        "solar_hourly":      data.get("solar_hourly", {}),
-        "top_bottom":        tb,
+        "data_date":          YESTERDAY,
+        "generated_at":       TODAY_STR,
+        "regions":            REGIONS,
+        "node_coords":        NODE_COORDS,
+        "rt":                 data.get("rt", {}),
+        "rt_hourly":          data.get("rt_hourly", {}),
+        "da":                 data.get("da", {}),
+        "da_hourly":          data.get("da_hourly", {}),
+        "dart":               data.get("dart", {}),
+        "dart_hourly":        data.get("dart_hourly", {}),
+        "gross_load":         data.get("gross_load", {}),
+        "gross_load_hourly":  data.get("gross_load_hourly", {}),
+        "wind":               data.get("wind", {}),
+        "wind_hourly":        data.get("wind_hourly", {}),
+        "solar":              data.get("solar", {}),
+        "solar_hourly":       data.get("solar_hourly", {}),
+        "top_bottom":         tb,
+        # ── New integration data ─────────────────────────────────────────
+        "constraints":        data.get("constraints", []),
+        "weather":            data.get("weather", {}),
+        "modo":               data.get("modo", {}),
+        "asset_status":       data.get("asset_status", {}),
     }
     with open("latest.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
-    print("   Dashboard data written to latest.json")
+    print("  Dashboard data written to latest.json")
 
 # ── HISTORY JSON ─────────────────────────────────────────────────────────────
 
@@ -785,69 +802,55 @@ def _calc_daily_ending_soc(rt, data, token=None, sub_key=None, soc_start=50.0):
     """
     Calculate the implied ending SOC for yesterday using actual ERCOT ESR
     charging MW data. Falls back to price-inference if API pull fails.
-
-    ESR endpoint returns ESRChargingMW:
-      negative = grid batteries net charging (SOC rises)
-      positive = grid batteries net discharging (SOC falls)
-
-    We normalize against total installed ERCOT battery capacity (~14,000 MW)
-    to convert MW to a % SOC change per hour.
     """
-    ERCOT_BESS_CAPACITY_MW = 14000.0  # approximate installed ERCOT battery capacity
-    SOC_STEP_PER_MW_HR     = 100.0 / ERCOT_BESS_CAPACITY_MW  # % per MWh
+    ERCOT_BESS_CAPACITY_MW = 14000.0
+    SOC_STEP_PER_MW_HR     = 100.0 / ERCOT_BESS_CAPACITY_MW
 
-    # ── Try real ESR API first ──────────────────────────────────────────────
     if token and sub_key:
         try:
             ESR_BASE = "https://api.ercot.com/api/public-data"
             headers  = {
-                "Authorization":           f"Bearer {token}",
+                "Authorization":             f"Bearer {token}",
                 "Ocp-Apim-Subscription-Key": sub_key,
-                "Accept":                   "application/json",
+                "Accept":                    "application/json",
             }
-            # Pull yesterday's full day of ESR 4-second data
             params = {
-                "AGCExecTimeUTCFrom": f"{YESTERDAY}T06:00:00Z",  # ERCOT day starts ~HE01 CT
+                "AGCExecTimeUTCFrom": f"{YESTERDAY}T06:00:00Z",
                 "AGCExecTimeUTCTo":   f"{TODAY_STR}T05:59:59Z",
                 "size": 10000,
             }
-            r = requests.get(
-                f"{ESR_BASE}/rptesr-m/4_sec_esr_charging_mw",
-                headers=headers, params=params, timeout=30
-            )
+            r = requests.get(f"{ESR_BASE}/rptesr-m/4_sec_esr_charging_mw",
+                             headers=headers, params=params, timeout=30)
             if r.ok:
                 body = r.json()
                 rows = body if isinstance(body, list) else body.get("data", [])
                 if rows:
-                    # Bucket by CT hour
                     by_hour = defaultdict(list)
                     for row in rows:
                         if isinstance(row, dict):
                             mw_val   = (row.get("ESRChargingMW") or
-                                       row.get("esrChargingMw") or
-                                       row.get("esrchargingmw"))
+                                        row.get("esrChargingMw") or
+                                        row.get("esrchargingmw"))
                             exec_utc = (row.get("AGCExecTimeUTC") or
-                                       row.get("agcExecTimeUTC") or
-                                       row.get("agcexectimeutc") or "")
+                                        row.get("agcExecTimeUTC") or
+                                        row.get("agcexectimeutc") or "")
                         elif isinstance(row, list) and len(row) >= 2:
-                            nums   = [x for x in row if isinstance(x, (int,float))
-                                      and not isinstance(x, bool)]
-                            mw_val = nums[-1] if nums else None
+                            nums     = [x for x in row if isinstance(x, (int, float))
+                                        and not isinstance(x, bool)]
+                            mw_val   = nums[-1] if nums else None
                             exec_utc = str(row[0]) if row else ""
                         else:
                             continue
                         if mw_val is None:
                             continue
                         try:
-                            # Convert UTC hour to CT hour (UTC-5)
                             if "T" in str(exec_utc):
                                 utc_hr = int(str(exec_utc).split("T")[1].split(":")[0])
                                 ct_hr  = (utc_hr - 5) % 24
-                                he     = ct_hr + 1  # hour ending
+                                he     = ct_hr + 1
                                 by_hour[he].append(float(mw_val))
                         except Exception:
                             pass
-
                     if by_hour:
                         soc = soc_start
                         for he in range(1, 25):
@@ -855,23 +858,19 @@ def _calc_daily_ending_soc(rt, data, token=None, sub_key=None, soc_start=50.0):
                             if not vals:
                                 continue
                             avg_mw = sum(vals) / len(vals)
-                            # negative MW = charging → SOC up
-                            # positive MW = discharging → SOC down
-                            delta = -avg_mw * SOC_STEP_PER_MW_HR
-                            soc   = max(0, min(100, soc + delta))
+                            delta  = -avg_mw * SOC_STEP_PER_MW_HR
+                            soc    = max(0, min(100, soc + delta))
                         ending = round(soc, 1)
-                        print(f"   ESR SOC calc: {len(rows)} samples · "
-                              f"ending SOC = {ending}%")
+                        print(f"  ESR SOC calc: {len(rows)} samples · ending SOC = {ending}%")
                         return ending
         except Exception as e:
-            print(f"   WARN: ESR SOC pull failed — {e}, falling back to price inference")
+            print(f"  WARN: ESR SOC pull failed — {e}, falling back to price inference")
 
-    # ── Fallback: price-inference ───────────────────────────────────────────
-    print("   SOC calc: using price inference fallback")
+    print("  SOC calc: using price inference fallback")
     CHARGE_THRESHOLD    = 15.0
     DISCHARGE_THRESHOLD = 50.0
     SOC_STEP            = 4.0
-    rt_hourly = data.get("rt_hourly", {})
+    rt_hourly           = data.get("rt_hourly", {})
     soc = soc_start
     for hr in range(1, 25):
         vals = [rt_hourly.get(node, {}).get(str(hr))
@@ -898,9 +897,7 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
     """
     Maintains a rolling 5-day history file.
     Each day's entry contains fleet-level and per-node summaries.
-    Reads existing history, appends today, trims to 5 days, writes back.
     """
-    # Build today's snapshot — compact so the file stays small
     rt    = data.get("rt", {})
     da    = data.get("da", {})
     dart  = data.get("dart", {})
@@ -909,38 +906,35 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
     solar = data.get("solar", {})
     tb    = compute_top_bottom(data)
 
-    # Fleet-level fundamentals for yesterday
     load_val  = load.get(YESTERDAY, 0)
     wind_val  = wind.get(YESTERDAY, 0)
     solar_val = solar.get(YESTERDAY, 0)
     net_val   = round(load_val - wind_val - solar_val, 1) if load_val else 0
 
-    # Per-node summary: dart_avg, intraday_spread, rt_avg, da_avg
     nodes_snapshot = {}
     for node in dart:
-        r  = rt.get(node, {})
-        dv = da.get(node, {})
+        r      = rt.get(node, {})
+        dv     = da.get(node, {})
         tb_node = next((n for n in tb.get("top10", []) + tb.get("bottom10", [])
                         if n["node"] == node), {})
         nodes_snapshot[node] = {
-            "dart":     dart[node],
-            "intraday": tb_node.get("intraday_spread", 0),
-            "rt_avg":   r.get("avg", 0),
-            "rt_max":   r.get("max", 0),
-            "rt_min":   r.get("min", 0),
-            "da_avg":   dv.get("avg", 0),
-            "region":   next((reg for reg, nodes in REGIONS.items()
-                              if node in nodes), "Other"),
+            "dart":      dart[node],
+            "intraday":  tb_node.get("intraday_spread", 0),
+            "rt_avg":    r.get("avg", 0),
+            "rt_max":    r.get("max", 0),
+            "rt_min":    r.get("min", 0),
+            "da_avg":    dv.get("avg", 0),
+            "region":    next((reg for reg, nodes in REGIONS.items()
+                               if node in nodes), "Other"),
         }
 
-    # Regional averages
     regional_snapshot = {}
     for region, nodes in REGIONS.items():
         rn = [n for n in nodes if n in dart]
         if rn:
             regional_snapshot[region] = {
-                "avg_dart":     round(sum(dart[n] for n in rn) / len(rn), 2),
-                "avg_rt":       round(sum(rt.get(n, {}).get("avg", 0) for n in rn) / len(rn), 2),
+                "avg_dart": round(sum(dart[n] for n in rn) / len(rn), 2),
+                "avg_rt":   round(sum(rt.get(n, {}).get("avg", 0) for n in rn) / len(rn), 2),
                 "avg_intraday": round(sum(
                     next((x["intraday_spread"] for x in
                           tb.get("top10", []) + tb.get("bottom10", [])
@@ -949,10 +943,10 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
             }
 
     today_entry = {
-        "date":       YESTERDAY,
+        "date": YESTERDAY,
         "fleet": {
-            "rt_avg":   round(sum(v["avg"] for v in rt.values()) / len(rt), 2) if rt else 0,
-            "rt_max":   round(max(v["max"] for v in rt.values()), 2) if rt else 0,
+            "rt_avg":      round(sum(v["avg"] for v in rt.values()) / len(rt), 2) if rt else 0,
+            "rt_max":      round(max(v["max"] for v in rt.values()), 2) if rt else 0,
             "spike_nodes": len([n for n, v in rt.items() if v["max"] > 100]),
             "neg_nodes":   len([n for n, v in rt.items() if v["min"] < 0]),
         },
@@ -964,12 +958,11 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
         },
         "nodes":    nodes_snapshot,
         "regional": regional_snapshot,
-        "battery": {
+        "battery":  {
             "ending_soc": _calc_daily_ending_soc(rt, data, token=token, sub_key=sub_key),
         },
     }
 
-    # Load existing history
     history = []
     try:
         with open(history_path, "r", encoding="utf-8") as f:
@@ -977,284 +970,310 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
     except (FileNotFoundError, json.JSONDecodeError):
         pass
 
-    # Remove any existing entry for the same date then append
     history = [e for e in history if e.get("date") != YESTERDAY]
     history.append(today_entry)
-
-    # Keep only the 5 most recent days
     history = sorted(history, key=lambda e: e["date"])[-5:]
 
     os.makedirs(os.path.dirname(history_path), exist_ok=True)
     with open(history_path, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
-    print(f"   History updated — {len(history)} days stored in {history_path}")
+    print(f"  History updated — {len(history)} days stored in {history_path}")
+
+# ── AI PROMPT HELPERS ─────────────────────────────────────────────────────────
+
+def _fmt_constraints(data):
+    constraints = data.get("constraints", [])
+    if not constraints:
+        return "  Not available"
+    lines = []
+    for c in constraints:
+        sf_str = ", ".join(
+            f"{n}:{v:+.2f}" for n, v in list(c.get("shift_factors", {}).items())[:5]
+        )
+        lines.append(
+            f"  {c['name']}: ${c['avg_shadow']:.2f}/MWh shadow · "
+            f"{c['hours_binding']}h binding · {c['flow_direction']} · "
+            f"shift factors: {sf_str}"
+        )
+    return "\n".join(lines)
+
+
+def _fmt_weather(data):
+    wx   = data.get("weather", {})
+    days = wx.get("days", [])
+    if not days:
+        return "  Not available"
+    lines = []
+    for d in days[:15]:
+        delta_str = (f" (delta {d['delta_high']:+d}°F vs prior)"
+                     if d.get("delta_high") else "")
+        cdd_str   = f" CDD:{d.get('cdd', 0)}" if d.get("cdd") else ""
+        hdd_str   = f" HDD:{d.get('hdd', 0)}" if d.get("hdd") else ""
+        lines.append(
+            f"  {d['date']}: Hi {d['temp_high']}°F / Lo {d['temp_low']}°F"
+            f"{cdd_str}{hdd_str}{delta_str}"
+        )
+    li = wx.get("load_impact", {})
+    if li.get("peak_warm_delta_f"):
+        lines.append(
+            f"  Load impact: +{li['estimated_load_delta_gw']} GW peak from "
+            f"+{li['peak_warm_delta_f']}°F anomaly over {li['days_warmer']} days"
+        )
+    lf = wx.get("hourly_load_forecast", {})
+    if lf:
+        lines.append(f"  AG2 load forecast: {len(lf.get('RTO', {}))} hourly intervals for ERCOT RTO")
+    return "\n".join(lines)
+
+
+def _fmt_modo(data):
+    modo = data.get("modo", {})
+    if not modo or modo.get("error"):
+        return f"  Not available ({modo.get('error', 'Modo not connected')})"
+    indices = modo.get("indices", {})
+    if not indices:
+        return "  No index data returned"
+    lines = []
+    for key, v in indices.items():
+        sign = "+" if v.get("delta_dod", 0) >= 0 else ""
+        lines.append(
+            f"  {v['display_name']}: ${v['revenue_mw_year']:,.0f}/MW/yr "
+            f"({sign}${v['delta_dod']:,.0f} DoD)"
+        )
+        if v.get("market_breakdown"):
+            breakdown = ", ".join(
+                f"{mkt}: ${rev:,.0f}"
+                for mkt, rev in sorted(
+                    v["market_breakdown"].items(),
+                    key=lambda x: x[1], reverse=True
+                )[:3]
+            )
+            lines.append(f"    Breakdown: {breakdown}")
+    return "\n".join(lines)
+
+
+def _fmt_asset_status(data):
+    ast = data.get("asset_status", {})
+    if not ast or ast.get("error"):
+        return f"  Not available ({ast.get('error', 'PowerTools not connected')})"
+    fs = ast.get("fleet_summary", {})
+    lines = [
+        f"  Fleet: {fs.get('online', 0)} online / {fs.get('total_assets', 0)} total · "
+        f"{fs.get('fleet_availability_pct', 0)}% available · "
+        f"{fs.get('available_mw', 0)} MW of {fs.get('total_capacity_mw', 0)} MW",
+        f"  Planned outages: {fs.get('planned_outage_mw', 0)} MW · "
+        f"Forced outages: {fs.get('forced_outage_mw', 0)} MW",
+    ]
+    for o in ast.get("outage_schedule", []):
+        lines.append(
+            f"  OUTAGE: {o['asset']} · {o['type']} · {o['mw']} MW · "
+            f"{o['start']} → {o['end']} · {o['reason']}"
+        )
+    return "\n".join(lines)
 
 # ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 
 def build_ai_prompt_morning(data, history):
     """Build the prompt for the morning AI analysis."""
-    tb      = compute_top_bottom(data)
-    rt      = data.get("rt", {})
-    da      = data.get("da", {})
-    dart    = data.get("dart", {})
-    load    = data.get("gross_load", {})
-    wind    = data.get("wind", {})
-    solar   = data.get("solar", {})
+    tb    = compute_top_bottom(data)
+    rt    = data.get("rt", {})
+    da    = data.get("da", {})
+    dart  = data.get("dart", {})
+    load  = data.get("gross_load", {})
+    wind  = data.get("wind", {})
+    solar = data.get("solar", {})
 
-    # Fleet summary
-    rt_vals  = [v["avg"] for v in rt.values()]
-    fleet_rt = round(sum(rt_vals)/len(rt_vals), 2) if rt_vals else 0
-    spikes   = [n for n, v in rt.items() if v["max"] > 100]
-    negs     = [n for n, v in rt.items() if v["min"] < 0]
+    all_rt_avg  = [v["avg"] for v in rt.values()] if rt else [0]
+    fleet_avg   = round(sum(all_rt_avg) / len(all_rt_avg), 2) if all_rt_avg else 0
+    fleet_max   = round(max(v["max"] for v in rt.values()), 2) if rt else 0
+    spike_nodes = [n for n, v in rt.items() if v["max"] > 100]
+    neg_nodes   = [n for n, v in rt.items() if v["min"] < 0]
+    best_dart   = max(dart, key=dart.get) if dart else None
+    worst_dart  = min(dart, key=dart.get) if dart else None
 
-    # Top/Bottom nodes
-    top5  = tb.get("top10", [])[:5]
-    bot5  = tb.get("bottom10", [])[:5]
-    regional = tb.get("regional", {})
+    top5_dart = sorted(dart.items(), key=lambda x: x[1], reverse=True)[:5]
+    bot5_dart = sorted(dart.items(), key=lambda x: x[1])[:5]
 
-    # 5-day history summary
-    hist_summary = []
-    for entry in history:
-        fleet_h = entry.get("fleet", {})
-        fund_h  = entry.get("fundamentals", {})
-        reg_h   = entry.get("regional", {})
-        hist_summary.append({
-            "date":       entry["date"],
-            "fleet_rt":   fleet_h.get("rt_avg", 0),
-            "spike_nodes":fleet_h.get("spike_nodes", 0),
-            "neg_nodes":  fleet_h.get("neg_nodes", 0),
-            "gross_load": fund_h.get("gross_load", 0),
-            "wind":       fund_h.get("wind", 0),
-            "solar":      fund_h.get("solar", 0),
-            "regions":    {r: v.get("avg_dart", 0) for r, v in reg_h.items()},
-        })
+    load_val  = load.get(YESTERDAY, "N/A")
+    wind_val  = wind.get(YESTERDAY, "N/A")
+    solar_val = solar.get(YESTERDAY, "N/A")
 
-    prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN), operator of 32 utility-scale battery energy storage systems (BESS) across ERCOT. Analyze the following data and produce a structured JSON response.
+    hist_summary = ""
+    if history:
+        for entry in sorted(history, key=lambda e: e["date"])[-3:]:
+            hist_summary += (
+                f"  {entry['date']}: fleet RT avg ${entry['fleet'].get('rt_avg', 0):.2f}, "
+                f"spike nodes {entry['fleet'].get('spike_nodes', 0)}, "
+                f"neg nodes {entry['fleet'].get('neg_nodes', 0)}\n"
+            )
 
-YESTERDAY ({YESTERDAY}) SETTLED DATA:
-- Fleet avg RT price: ${fleet_rt}/MWh across {len(rt)} nodes
-- Spike nodes (>$100/MWh RT): {spikes if spikes else 'None'}
-- Negative RT price nodes: {negs if negs else 'None'}
-- Gross load: {load.get(YESTERDAY, 'N/A')} GW peak
-- Wind: {wind.get(YESTERDAY, 'N/A')} GW peak
-- Solar: {solar.get(YESTERDAY, 'N/A')} GW peak
+    prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN), operator of 32 BESS sites across ERCOT. Generate a concise but comprehensive morning analysis for {YESTERDAY}.
 
-TOP 5 DART PERFORMERS (DA − RT, highest DA premium):
-{json.dumps([{"node": n["node"], "region": n["region"], "dart_avg": n["dart_avg"], "intraday_spread": n["intraday_spread"]} for n in top5], indent=2)}
+ERCOT PRICE SUMMARY:
+- Fleet avg RT: ${fleet_avg}/MWh across {len(rt)} nodes
+- Fleet peak RT: ${fleet_max}/MWh
+- Spike nodes (>$100/MWh): {spike_nodes if spike_nodes else 'None'}
+- Negative price nodes: {neg_nodes if neg_nodes else 'None'}
+- Best DART: {best_dart} at ${dart.get(best_dart, 0):.2f}/MWh if best_dart else 'N/A'
+- Largest DA premium: {worst_dart} at ${dart.get(worst_dart, 0):.2f}/MWh if worst_dart else 'N/A'
 
-BOTTOM 5 DART PERFORMERS (RT most above DA):
-{json.dumps([{"node": n["node"], "region": n["region"], "dart_avg": n["dart_avg"], "intraday_spread": n["intraday_spread"]} for n in bot5], indent=2)}
+TOP 5 DART PERFORMERS:
+{chr(10).join(f"  {n}: ${v:.2f}/MWh" for n, v in top5_dart)}
 
-REGIONAL DART AVERAGES:
-{json.dumps({r: v.get("avg_dart", 0) for r, v in regional.items()}, indent=2)}
+BOTTOM 5 DART PERFORMERS:
+{chr(10).join(f"  {n}: ${v:.2f}/MWh" for n, v in bot5_dart)}
 
-5-DAY HISTORY:
-{json.dumps(hist_summary, indent=2)}
+ERCOT FUNDAMENTALS ({YESTERDAY}):
+- Gross load: {load_val} GW
+- Wind: {wind_val} GW
+- Solar: {solar_val} GW
 
-Respond ONLY with a valid JSON object, no markdown, no preamble, using this exact structure:
-{{
-  "generated_at": "{YESTERDAY}",
-  "type": "morning",
-  "fleet_narrative": "2-3 sentence summary of yesterday's market conditions and what they mean commercially for HEN's BESS portfolio",
-  "trend_analysis": "2-3 sentences on patterns observed across the 5-day history window — regional trends, DART compression or expansion, load/renewable patterns",
-  "anomalies": [
-    {{"node": "NODE_NAME", "region": "region", "flag": "short flag label", "detail": "one sentence explanation"}},
-    ...up to 5 anomalies...
-  ],
-  "nodes_to_watch": [
-    {{"node": "NODE_NAME", "region": "region", "reason": "one sentence on why this node warrants attention today"}},
-    ...3 nodes...
-  ],
-  "market_conditions": "one sentence on overall ERCOT market conditions yesterday",
-  "charging_signal": "bullish|neutral|bearish",
-  "charging_rationale": "one sentence explaining the charging signal based on RT prices and renewable penetration"
-}}"""
+RECENT HISTORY (last 3 days):
+{hist_summary or '  No history available'}
+
+---
+TOP-5 BINDING CONSTRAINTS (ERCOT):
+{_fmt_constraints(data)}
+
+15-DAY WEATHER OUTLOOK (AG2 Trader):
+{_fmt_weather(data)}
+
+MODO ENERGY CUSTOM INDICES:
+{_fmt_modo(data)}
+
+ASSET AVAILABILITY & OUTAGES (PowerTools):
+{_fmt_asset_status(data)}
+---
+
+Please provide:
+1. PERFORMANCE SUMMARY: Key highlights from yesterday — what drove outperformance or underperformance across the fleet
+2. CONSTRAINT ANALYSIS: Which constraints mattered most and their impact on HEN nodes by shift factor
+3. WEATHER & LOAD OUTLOOK: What the 15-day forecast means for ERCOT pricing and HEN dispatch over the next 2 weeks
+4. MODO INDEX CONTEXT: How HEN's custom indices performed relative to prior day; what the market breakdown reveals
+5. ASSET AVAILABILITY: Any outage impacts on the fleet and operational risk flags
+6. FORWARD OPPORTUNITIES: Top 3 specific actionable opportunities in the next 7-14 days based on all available data
+7. RISK FLAGS: Any structural concerns worth escalating to the trading desk
+
+Be specific, use numbers, and focus on commercially actionable insights. Keep each section to 3-5 sentences.
+"""
     return prompt
 
 
-def build_ai_prompt_intraday(live_data, history):
-    """Build the prompt for intraday AI update."""
-    fleet   = live_data.get("fleet", {})
-    rt      = live_data.get("rt", {})
-    regional= live_data.get("regional", {})
-    as_of   = live_data.get("as_of", "")
-    max_hr  = live_data.get("max_hour_cleared", 0)
-
-    rt_vals = [v["avg"] for v in rt.values()]
-    fleet_rt = round(sum(rt_vals)/len(rt_vals), 2) if rt_vals else 0
-
-    # Yesterday from history
-    yest = history[-1] if history else {}
-    yest_fleet_rt = yest.get("fleet", {}).get("rt_avg", 0)
-
-    prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN). It is currently {as_of} CT and HE01-HE{max_hr:02d} have cleared in ERCOT real-time today.
-
-TODAY'S INTRADAY DATA (hours cleared so far):
-- Fleet avg RT: ${fleet_rt}/MWh across {fleet.get("node_count", 0)} nodes
-- Spike nodes today: {fleet.get("spike_list", [])}
-- Negative price nodes today: {fleet.get("neg_list", [])}
-
-REGIONAL RT AVERAGES TODAY:
-{json.dumps({r: v.get("avg_rt", 0) for r, v in regional.items()}, indent=2)}
-
-YESTERDAY'S FLEET AVG RT FOR COMPARISON: ${yest_fleet_rt}/MWh
-
-Respond ONLY with a valid JSON object, no markdown, no preamble:
-{{
-  "generated_at": "{as_of}",
-  "type": "intraday",
-  "intraday_narrative": "2 sentences on how today's RT prices are tracking so far and what to watch for the remainder of the day",
-  "vs_yesterday": "one sentence comparing today's early RT performance to yesterday",
-  "charging_signal": "bullish|neutral|bearish",
-  "charging_rationale": "one sentence — is RT low enough to justify charging? Any negative price opportunities?",
-  "alerts": [
-    {{"type": "spike|negative|dart_opportunity|anomaly", "node": "NODE_NAME", "detail": "one sentence"}},
-    ...only if noteworthy, can be empty array...
-  ]
-}}"""
-    return prompt
-
-
-def call_claude(prompt, api_key):
-    """Call Anthropic API with the given prompt, return parsed JSON."""
-    headers = {
-        "x-api-key":         api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type":      "application/json",
-    }
-    payload = {
-        "model":      "claude-haiku-4-5-20251001",
-        "max_tokens": 1500,
-        "messages":   [{"role": "user", "content": prompt}],
-    }
-    r = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers=headers,
-        json=payload,
-        timeout=60,
-    )
-    if not r.ok:
-        print(f"   Anthropic error {r.status_code}: {r.text[:500]}")
-    r.raise_for_status()
-    text = r.json()["content"][0]["text"].strip()
-    # Strip any accidental markdown fences
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-    return json.loads(text.strip())
-
-
-def write_ai_analysis(data, history, api_key, out_path="dashboard/ai_analysis.json"):
-    """Generate morning AI analysis and write to file."""
-    print("   Calling Claude for AI analysis...")
+def run_ai_analysis(data, history, api_key):
+    """Call Claude API with the morning prompt and return structured analysis."""
+    prompt = build_ai_prompt_morning(data, history)
     try:
-        prompt   = build_ai_prompt_morning(data, history)
-        analysis = call_claude(prompt, api_key)
-        analysis["data_date"] = YESTERDAY
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(analysis, f, indent=2)
-        print(f"   AI analysis written to {out_path}")
-        return analysis
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key":         api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type":      "application/json",
+            },
+            json={
+                "model":      "claude-sonnet-4-20250514",
+                "max_tokens": 2000,
+                "messages":   [{"role": "user", "content": prompt}],
+            },
+            timeout=60,
+        )
+        r.raise_for_status()
+        text = r.json()["content"][0]["text"].strip()
+        return {"generated_at": TODAY_STR, "analysis": text, "data_date": YESTERDAY}
     except Exception as e:
-        print(f"   WARN: AI analysis failed — {e}")
-        # Write a fallback so dashboard doesn't break
-        fallback = {
-            "data_date": YESTERDAY,
-            "generated_at": YESTERDAY,
-            "type": "morning",
-            "fleet_narrative": "AI analysis unavailable for this report.",
-            "trend_analysis": "",
-            "anomalies": [],
-            "nodes_to_watch": [],
-            "market_conditions": "",
-            "charging_signal": "neutral",
-            "charging_rationale": "",
-        }
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(fallback, f, indent=2)
-        return fallback
+        print(f"  WARN: AI analysis failed — {e}")
+        return {}
 
+
+def write_ai_analysis_json(analysis, path="dashboard/ai_analysis.json"):
+    """Write or update the AI analysis JSON file used by the dashboard."""
+    existing = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    existing["morning"] = analysis
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2)
+    print(f"  AI analysis written to {path}")
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
 def main():
-    print(f"\nHEN Morning Report v2 — {YESTERDAY}")
-    print(f"Nodes: {len(NODES)} across {len(REGIONS)} regions")
+    print(f"\nHEN Morning Report — {YESTERDAY}")
+    print(f"Nodes: {len(NODES)}")
 
-    username   = os.environ.get("ERCOT_USERNAME", "")
-    password   = os.environ.get("ERCOT_PASSWORD", "")
-    sub_key    = os.environ.get("ERCOT_SUBSCRIPTION_KEY", "")
-    sg_api_key = os.environ.get("SENDGRID_API_KEY", "")
-    from_addr  = os.environ.get("FROM_EMAIL", "").strip()
-    to_raw     = os.environ.get("TO_EMAILS", "")
-    s3_bucket  = os.environ.get("S3_BUCKET", "")
-    to_addrs   = [e.strip() for e in to_raw.split(",") if e.strip()]
+    username = os.environ.get("ERCOT_USERNAME", "")
+    password = os.environ.get("ERCOT_PASSWORD", "")
+    sub_key  = os.environ.get("ERCOT_SUBSCRIPTION_KEY", "")
 
-    missing = []
-    if not username: missing.append("ERCOT_USERNAME")
-    if not password: missing.append("ERCOT_PASSWORD")
-    if not sub_key:  missing.append("ERCOT_SUBSCRIPTION_KEY")
-    if missing:
-        print(f"ERROR: Missing env vars: {', '.join(missing)}")
+    if not all([username, password, sub_key]):
+        print("ERROR: Missing ERCOT credentials")
         sys.exit(1)
 
-    email_enabled = bool(sg_api_key and from_addr and to_addrs)
-
-    print("\n1. Authenticating with ERCOT...")
+    # ── Authenticate ──────────────────────────────────────────────────────
     try:
         token = get_token(username, password, sub_key)
-        print("   Token obtained.")
+        print(f"  Auth: token obtained")
     except Exception as e:
-        print(f"   FAILED: {e}")
+        print(f"  Auth FAILED: {e}")
         sys.exit(1)
 
-    print("\n2. Collecting ERCOT data (hourly)...")
+    # ── Collect all data (ERCOT + integrations) ───────────────────────────
+    print("\nCollecting data...")
     data = collect_data(token, sub_key)
 
-    print("\n3. Building HTML report...")
-    html = build_report(data)
+    # ── Load history for AI context ───────────────────────────────────────
+    history = []
+    try:
+        with open("dashboard/history.json", "r", encoding="utf-8") as f:
+            history = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    # ── Build HTML report ─────────────────────────────────────────────────
+    print("\nBuilding report...")
+    html    = build_report(data)
+    subject = f"HEN Morning Report — {YESTERDAY}"
+
     with open("morning_report.html", "w", encoding="utf-8") as f:
         f.write(html)
-    print("   Report written to morning_report.html")
+    print("  Report saved to morning_report.html")
+
+    # ── Send email ────────────────────────────────────────────────────────
+    sg_key     = os.environ.get("SENDGRID_API_KEY", "")
+    from_email = os.environ.get("FROM_EMAIL", "")
+    to_emails  = [e.strip() for e in
+                  os.environ.get("TO_EMAILS", "").split(",") if e.strip()]
+    if sg_key and from_email and to_emails:
+        try:
+            send_email(html, subject, from_email, to_emails, sg_key)
+        except Exception as e:
+            print(f"  WARN: Email failed — {e}")
+
+    # ── Write dashboard JSON ──────────────────────────────────────────────
+    print("\nWriting dashboard data...")
     write_dashboard_json(data)
+
+    # ── Write history JSON ────────────────────────────────────────────────
     write_history_json(data, token=token, sub_key=sub_key)
 
-    # Load history for AI context
-    try:
-        with open("dashboard/history.json", "r") as f:
-            history = json.load(f)
-    except Exception:
-        history = []
-
+    # ── Run AI analysis ───────────────────────────────────────────────────
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if anthropic_key:
-        print("\n4. Generating AI analysis...")
-        write_ai_analysis(data, history, anthropic_key)
-    else:
-        print("\n4. AI analysis skipped — ANTHROPIC_API_KEY not configured")
+        print("\nGenerating AI analysis...")
+        analysis = run_ai_analysis(data, history, anthropic_key)
+        if analysis:
+            write_ai_analysis_json(analysis)
 
+    # ── S3 archive ────────────────────────────────────────────────────────
+    s3_bucket = os.environ.get("S3_BUCKET", "")
     if s3_bucket:
-        print(f"\n5. Archiving to S3...")
-        try:
-            archive_to_s3(html, data, s3_bucket)
-        except Exception as e:
-            print(f"   WARN: {e}")
+        archive_to_s3(html, data, s3_bucket)
 
-    if email_enabled:
-        print("\n6. Sending email via SendGrid...")
-        dow = date.today().strftime("%A")
-        try:
-            send_email(html, f"HEN Morning Report — {dow} {YESTERDAY}",
-                       from_addr, to_addrs, sg_api_key)
-        except Exception as e:
-            print(f"   WARN: Email failed — {e}")
-    else:
-        print("\n6. Email skipped — SendGrid not configured")
+    print(f"\nDone. Report generated for {YESTERDAY}.")
 
-    print(f"\nDone. Report delivered for {YESTERDAY}.\n")
 
 if __name__ == "__main__":
     main()
