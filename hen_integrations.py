@@ -521,13 +521,14 @@ MODO_BASE = "https://api.modoenergy.com/pub/v1"
 #
 # Format for MODO_INDEX_IDS secret (comma-separated name:id pairs):
 #   2026 - 1Hr Without HEN:1234,HEN 2026:1235,2-hour Without Fort Duncan:1236,Fort Duncan:1237
-# Each index has its display name and the correct YTD window start date.
-# 1-hour indices start Jan 1 2026; 2-hour indices start Jan 21 2026.
+# HEN custom indices — IDs confirmed via Modo discovery call.
+# 1-hour indices (HEN 2026, 1Hr Without HEN): start Jan 1 2026
+# 2-hour indices (Fort Duncan, 2Hr Without Fort Duncan): start Jan 21 2026
 HEN_CUSTOM_INDICES = {
-    "1hr_without_hen":         {"name": "2026 - 1Hr Without HEN",      "start": MODO_WINDOW_START_1HR},
-    "hen_2026":                {"name": "HEN 2026",                    "start": MODO_WINDOW_START_1HR},
-    "2hr_without_fort_duncan": {"name": "2-hour Without Fort Duncan",  "start": MODO_WINDOW_START_2HR},
-    "fort_duncan":             {"name": "Fort Duncan",                 "start": MODO_WINDOW_START_2HR},
+    "1hr_without_hen":         {"name": "2026 - 1Hr Without HEN",      "id": 4752, "start": MODO_WINDOW_START_1HR},
+    "hen_2026":                {"name": "HEN 2026",                    "id": 4872, "start": MODO_WINDOW_START_1HR},
+    "2hr_without_fort_duncan": {"name": "2-hour Without Fort Duncan",  "id": 4891, "start": MODO_WINDOW_START_2HR},
+    "fort_duncan":             {"name": "Fort Duncan",                 "id": 5006, "start": MODO_WINDOW_START_2HR},
 }
 
 
@@ -603,6 +604,13 @@ def _modo_resolve_index_ids():
     Returns a dict: { short_key: integer_id, ... }
     e.g. { "1hr_without_hen": 1234, "hen_2026": 1235, ... }
     """
+    # ── Priority 0: IDs hardcoded in HEN_CUSTOM_INDICES dict ─────────────
+    hardcoded = {k: meta["id"] for k, meta in HEN_CUSTOM_INDICES.items()
+                 if "id" in meta}
+    if hardcoded:
+        print(f"    Modo IDs from index config: {hardcoded}")
+        return hardcoded
+
     # ── Priority 1: manual override from secret ────────────────────────────
     id_override = os.environ.get("MODO_INDEX_IDS", "").strip()
     if id_override:
@@ -736,58 +744,84 @@ def _modo_index_window_revenue(index_id, start_date, end_date):
     Returns:
       { "revenue_mw_year": float, "market_breakdown": { market: float } }
     """
-    body = _modo_get(
-        f"indices/{index_id}/revenue/timeseries/",
-        params={
+    # Response schema (from Modo API docs):
+    # { "next": null, "results": { "units": "USD/MW/year", "records": [...] } }
+    # With breakdown=market each record has: market, interval_start, interval_end, revenue
+    # Without breakdown each record has:     interval_start, interval_end, revenue
+    def _fetch(extra_params=None):
+        params = {
             "interval_start":         f"{start_date}T00:00:00",
             "interval_end":           f"{end_date}T23:59:59",
             "granularity":            "daily",
             "capacity_normalisation": "mw",
             "time_basis":             "year",
-            "breakdown":              "market",
-            "limit":                  1000,
-        },
-    )
+            "limit":                  10000,
+        }
+        if extra_params:
+            params.update(extra_params)
+        body = _modo_get(f"indices/{index_id}/revenue/timeseries/", params=params)
+        # Navigate the nested response: body → results (dict) → records (list)
+        results_obj = body.get("results") or {}
+        if isinstance(results_obj, dict):
+            records = results_obj.get("records") or []
+            units   = results_obj.get("units", "")
+        else:
+            # Fallback: older flat list format
+            records = results_obj if isinstance(results_obj, list) else []
+            units   = ""
+        return records, units
 
-    results = body.get("results") or []
-    if not results:
-        # Try without breakdown in case that parameter causes issues
-        body = _modo_get(
-            f"indices/{index_id}/revenue/timeseries/",
-            params={
-                "interval_start":         f"{start_date}T00:00:00",
-                "interval_end":           f"{end_date}T23:59:59",
-                "granularity":            "daily",
-                "capacity_normalisation": "mw",
-                "time_basis":             "year",
-                "limit":                  1000,
-            },
-        )
-        results = body.get("results") or []
+    # First try with market breakdown
+    records, units = _fetch({"breakdown": "market"})
+    # If empty, retry without breakdown
+    if not records:
+        records, units = _fetch()
 
-    if not results:
+    if not records:
         return {}
 
     total = 0.0
     market_breakdown = {}
-    n_days = 0
-    for row in results:
+    # With breakdown=market there is one record per (day × market).
+    # Without breakdown there is one record per day.
+    # We track unique dates to get n_days correctly.
+    seen_dates = set()
+    for row in records:
         if not isinstance(row, dict):
             continue
-        rev    = safe_float(row.get("revenue") or row.get("value") or 0)
-        market = str(row.get("market") or row.get("service") or "total")
+        rev    = safe_float(row.get("revenue") or 0)
+        market = str(row.get("market") or "total")
+        date   = str(row.get("interval_start") or "")[:10]
         market_breakdown[market] = round(market_breakdown.get(market, 0.0) + rev, 2)
         total += rev
-        n_days += 1
+        if date:
+            seen_dates.add(date)
 
-    # Average across days in window to get representative $/MW/year
-    avg = round(total / n_days, 2) if n_days else 0.0
+    n_days = len(seen_dates) or len(records)
+    # When breakdown=market, total is sum across all markets per day.
+    # Divide by n_days to get average daily annualised $/MW/year.
+    # (Each day's records already represent the annualised figure for that day.)
+    # With breakdown, sum all markets for the same day = that day's total.
+    # We need the average across days, not sum across days × markets.
+    if market_breakdown and len(market_breakdown) > 1:
+        # Re-compute total as per-day total (sum of markets for one day)
+        # already captured correctly in total above since time_basis=year
+        # means each record is already an annualised rate, not a sum.
+        # Average across days:
+        avg = round(total / max(n_days, 1) / len(market_breakdown), 2) if market_breakdown else 0.0
+        # Simpler: just average the per-market totals
+        market_avgs = {k: round(v / n_days, 2) for k, v in market_breakdown.items()}
+        avg = round(sum(market_avgs.values()), 2)
+    else:
+        avg = round(total / n_days, 2) if n_days else 0.0
+        market_avgs = market_breakdown
+
+    print(f"      → {n_days} days · {len(records)} records · units: {units} · total: {avg:.2f}")
 
     return {
         "revenue_mw_year":  avg,
         "n_days":           n_days,
-        "market_breakdown": {k: round(v / n_days, 2) if n_days else 0
-                             for k, v in market_breakdown.items()},
+        "market_breakdown": market_avgs,
     }
 
 
