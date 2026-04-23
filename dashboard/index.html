@@ -626,7 +626,7 @@ function renderAll(d, history, aiData) {
   // ── Forecast time-series chart ───────────────────────────────────────────
   // Store chart data globally — Chart.js CDN loads after this runs
   window._fcChartData = {
-    labels: fcTimestamps.map(ts => {
+    labels: fcTs.map(ts => {
       const [d, hr] = ts.split(' ');
       return parseInt(hr||'0') === 0 ? d.slice(5)+' 00' : hr;
     }),
