@@ -1498,7 +1498,8 @@ def collect_ercot_forecasts(token, sub_key):
         )
         if dt and mw > 0:
             key = f"{dt} {hour:02d}"
-            wind_by_dt[key] = wind_by_dt.get(key, 0) + mw
+            if key not in wind_by_dt:  # take first row only — system-wide field repeated per zone
+                wind_by_dt[key] = mw
 
     # ── Parse solar forecast ───────────────────────────────────────────────
     solar_by_dt = {}
@@ -1519,7 +1520,8 @@ def collect_ercot_forecasts(token, sub_key):
         )
         if dt and mw > 0:
             key = f"{dt} {hour:02d}"
-            solar_by_dt[key] = solar_by_dt.get(key, 0) + mw
+            if key not in solar_by_dt:  # take first row only — system-wide field repeated per zone
+                solar_by_dt[key] = mw
 
     # ── Build 24-hour hourly series (today + tomorrow) ─────────────────────
     hourly_keys = sorted(set(
