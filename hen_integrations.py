@@ -796,10 +796,10 @@ def _modo_index_daily_revenue(index_id, date_str):
     # Sum across all result rows for the day (should be 1 row with granularity=daily)
     total_annualised = 0.0
     market_breakdown = {}
-  for row in results:
-    if not isinstance(row, dict):
-        continue
-    rev = safe_float(row.get("revenue") or row.get("value") or 0)
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        rev = safe_float(row.get("revenue") or row.get("value") or 0)
         market = str(row.get("market") or row.get("service") or "total")
         market_breakdown[market] = round(market_breakdown.get(market, 0.0) + rev, 2)
         total_annualised += rev
@@ -818,7 +818,8 @@ def _modo_index_daily_revenue(index_id, date_str):
     results_day = body_day.get("results") or []
     total_day = sum(
         safe_float(r.get("revenue") or r.get("value") or 0)
-        for r in results_day if isinstance(r, dict)
+        for r in results_day
+        if isinstance(r, dict)
     )
 
     return {
