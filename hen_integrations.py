@@ -1384,22 +1384,34 @@ def collect_ercot_forecasts(token, sub_key):
             url = f"{base}/{path}"
             r   = requests.get(url, headers=headers, params=params, timeout=30)
             r.raise_for_status()
-            body  = r.json()
-            # ERCOT API can return:
-            #   {"data": [...], "fields": [...]}  — list-of-lists with field names
-            #   {"data": [...]}                   — list-of-dicts directly
-            #   {"_meta": {...}, "data": [...]}   — paginated list-of-dicts
+            body = r.json()
+            # Debug: show top-level keys on first call to understand structure
+            if not hasattr(_ercot_get, "_debugged"):
+                _ercot_get._debugged = True
+                print(f"    DEBUG ERCOT response keys: {list(body.keys())[:8]}")
+                data_val = body.get("data")
+                print(f"    DEBUG data type: {type(data_val).__name__}, "
+                      f"sample: {str(data_val)[:200]}")
+            # Handle all known ERCOT response shapes:
+            # Shape A: {"data": [[v1,v2,...], ...], "fields": ["f1","f2",...]}
+            # Shape B: {"data": [{"f1":v1,...}, ...]}
+            # Shape C: {"data": {"rows": [...], "fields": [...]}}  (nested)
+            # Shape D: {"_meta": {...}, "data": [...]}
             fields = body.get("fields") or []
-            rows   = body.get("data")   or []
-            if not rows:
+            raw    = body.get("data")   or []
+            # Shape C — unwrap nested dict
+            if isinstance(raw, dict):
+                fields = raw.get("fields") or fields
+                raw    = raw.get("rows") or raw.get("data") or []
+            if not raw:
                 return []
-            # If rows are lists (not dicts), convert using fields header
+            rows = raw
+            # Shape A — list-of-lists, convert to dicts
             if isinstance(rows[0], list):
                 if fields:
                     rows = [dict(zip(fields, row)) for row in rows]
                 else:
                     return []
-            # rows are already dicts — use directly
             return rows
         except Exception as e:
             print(f"  WARN [ERCOT forecast] {path} — {e}")
