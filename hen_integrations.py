@@ -1385,13 +1385,21 @@ def collect_ercot_forecasts(token, sub_key):
             r   = requests.get(url, headers=headers, params=params, timeout=30)
             r.raise_for_status()
             body  = r.json()
-            # ERCOT API returns {"data": [...], "fields": [...]}
-            # or paginated {"_meta": {...}, "data": [...]}
+            # ERCOT API can return:
+            #   {"data": [...], "fields": [...]}  — list-of-lists with field names
+            #   {"data": [...]}                   — list-of-dicts directly
+            #   {"_meta": {...}, "data": [...]}   — paginated list-of-dicts
             fields = body.get("fields") or []
             rows   = body.get("data")   or []
-            # Convert list-of-lists to list-of-dicts using fields
-            if rows and isinstance(rows[0], list) and fields:
-                rows = [dict(zip(fields, row)) for row in rows]
+            if not rows:
+                return []
+            # If rows are lists (not dicts), convert using fields header
+            if isinstance(rows[0], list):
+                if fields:
+                    rows = [dict(zip(fields, row)) for row in rows]
+                else:
+                    return []
+            # rows are already dicts — use directly
             return rows
         except Exception as e:
             print(f"  WARN [ERCOT forecast] {path} — {e}")
@@ -1526,6 +1534,17 @@ def collect_ercot_forecasts(token, sub_key):
         d7_solar_peak.append(round(max(day_solar), 2) if any(day_solar) else 0)
         d7_net_peak.append(round(max(day_net), 2)    if any(day_net)   else 0)
 
+    # Debug: log sample row keys if no data parsed
+    if not load_by_dt and load_rows:
+        sample = load_rows[0] if load_rows else {}
+        print(f"    DEBUG load row keys: {list(sample.keys())[:10]}")
+        print(f"    DEBUG load sample: { {k: sample[k] for k in list(sample.keys())[:5]} }")
+    if not wind_by_dt and wind_rows:
+        sample = wind_rows[0] if wind_rows else {}
+        print(f"    DEBUG wind row keys: {list(sample.keys())[:10]}")
+    if not solar_by_dt and solar_rows:
+        sample = solar_rows[0] if solar_rows else {}
+        print(f"    DEBUG solar row keys: {list(sample.keys())[:10]}")
     print(f"    Load: {len(load_by_dt)} intervals · Wind: {len(wind_by_dt)} · Solar: {len(solar_by_dt)}")
     print(f"    24hr series: {len(h24_timestamps)} hours · 7-day series: {len(d7_dates)} days")
 
