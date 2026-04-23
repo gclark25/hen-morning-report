@@ -1454,14 +1454,16 @@ def collect_ercot_forecasts(token, sub_key):
     # We want ERCOT system total — sum all zones per hour
     load_by_dt = {}  # "YYYY-MM-DD HH" → MW
     for row in load_rows:
+        # Multiple forecast models per hour — only keep the in-use model
+        in_use = row.get("inUseFlag") or row.get("InUseFlag")
+        if in_use is False:
+            continue
         dt  = str(row.get("deliveryDate") or row.get("DeliveryDate") or "")[:10]
         he  = str(row.get("hourEnding")   or row.get("HourEnding")   or "0")
-        # hourEnding is 1-24, convert to 0-23
         try:
             hour = int(str(he).split(":")[0]) - 1
         except:
             hour = 0
-        # System total — try multiple field names
         mw = safe_float(
             row.get("systemTotal")  or row.get("SystemTotal")  or
             row.get("loadForecast") or row.get("LoadForecast") or
@@ -1470,7 +1472,7 @@ def collect_ercot_forecasts(token, sub_key):
         )
         if dt and mw > 0:
             key = f"{dt} {hour:02d}"
-            load_by_dt[key] = load_by_dt.get(key, 0) + mw
+            load_by_dt[key] = mw  # overwrite — one model per slot
 
     # ── Parse wind forecast ────────────────────────────────────────────────
     wind_by_dt = {}
