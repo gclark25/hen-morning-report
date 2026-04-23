@@ -614,8 +614,8 @@ def _modo_resolve_index_ids():
             name, id_str = pair.rsplit(":", 1)
             name = name.strip()
             # Match against HEN_CUSTOM_INDICES display names
-            for key, display_name in HEN_CUSTOM_INDICES.items():
-                if display_name.lower() == name.lower():
+            for key, meta in HEN_CUSTOM_INDICES.items():
+                if meta["name"].lower() == name.lower():
                     try:
                         resolved[key] = int(id_str.strip())
                     except ValueError:
