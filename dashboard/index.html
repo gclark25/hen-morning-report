@@ -649,7 +649,8 @@ loadData();
 // Auto-refresh every 5 minutes
 setInterval(loadData, 5 * 60 * 1000);
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" onload="if(window._buildFcChart)window._buildFcChart()">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" onload="if(window._buildFcChart)window._buildFcChart()"></script>
+<script>
 window._buildFcChart = function() {
   const d = window._fcChartData;
   if (!d || !d.gl.length) return;
