@@ -79,9 +79,13 @@ PRIOR_15   = (date.today() - timedelta(days=15)).isoformat()
 DAY_BEFORE = (date.today() - timedelta(days=2)).isoformat()
 
 # Modo Energy ERCOT index data has a ~60-day publication lag (settled market data).
-# Use 62 days ago as the target date and 63 days ago as the prior day for DoD delta.
-MODO_DATE       = (date.today() - timedelta(days=62)).isoformat()
-MODO_DATE_PRIOR = (date.today() - timedelta(days=63)).isoformat()
+# Window end = today - 62 days (latest published data).
+# 1-hour indices (HEN 2026, 1Hr Without HEN) start Jan 1, 2026.
+# 2-hour indices (Fort Duncan, 2Hr Without Fort Duncan) start Jan 21, 2026
+# when those assets began commercial operation.
+MODO_DATE                  = (date.today() - timedelta(days=62)).isoformat()
+MODO_WINDOW_START_1HR      = "2026-01-01"
+MODO_WINDOW_START_2HR      = "2026-01-21" 
 
 
 def safe_float(val):
@@ -517,11 +521,13 @@ MODO_BASE = "https://api.modoenergy.com/pub/v1"
 #
 # Format for MODO_INDEX_IDS secret (comma-separated name:id pairs):
 #   2026 - 1Hr Without HEN:1234,HEN 2026:1235,2-hour Without Fort Duncan:1236,Fort Duncan:1237
+# Each index has its display name and the correct YTD window start date.
+# 1-hour indices start Jan 1 2026; 2-hour indices start Jan 21 2026.
 HEN_CUSTOM_INDICES = {
-    "1hr_without_hen":          "2026 - 1Hr Without HEN",
-    "hen_2026":                 "HEN 2026",
-    "2hr_without_fort_duncan":  "2-hour Without Fort Duncan",
-    "fort_duncan":              "Fort Duncan",
+    "1hr_without_hen":         {"name": "2026 - 1Hr Without HEN",      "start": MODO_WINDOW_START_1HR},
+    "hen_2026":                {"name": "HEN 2026",                    "start": MODO_WINDOW_START_1HR},
+    "2hr_without_fort_duncan": {"name": "2-hour Without Fort Duncan",  "start": MODO_WINDOW_START_2HR},
+    "fort_duncan":             {"name": "Fort Duncan",                 "start": MODO_WINDOW_START_2HR},
 }
 
 
@@ -623,7 +629,7 @@ def _modo_resolve_index_ids():
     all_indices = _modo_paginate("indices/", params={"limit": 500})
 
     resolved = {}
-    display_to_key = {v.lower(): k for k, v in HEN_CUSTOM_INDICES.items()}
+    display_to_key = {meta["name"].lower(): k for k, meta in HEN_CUSTOM_INDICES.items()}
 
     for idx in all_indices:
         # Modo index object fields: id (int), name (str), market_region, ...
@@ -636,7 +642,7 @@ def _modo_resolve_index_ids():
             resolved[key] = int(idx_id)
             print(f"      Found: '{idx_name}' → id={idx_id}")
 
-    missing = [v for k, v in HEN_CUSTOM_INDICES.items() if k not in resolved]
+    missing = [meta["name"] for k, meta in HEN_CUSTOM_INDICES.items() if k not in resolved]
     if missing:
         print(f"    WARN [Modo] Could not resolve IDs for: {missing}")
         print("    TIP: Set MODO_INDEX_IDS secret to bypass discovery. "
@@ -714,6 +720,77 @@ def _modo_index_daily_revenue(index_id, date_str):
     }
 
 
+def _modo_index_window_revenue(index_id, start_date, end_date):
+    """
+    Fetch total revenue for a given index over a date range window.
+    Uses monthly granularity aggregated to an annualised $/MW/year figure.
+
+    GET /pub/v1/indices/{id}/revenue/timeseries/
+      interval_start          : start_date + T00:00:00
+      interval_end            : end_date   + T23:59:59
+      granularity             : daily  (sum within window client-side)
+      capacity_normalisation  : mw     ($/MW)
+      time_basis              : year   (annualised $/MW/year)
+      breakdown               : market (split by energy/ancillary)
+
+    Returns:
+      { "revenue_mw_year": float, "market_breakdown": { market: float } }
+    """
+    body = _modo_get(
+        f"indices/{index_id}/revenue/timeseries/",
+        params={
+            "interval_start":         f"{start_date}T00:00:00",
+            "interval_end":           f"{end_date}T23:59:59",
+            "granularity":            "daily",
+            "capacity_normalisation": "mw",
+            "time_basis":             "year",
+            "breakdown":              "market",
+            "limit":                  1000,
+        },
+    )
+
+    results = body.get("results") or []
+    if not results:
+        # Try without breakdown in case that parameter causes issues
+        body = _modo_get(
+            f"indices/{index_id}/revenue/timeseries/",
+            params={
+                "interval_start":         f"{start_date}T00:00:00",
+                "interval_end":           f"{end_date}T23:59:59",
+                "granularity":            "daily",
+                "capacity_normalisation": "mw",
+                "time_basis":             "year",
+                "limit":                  1000,
+            },
+        )
+        results = body.get("results") or []
+
+    if not results:
+        return {}
+
+    total = 0.0
+    market_breakdown = {}
+    n_days = 0
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        rev    = safe_float(row.get("revenue") or row.get("value") or 0)
+        market = str(row.get("market") or row.get("service") or "total")
+        market_breakdown[market] = round(market_breakdown.get(market, 0.0) + rev, 2)
+        total += rev
+        n_days += 1
+
+    # Average across days in window to get representative $/MW/year
+    avg = round(total / n_days, 2) if n_days else 0.0
+
+    return {
+        "revenue_mw_year":  avg,
+        "n_days":           n_days,
+        "market_breakdown": {k: round(v / n_days, 2) if n_days else 0
+                             for k, v in market_breakdown.items()},
+    }
+
+
 def collect_modo_indices():
     """
     Pull HEN's four custom Modo Energy indices for yesterday and the prior day,
@@ -760,7 +837,7 @@ def collect_modo_indices():
         print("  SKIP [Modo] MODO_API_KEY not set")
         return {"modo": {}}
 
-    print(f"  Pulling Modo Energy custom indices for {YESTERDAY}...")
+    print(f"  Pulling Modo Energy custom indices (end: {MODO_DATE})...")
 
     # ── Step 1: Resolve index names → IDs ─────────────────────────────────
     index_ids = _modo_resolve_index_ids()
@@ -769,35 +846,33 @@ def collect_modo_indices():
         return {"modo": {"data_date": MODO_DATE, "source": "Modo Energy",
                          "error": "No index IDs resolved"}}
 
-    # ── Step 2: Pull yesterday + prior day revenue for each index ──────────
+    # ── Step 2: Pull 2026 YTD for each index using its specific start date ─
+    # 1-hour indices: Jan 1 2026 → MODO_DATE
+    # 2-hour indices: Jan 21 2026 → MODO_DATE (commercial operation start)
     indices_out = {}
-    for key, display_name in HEN_CUSTOM_INDICES.items():
-        idx_id = index_ids.get(key)
+    for key, meta in HEN_CUSTOM_INDICES.items():
+        display_name = meta["name"]
+        window_start = meta["start"]
+        idx_id       = index_ids.get(key)
         if not idx_id:
             print(f"    SKIP {display_name} — ID not resolved")
             continue
 
-        # Yesterday's revenue
-        curr = _modo_index_daily_revenue(idx_id, YESTERDAY)
-        # Prior day's revenue for DoD delta
-        prior = _modo_index_daily_revenue(idx_id, DAY_BEFORE)
-
-        curr_val  = curr.get("revenue_mw_year", 0.0)
-        prior_val = prior.get("revenue_mw_year", 0.0)
-        delta     = round(curr_val - prior_val, 2) if prior_val else 0.0
+        result = _modo_index_window_revenue(idx_id, window_start, MODO_DATE)
+        rev    = result.get("revenue_mw_year", 0.0)
 
         indices_out[key] = {
-            "display_name":    display_name,
-            "id":              idx_id,
-            "revenue_mw_year": curr_val,
-            "revenue_mw_day":  curr.get("revenue_mw_day", 0.0),
-            "delta_dod":       delta,
-            "market_breakdown": curr.get("market_breakdown", {}),
+            "display_name":     display_name,
+            "id":               idx_id,
+            "window_start":     window_start,
+            "window_end":       MODO_DATE,
+            "revenue_mw_year":  rev,
+            "n_days":           result.get("n_days", 0),
+            "market_breakdown": result.get("market_breakdown", {}),
         }
 
-        sign = "+" if delta >= 0 else ""
-        print(f"    {display_name}: ${curr_val:,.0f}/MW/yr "
-              f"({sign}${delta:,.0f} DoD)")
+        print(f"    {display_name}: ${rev:,.0f}/MW/yr "
+              f"({result.get('n_days', 0)} days, {window_start} → {MODO_DATE})")
 
     return {
         "modo": {
