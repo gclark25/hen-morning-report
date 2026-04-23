@@ -624,6 +624,85 @@ def _build_ai_html(data):
         return ""
 
 
+def _build_forecast_html(data):
+    """Build ERCOT 7-day forward forecast section for the HTML report."""
+    fc = data.get("ercot_forecasts", {})
+    d7 = fc.get("daily_7day", {})
+    if not d7 or not d7.get("dates"):
+        return ""
+
+    dates          = d7.get("dates", [])
+    load_peaks     = d7.get("gross_load_peak", [])
+    wind_avgs      = d7.get("wind_avg", [])
+    solar_peaks    = d7.get("solar_peak", [])
+    net_load_peaks = d7.get("net_load_peak", [])
+
+    max_load = max(load_peaks) if load_peaks else 1
+
+    rows = ""
+    chart_bars = ""
+    for i, day in enumerate(dates):
+        gl  = load_peaks[i]     if i < len(load_peaks)     else 0
+        wnd = wind_avgs[i]      if i < len(wind_avgs)      else 0
+        sol = solar_peaks[i]    if i < len(solar_peaks)    else 0
+        net = net_load_peaks[i] if i < len(net_load_peaks) else 0
+        pct = round(gl / max_load * 100, 1) if max_load else 0
+        net_pct = round(net / max_load * 100, 1) if max_load else 0
+        dow = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][
+            __import__("datetime").date.fromisoformat(day).weekday()
+        ]
+        rows += f"""
+        <tr>
+          <td>{dow} {day[5:]}</td>
+          <td style="font-family:monospace">{gl:.1f}</td>
+          <td style="font-family:monospace;color:#1a7a3f">{wnd:.1f}</td>
+          <td style="font-family:monospace;color:#c87800">{sol:.1f}</td>
+          <td style="font-family:monospace;font-weight:600">{net:.1f}</td>
+        </tr>"""
+        chart_bars += f"""
+        <div class="bar-row">
+          <div class="bar-label" style="width:75px">{dow} {day[5:]}</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:{pct}%;background:#dde8f5"></div>
+            <div class="bar-fill" style="width:{net_pct}%;background:#0055aa;margin-top:-14px"></div>
+          </div>
+          <div class="bar-val" style="width:120px;font-size:10px">
+            {gl:.1f} GW / net {net:.1f}
+          </div>
+        </div>"""
+
+    h24 = fc.get("hourly_24hr", {})
+    h24_note = ""
+    if h24.get("timestamps"):
+        n = len(h24["timestamps"])
+        peak_load = max(h24.get("gross_load", [0]))
+        peak_net  = max(h24.get("net_load", [0]))
+        h24_note = (f"  24-hr outlook: peak gross load {peak_load:.1f} GW · "
+                    f"peak net load {peak_net:.1f} GW over {n} hours")
+
+    gen_date = fc.get("forecast_date", "")
+    return f"""
+    <div class="section" style="margin-top:20px">
+      <div class="section-title">ERCOT 7-Day Forward Forecast
+        <span style="font-weight:400;font-size:10px;color:#aaa;margin-left:8px">
+          Daily peak GW · Gross load (grey) vs Net load (blue) · Source: ERCOT · As of {gen_date}
+        </span>
+      </div>
+      <div style="margin-bottom:12px">{chart_bars}</div>
+      <table>
+        <thead><tr>
+          <th style="text-align:left">Date</th>
+          <th>Peak Gross Load</th>
+          <th>Wind Avg</th>
+          <th>Solar Peak</th>
+          <th>Peak Net Load</th>
+        </tr></thead>
+        <tbody>{rows}</tbody>
+      </table>
+      {"<div style='font-size:11px;color:#888;margin-top:8px'>" + h24_note + "</div>" if h24_note else ""}
+    </div>"""
+
+
 def build_report(data):
     rt    = data.get("rt", {})
     da    = data.get("da", {})
@@ -712,9 +791,10 @@ def build_report(data):
     dow = date.today().strftime("%A")
 
     # Build new integration sections
-    modo_html    = _build_modo_html(data)
-    weather_html = _build_weather_html(data)
-    ai_html      = _build_ai_html(data)
+    modo_html     = _build_modo_html(data)
+    weather_html  = _build_weather_html(data)
+    forecast_html = _build_forecast_html(data)
+    ai_html       = _build_ai_html(data)
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -883,6 +963,8 @@ tr:hover td{{background:#fafbfc}}
     {modo_html}
 
     {weather_html}
+
+    {forecast_html}
 
     {ai_html}
 
