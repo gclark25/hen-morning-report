@@ -3,1455 +3,525 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>HEN — ERCOT Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<title>HEN ERCOT Dashboard</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e8eaf0;min-height:100vh}
-.topbar{background:#0a3d2e;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1a5c40;position:sticky;top:0;z-index:100}
-.topbar-logo{font-size:15px;font-weight:700;color:#fff}
-.topbar-sub{font-size:12px;color:#7fc8a0;margin-left:10px}
-.topbar-right{display:flex;align-items:center;gap:16px}
-.data-date{font-size:12px;color:#7fc8a0;font-family:monospace}
-.refresh-btn{font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid #2a7a50;background:transparent;color:#7fc8a0;cursor:pointer}
-.refresh-btn:hover{background:#1a5c40}
-.status-dot{width:8px;height:8px;border-radius:50%;background:#3dba6f}
-.nav-tabs{display:flex;background:#151820;border-bottom:1px solid #2a2d3a;padding:0 20px;overflow-x:auto}
-.tab{padding:12px 18px;font-size:12px;font-weight:500;color:#555;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
-.tab:hover{color:#aaa}
-.tab.active{color:#3dba6f;border-bottom-color:#3dba6f}
-.main{max-width:1300px;margin:0 auto;padding:20px}
-.page{display:none}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     background:#f4f5f7;color:#1a1a2e;min-height:100vh}
+.header{background:#0a3d2e;padding:16px 24px;display:flex;
+        justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100}
+.header h1{font-size:18px;color:#fff;font-weight:600}
+.header .meta{font-size:11px;color:#7fc8a0;text-align:right}
+.header .meta span{display:block}
+.tabs{background:#fff;border-bottom:2px solid #e8e8e8;padding:0 24px;
+      display:flex;gap:0;position:sticky;top:53px;z-index:99}
+.tab{padding:10px 16px;font-size:12px;font-weight:600;color:#888;cursor:pointer;
+     border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap}
+.tab.active{color:#0a3d2e;border-bottom-color:#0a3d2e}
+.tab:hover{color:#0a3d2e}
+.page{display:none;padding:20px 24px;max-width:1200px;margin:0 auto}
 .page.active{display:block}
-.kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
-.kpi-card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px 18px}
-.kpi-label{font-size:10px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
-.kpi-value{font-size:26px;font-weight:700;font-family:monospace;line-height:1}
-.kpi-sub{font-size:11px;color:#555;margin-top:5px}
-.kpi-card.green .kpi-value{color:#3dba6f}
-.kpi-card.amber .kpi-value{color:#f0a500}
-.kpi-card.red   .kpi-value{color:#e05050}
-.kpi-card.blue  .kpi-value{color:#4a9eff}
-.card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px 18px;margin-bottom:16px}
-.card-title{font-size:11px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.chart-wrap{position:relative;height:200px}
-.chart-wrap.tall{height:280px}
-.table-scroll{overflow-x:auto}
+
+/* KPI strip */
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.kpi{background:#fff;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8}
+.kpi-label{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;
+           letter-spacing:.05em;margin-bottom:5px}
+.kpi-value{font-size:22px;font-weight:700;color:#1a1a2e;font-family:monospace}
+.kpi-sub{font-size:11px;color:#aaa;margin-top:3px}
+
+/* Cards and sections */
+.card{background:#fff;border-radius:8px;border:1px solid #e8e8e8;margin-bottom:16px;overflow:hidden}
+.card-header{padding:12px 16px;border-bottom:1px solid #f0f0f0;
+             display:flex;justify-content:space-between;align-items:center}
+.card-title{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em}
+.card-meta{font-size:10px;color:#aaa}
+.card-body{padding:14px 16px}
+
+/* Tables */
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{padding:7px 10px;text-align:right;color:#555;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #2a2d3a;white-space:nowrap;background:#151820}
-th.left{text-align:left}
-td{padding:8px 10px;text-align:right;border-bottom:1px solid #1e2130;color:#c8cad4;font-family:monospace;font-size:12px}
-td.left{text-align:left;font-family:-apple-system,sans-serif}
-.node-cell{font-family:monospace;font-size:11px;color:#9ea0a8}
-tr:hover td{background:#1e2130;cursor:pointer}
-.spike{color:#e05050;font-weight:700}
-.neg{color:#4a9eff}
-.rt-prem{color:#3dba6f;font-weight:600}
-.da-prem{color:#c87800}
-.rbadge{font-size:10px;padding:2px 7px;border-radius:3px;display:inline-block;white-space:nowrap;font-family:-apple-system,sans-serif}
-.r-west{background:#1a2a4a;color:#6a9fff}
-.r-north{background:#1a2e1a;color:#6abf6a}
-.r-coastal{background:#0d2035;color:#4ab0ff}
-.r-premium{background:#2e1a2e;color:#d47fbf}
-.region-filters{display:flex;gap:8px;flex-wrap:wrap}
-.rfilt{font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid #2a2d3a;background:transparent;color:#555;cursor:pointer}
-.rfilt:hover{border-color:#555;color:#aaa}
-.rfilt.active{background:#1a3a2a;border-color:#3dba6f;color:#3dba6f}
-.sort-btns{display:flex;gap:6px}
-.sort-btn{font-size:10px;padding:3px 9px;border-radius:4px;border:1px solid #2a2d3a;background:transparent;color:#555;cursor:pointer}
-.sort-btn.active{border-color:#3dba6f;color:#3dba6f}
-.sort-btn:hover{color:#aaa;border-color:#555}
-.callout-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
-.callout{background:#1a1d27;border:1px solid #2a2d3a;border-radius:8px;padding:12px 14px;border-left:3px solid #333}
-.callout.green{border-left-color:#3dba6f}
-.callout.amber{border-left-color:#f0a500}
-.callout.red{border-left-color:#e05050}
-.callout.blue{border-left-color:#4a9eff}
-.callout-label{font-size:9px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
-.callout-value{font-size:12px;color:#c8cad4;font-family:monospace;line-height:1.4}
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}
-.modal-overlay.open{display:flex}
-.modal{background:#1a1d27;border:1px solid #2a2d3a;border-radius:12px;width:min(920px,100%);max-height:90vh;overflow-y:auto;padding:24px}
-.modal-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
-.modal-title{font-size:18px;font-weight:600;color:#e8eaf0}
-.modal-meta{font-size:12px;color:#555;margin-top:4px}
-.modal-close{background:none;border:none;color:#555;font-size:22px;cursor:pointer;padding:0 4px;line-height:1}
-.modal-close:hover{color:#aaa}
-.modal-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px}
-.mkpi{background:#151820;border-radius:8px;padding:10px 12px;text-align:center}
-.mkpi-label{font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
-.mkpi-val{font-size:16px;font-weight:700;font-family:monospace}
-.modal-charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
-.modal-chart-wrap{position:relative;height:170px}
-.map-container{position:relative}
-.map-tooltip{position:absolute;background:#1a1d27;border:1px solid #2a2d3a;border-radius:6px;padding:8px 12px;font-size:11px;pointer-events:none;display:none;z-index:10;min-width:150px;line-height:1.7}
-.map-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;justify-content:center}
-.map-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#555}
-.map-legend-dot{width:10px;height:10px;border-radius:50%}
-.map-node{cursor:pointer}
-.error-box{text-align:center;padding:40px;color:#e05050;background:#1a1d27;border-radius:10px;border:1px solid #3a1d1d}
-.footer{text-align:center;font-size:11px;color:#333;padding:20px 0 8px}
-@media(max-width:720px){
-  .kpi-grid{grid-template-columns:1fr 1fr}
-  .two-col{grid-template-columns:1fr}
-  .callout-grid{grid-template-columns:1fr 1fr}
-  .modal-kpis{grid-template-columns:1fr 1fr}
-  .modal-charts{grid-template-columns:1fr}
+th{background:#f8f9fa;padding:7px 10px;text-align:right;font-weight:600;
+   color:#555;font-size:11px;border-bottom:2px solid #e8e8e8}
+th:first-child,th:nth-child(2){text-align:left}
+td{padding:7px 10px;text-align:right;border-bottom:1px solid #f4f4f4;color:#2a2a3e}
+td:first-child{text-align:left}
+td:nth-child(2){text-align:left}
+tr:hover td{background:#fafbfc}
+.node-name{font-family:monospace;font-size:11px;color:#444}
+.spike{color:#b33000;font-weight:600}
+.neg{color:#0066cc}
+.rt-prem{color:#1a7a3f;font-weight:600}
+.da-prem{color:#7a3a1a}
+.region-tag{font-size:10px;padding:2px 6px;border-radius:3px;display:inline-block}
+.region-west-texas{background:#e8f0fe;color:#1a3a8a}
+.region-north-texas{background:#e8f5e9;color:#1a5c2a}
+.region-coastal{background:#e3f2fd;color:#0d47a1}
+.region-premium{background:#fce4ec;color:#880e4f}
+
+/* Modo chart */
+.bar-row{display:flex;align-items:center;margin-bottom:8px;gap:10px}
+.bar-label{font-size:12px;color:#333;width:200px;flex-shrink:0}
+.bar-track{flex:1;background:#e8e8e8;border-radius:4px;height:18px;position:relative}
+.bar-fill{height:18px;border-radius:4px;background:#1a7a3f;min-width:2px}
+.bar-val{font-size:11px;font-family:monospace;color:#333;width:100px;text-align:right;flex-shrink:0}
+.bar-sub{font-size:10px;color:#aaa;width:200px;flex-shrink:0}
+
+/* Weather grid */
+.weather-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.city-card{background:#f8f9fa;border-radius:6px;padding:10px 12px}
+.city-name{font-size:10px;font-weight:700;color:#555;text-transform:uppercase;
+           letter-spacing:.04em;margin-bottom:5px}
+.city-row{display:flex;justify-content:space-between;align-items:center;
+          font-size:11px;color:#333;padding:3px 0;border-bottom:1px solid #eee}
+.city-row:last-child{border-bottom:none}
+.city-date{color:#888;font-size:10px;font-family:monospace}
+.precip{color:#0066cc;font-size:10px}
+
+/* AI analysis */
+.ai-box{background:#f0f7f4;border-radius:6px;padding:16px;border-left:3px solid #1a7a3f}
+.ai-text{font-size:12px;color:#2a2a3e;line-height:1.7;white-space:pre-wrap}
+
+/* Loading */
+.loading{text-align:center;padding:40px;color:#aaa;font-size:13px}
+.error{text-align:center;padding:40px;color:#b33000;font-size:13px}
+
+/* Callout grid */
+.callout-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.callout{background:#f8f9fa;border-radius:6px;padding:12px 14px;border-left:3px solid #ddd}
+.callout.green{border-left-color:#1a7a3f}
+.callout.amber{border-left-color:#c87800}
+.callout.red{border-left-color:#b33000}
+.callout.blue{border-left-color:#0055aa}
+.callout-label{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;
+               letter-spacing:.05em;margin-bottom:4px}
+.callout-value{font-size:12px;color:#1a1a2e;font-family:monospace}
+
+@media(max-width:640px){
+  .kpi-strip{grid-template-columns:1fr 1fr}
+  .callout-grid{grid-template-columns:1fr}
+  .bar-label,.bar-sub{width:140px}
 }
 </style>
 </head>
 <body>
 
-<div class="topbar">
-  <div style="display:flex;align-items:center">
-    <span class="topbar-logo">Hunt Energy Network</span>
-    <span class="topbar-sub">ERCOT Commercial Dashboard</span>
-  </div>
-  <div class="topbar-right">
-    <span class="status-dot" id="status-dot"></span>
-    <span class="data-date" id="data-date">Loading…</span>
-    <button class="refresh-btn" onclick="loadData()">Refresh</button>
+<div class="header">
+  <div><h1>Hunt Energy Network</h1><div style="font-size:11px;color:#7fc8a0">ERCOT Commercial Dashboard</div></div>
+  <div class="meta">
+    <span id="data-date">Loading...</span>
+    <span id="gen-time"></span>
   </div>
 </div>
 
-<div class="nav-tabs">
-  <div class="tab active" onclick="showPage('overview',this)">Overview</div>
-  <div class="tab" onclick="showPage('live',this)">Today — Live</div>
-  <div class="tab" onclick="showPage('topbottom',this)">Top / Bottom</div>
-  <div class="tab" onclick="showPage('prices',this)">Node Prices</div>
-  <div class="tab" onclick="showPage('fundamentals',this)">Fundamentals</div>
-  <div class="tab" onclick="showPage('map',this)">Texas Map</div>
-  <div class="tab" onclick="showPage('history',this)">5-Day History</div>
-  <div class="tab" onclick="showPage('ai',this)">AI Analysis</div>
-  <div class="tab" onclick="showPage('battery',this)">Battery Dispatch</div>
+<div class="tabs">
+  <div class="tab active" onclick="showTab('overview')">Overview</div>
+  <div class="tab" onclick="showTab('prices')">Prices & DART</div>
+  <div class="tab" onclick="showTab('modo')">Modo Indices</div>
+  <div class="tab" onclick="showTab('weather')">Weather</div>
+  <div class="tab" onclick="showTab('fundamentals')">Fundamentals</div>
+  <div class="tab" onclick="showTab('analysis')">AI Analysis</div>
 </div>
 
-<div class="main">
-
-  <div class="page active" id="page-overview">
-    <div class="kpi-grid" id="kpi-strip"></div>
-    <div class="callout-grid" id="callout-grid"></div>
-    <div class="two-col">
-      <div class="card"><div class="card-title">Gross load — hourly (GW)</div>
-        <div class="chart-wrap"><canvas id="load-hourly-chart"></canvas></div></div>
-      <div class="card"><div class="card-title">Wind &amp; solar — hourly (GW)</div>
-        <div class="chart-wrap"><canvas id="gen-hourly-chart"></canvas></div></div>
-    </div>
-    <div class="card"><div class="card-title">Regional DART summary</div>
-      <div id="regional-summary"></div></div>
+<!-- ── OVERVIEW TAB ─────────────────────────────────────────────────────── -->
+<div id="tab-overview" class="page active">
+  <div class="kpi-strip" id="kpi-strip">
+    <div class="kpi"><div class="kpi-label">Fleet avg RT</div>
+      <div class="kpi-value" id="kpi-rt-avg">—</div>
+      <div class="kpi-sub">$/MWh</div></div>
+    <div class="kpi"><div class="kpi-label">Fleet peak RT</div>
+      <div class="kpi-value" id="kpi-rt-max">—</div>
+      <div class="kpi-sub">$/MWh highest interval</div></div>
+    <div class="kpi"><div class="kpi-label">Spike events</div>
+      <div class="kpi-value" id="kpi-spikes">—</div>
+      <div class="kpi-sub">nodes &gt;$100/MWh</div></div>
+    <div class="kpi"><div class="kpi-label">Negative nodes</div>
+      <div class="kpi-value" id="kpi-neg">—</div>
+      <div class="kpi-sub">charging opportunities</div></div>
   </div>
 
-  <!-- TODAY LIVE -->
-  <div class="page" id="page-live">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <div id="live-status-bar" style="font-size:12px;color:#555">Loading live data…</div>
-      <div style="display:flex;align-items:center;gap:12px">
-        <span id="live-countdown" style="font-size:11px;color:#555;font-family:monospace"></span>
-        <button class="refresh-btn" onclick="loadLive(true)">Refresh now</button>
-      </div>
-    </div>
-    <div class="kpi-grid" id="live-kpi-strip"></div>
-    <div class="callout-grid" id="live-callout-grid"></div>
-    <div class="two-col">
-      <div class="card">
-        <div class="card-title">Today's RT price by hour — fleet avg ($/MWh)
-          <span id="live-hours-badge" style="font-size:10px;color:#3dba6f;font-weight:400"></span>
-        </div>
-        <div class="chart-wrap"><canvas id="live-hourly-chart"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="card-title">Today vs yesterday — RT avg by node ($/MWh)</div>
-        <div class="chart-wrap"><canvas id="live-vs-yest-chart"></canvas></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">
-        Today's RT prices — all nodes (intervals cleared so far)
-        <div class="sort-btns">
-          <button class="sort-btn active" onclick="sortLive('rt_avg',this)">RT avg</button>
-          <button class="sort-btn" onclick="sortLive('rt_max',this)">RT max</button>
-          <button class="sort-btn" onclick="sortLive('node',this)">Name</button>
-          <button class="sort-btn" onclick="sortLive('vs_yest',this)">vs Yesterday</button>
-        </div>
-      </div>
-      <div class="table-scroll">
-        <table><thead><tr>
-          <th class="left">Node</th><th class="left">Region</th>
-          <th>RT avg today</th><th>RT max today</th><th>RT min today</th>
-          <th>Yest RT avg</th><th>vs Yesterday</th><th>Intervals</th>
-        </tr></thead>
-        <tbody id="live-price-tbody"></tbody></table>
-      </div>
-      <div style="font-size:10px;color:#333;margin-top:8px">Click any row to see today's hourly curve · Updates every 15 min</div>
-    </div>
-  </div>
+  <div class="callout-grid" id="callout-grid"></div>
 
-  <div class="page" id="page-topbottom">
-    <div style="font-size:11px;color:#555;margin-bottom:12px;padding:10px 14px;background:#1a1d27;border-radius:8px;border:1px solid #2a2d3a">
-      <strong style="color:#aaa">Formula guide:</strong>
-      &nbsp;DART = DA avg − RT avg (positive = DA cleared above RT) &nbsp;·&nbsp;
-      Intraday spread = (highest RT hour − lowest RT hour) / 24 $/MWh
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Top 5 DART Performers</span>
+      <span class="card-meta" id="overview-date"></span>
     </div>
-    <div class="two-col">
-      <div class="card"><div class="card-title">Top 10 — highest DA premium over RT ($/MWh)</div>
-        <div class="table-scroll"><table><thead><tr>
-          <th class="left">Node</th><th class="left">Region</th>
-          <th>DART avg</th><th>Intraday</th><th>Best hour</th><th>Best spread</th>
-          <th>Spike hrs</th><th>Neg hrs</th>
-        </tr></thead><tbody id="top10-tbody"></tbody></table></div></div>
-      <div class="card"><div class="card-title">Bottom 10 — highest RT premium over DA ($/MWh)</div>
-        <div class="table-scroll"><table><thead><tr>
-          <th class="left">Node</th><th class="left">Region</th>
-          <th>DART avg</th><th>Intraday</th><th>Worst hour</th><th>Worst spread</th>
-          <th>Spike hrs</th><th>Neg hrs</th>
-        </tr></thead><tbody id="bot10-tbody"></tbody></table></div></div>
-    </div>
-    <div class="card"><div class="card-title">All nodes — DART spread DA−RT ($/MWh) · click to drill in</div>
-      <div class="chart-wrap tall"><canvas id="dart-bar-chart"></canvas></div></div>
-  </div>
-
-  <div class="page" id="page-prices">
-    <div class="card">
-      <div class="card-title">RT vs DA prices by node
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <div class="region-filters">
-            <button class="rfilt active" onclick="filterRegion('all',this)">All</button>
-            <button class="rfilt" onclick="filterRegion('West Texas',this)">West Texas</button>
-            <button class="rfilt" onclick="filterRegion('North Texas',this)">North Texas</button>
-            <button class="rfilt" onclick="filterRegion('Coastal',this)">Coastal</button>
-            <button class="rfilt" onclick="filterRegion('Premium',this)">Premium</button>
-          </div>
-          <div class="sort-btns">
-            <button class="sort-btn active" onclick="sortPrices('rt_avg',this)">RT avg</button>
-            <button class="sort-btn" onclick="sortPrices('dart',this)">DART</button>
-            <button class="sort-btn" onclick="sortPrices('rt_max',this)">RT max</button>
-            <button class="sort-btn" onclick="sortPrices('node',this)">Name</button>
-          </div>
-        </div>
-      </div>
-      <div class="table-scroll"><table><thead><tr>
-        <th class="left">Node</th><th class="left">Region</th>
-        <th>RT avg</th><th>RT min</th><th>RT max</th><th>DA avg</th><th>DART</th>
-      </tr></thead><tbody id="price-tbody"></tbody></table></div>
-      <div style="font-size:10px;color:#333;margin-top:8px">Click any row to see full 24-hour curve</div>
-    </div>
-  </div>
-
-  <div class="page" id="page-fundamentals">
-    <div class="two-col">
-      <div class="card"><div class="card-title">Gross load — 7-day peak (GW)</div>
-        <div class="chart-wrap"><canvas id="load-7day-chart"></canvas></div></div>
-      <div class="card"><div class="card-title">Wind &amp; solar — 7-day peak (GW)</div>
-        <div class="chart-wrap"><canvas id="gen-7day-chart"></canvas></div></div>
-    </div>
-    <div class="card"><div class="card-title">7-day fundamentals (GW daily peak)</div>
-      <div class="table-scroll"><table><thead><tr>
-        <th class="left">Date</th><th>Gross load</th><th>Wind</th><th>Solar</th><th>Net load</th>
-      </tr></thead><tbody id="fund-tbody"></tbody></table></div>
-      <div style="font-size:10px;color:#333;margin-top:8px">Highlighted = net load &lt;30 GW (charging signal)</div>
-    </div>
-  </div>
-
-  <div class="page" id="page-map">
-    <div class="two-col">
-      <div class="card"><div class="card-title">HEN BESS fleet — Texas locations</div>
-        <div class="map-container">
-          <svg id="tx-svg" viewBox="0 0 500 530" style="width:100%;height:auto;display:block">
-            <polygon points="62,22 438,22 458,58 478,98 488,158 488,218 458,258 438,298 428,338 398,378 378,418 338,458 298,488 258,508 218,508 178,488 138,468 98,438 68,398 48,358 28,318 18,278 18,238 28,198 38,158 28,118 18,78 38,48"
-              fill="#151820" stroke="#2a3550" stroke-width="2"/>
-            <text x="65"  y="250" fill="#6a9fff" font-size="10" opacity=".35" font-family="sans-serif">West Texas</text>
-            <text x="295" y="165" fill="#6abf6a" font-size="10" opacity=".35" font-family="sans-serif">North Texas</text>
-            <text x="315" y="430" fill="#4ab0ff" font-size="10" opacity=".35" font-family="sans-serif">Coastal</text>
-            <text x="148" y="372" fill="#d47fbf" font-size="10" opacity=".35" font-family="sans-serif">Premium</text>
-            <g id="map-nodes"></g>
-          </svg>
-          <div class="map-tooltip" id="map-tooltip"></div>
-        </div>
-        <div class="map-legend">
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#6a9fff"></div>West Texas</div>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#6abf6a"></div>North Texas</div>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#4ab0ff"></div>Coastal</div>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#d47fbf"></div>Premium</div>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#e05050;border:2px solid #e05050;opacity:.6"></div>Spike (&gt;$100)</div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title" id="map-detail-title">Click a node to view details</div>
-        <div id="map-node-detail" style="color:#444;font-size:13px;text-align:center;padding:80px 0">
-          Click any dot on the map
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- AI ANALYSIS -->
-  <div class="page" id="page-ai">
-    <div id="ai-content">
-      <div style="text-align:center;padding:60px;color:#444">Loading AI analysis...</div>
-    </div>
-  </div>
-
-  <!-- BATTERY DISPATCH -->
-  <div class="page" id="page-battery">
-    <div id="battery-content">
-      <div style="text-align:center;padding:60px;color:#444">Loading battery dispatch data...</div>
-    </div>
-  </div>
-
-  <!-- 5-DAY HISTORY -->
-  <div class="page" id="page-history">
-    <div class="card">
-      <div class="card-title">Fleet metrics — 5-day trend</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div><div style="font-size:10px;color:#555;margin-bottom:8px">Fleet avg RT price ($/MWh)</div>
-          <div class="chart-wrap"><canvas id="hist-rt-chart"></canvas></div></div>
-        <div><div style="font-size:10px;color:#555;margin-bottom:8px">ERCOT fundamentals — daily peak (GW)</div>
-          <div class="chart-wrap"><canvas id="hist-fund-chart"></canvas></div></div>
-      </div>
-    </div>
-    <div class="two-col">
-      <div class="card">
-        <div class="card-title">Regional avg DART (DA−RT $/MWh) — 5 days</div>
-        <div class="chart-wrap"><canvas id="hist-region-chart"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="card-title">Spike &amp; negative price node count — 5 days</div>
-        <div class="chart-wrap"><canvas id="hist-spike-chart"></canvas></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">
-        Per-node DART trend (DA−RT $/MWh) — 5 days
-        <div class="region-filters" id="hist-region-filters">
-          <button class="rfilt active" onclick="histFilterRegion('all',this)">All</button>
-          <button class="rfilt" onclick="histFilterRegion('West Texas',this)">West Texas</button>
-          <button class="rfilt" onclick="histFilterRegion('North Texas',this)">North Texas</button>
-          <button class="rfilt" onclick="histFilterRegion('Coastal',this)">Coastal</button>
-          <button class="rfilt" onclick="histFilterRegion('Premium',this)">Premium</button>
-        </div>
-      </div>
-      <div class="table-scroll">
-        <table id="hist-node-table">
-          <thead><tr id="hist-node-header"></tr></thead>
-          <tbody id="hist-node-tbody"></tbody>
-        </table>
-      </div>
-      <div style="font-size:10px;color:#333;margin-top:8px">Green = DA premium · Red = RT premium · Click row to see node detail</div>
-    </div>
-  </div>
-  <!-- end page-history -->
-
-</div>
-<!-- end main -->
-
-<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
-  <div class="modal">
-    <div class="modal-header">
-      <div><div class="modal-title" id="modal-title">—</div>
-           <div class="modal-meta"  id="modal-meta"></div></div>
-      <button class="modal-close" onclick="closeModalDirect()">×</button>
-    </div>
-    <div class="modal-kpis"   id="modal-kpis"></div>
-    <div class="modal-charts">
-      <div class="card" style="margin-bottom:0"><div class="card-title">Hourly RT vs DA ($/MWh)</div>
-        <div class="modal-chart-wrap"><canvas id="modal-price-chart"></canvas></div></div>
-      <div class="card" style="margin-bottom:0"><div class="card-title">Hourly DART spread ($/MWh)</div>
-        <div class="modal-chart-wrap"><canvas id="modal-dart-chart"></canvas></div></div>
-    </div>
-    <div class="table-scroll">
+    <div class="card-body">
       <table><thead><tr>
-        <th class="left">Hour ending</th><th>RT ($/MWh)</th><th>DA ($/MWh)</th><th>DART spread</th>
-      </tr></thead><tbody id="modal-table-body"></tbody></table>
+        <th>Node</th><th>Region</th><th>DART avg</th><th>RT avg</th><th>DA avg</th>
+      </tr></thead><tbody id="top5-body"></tbody></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Modo Indices — 2026 YTD Snapshot</span></div>
+    <div class="card-body" id="overview-modo"></div>
+  </div>
+</div>
+
+<!-- ── PRICES TAB ──────────────────────────────────────────────────────── -->
+<div id="tab-prices" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Top 10 DART Performers</span>
+      <span class="card-meta">DA avg − RT avg · higher = DA premium</span>
+    </div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Node</th><th>Region</th><th>DART avg</th>
+        <th>Intraday $/MWh</th><th>Best hour</th><th>Best spread</th>
+        <th>Spike hrs</th><th>Neg hrs</th>
+      </tr></thead><tbody id="top10-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Bottom 10 DART Performers</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Node</th><th>Region</th><th>DART avg</th>
+        <th>Intraday $/MWh</th><th>Worst hour</th><th>Worst spread</th>
+        <th>Spike hrs</th><th>Neg hrs</th>
+      </tr></thead><tbody id="bot10-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">All Nodes — RT vs DA</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Node</th><th>Region</th><th>RT avg</th><th>RT min</th>
+        <th>RT max</th><th>DA avg</th><th>DART</th>
+      </tr></thead><tbody id="all-nodes-body"></tbody></table>
     </div>
   </div>
 </div>
 
-<div class="footer">Hunt Energy Network · Commercial Operations · Confidential · Updates weekdays 6 AM CT</div>
+<!-- ── MODO TAB ────────────────────────────────────────────────────────── -->
+<div id="tab-modo" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">HEN Custom Indices — 2026 YTD</span>
+      <span class="card-meta" id="modo-date-range"></span>
+    </div>
+    <div class="card-body">
+      <div id="modo-bars" style="margin-bottom:20px"></div>
+      <table><thead><tr>
+        <th style="text-align:left">Index</th>
+        <th>$/MW/yr (annualised)</th>
+        <th>Window Start</th>
+        <th>Days</th>
+        <th>Top Markets</th>
+      </tr></thead><tbody id="modo-table-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── WEATHER TAB ─────────────────────────────────────────────────────── -->
+<div id="tab-weather" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">15-Day City Forecasts — ERCOT Metro Stations</span>
+      <span class="card-meta" id="weather-source"></span>
+    </div>
+    <div class="card-body">
+      <div class="weather-grid" id="weather-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── FUNDAMENTALS TAB ────────────────────────────────────────────────── -->
+<div id="tab-fundamentals" class="page">
+  <div class="card">
+    <div class="card-header"><span class="card-title">ERCOT System Fundamentals — 7-day lookback (GW daily peak)</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Date</th><th>Gross load</th><th>Wind</th><th>Solar</th><th>Net load</th>
+      </tr></thead><tbody id="fund-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">5-Day History</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Date</th><th>Fleet RT avg</th><th>Fleet RT max</th>
+        <th>Spike nodes</th><th>Neg nodes</th><th>Gross load</th><th>Battery SOC</th>
+      </tr></thead><tbody id="history-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── AI ANALYSIS TAB ─────────────────────────────────────────────────── -->
+<div id="tab-analysis" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">AI Morning Analysis</span>
+      <span class="card-meta" id="ai-date"></span>
+    </div>
+    <div class="card-body">
+      <div class="ai-box"><div class="ai-text" id="ai-text">Loading...</div></div>
+    </div>
+  </div>
+</div>
 
 <script>
-let D=null,priceSort='rt_avg',priceRegion='all',charts={};
-const RC={'West Texas':'r-west','North Texas':'r-north','Coastal':'r-coastal','Premium':'r-premium'};
-const RCOL={'West Texas':'#6a9fff','North Texas':'#6abf6a','Coastal':'#4ab0ff','Premium':'#d47fbf'};
-
-function txProject(lat,lon){
-  const x=((lon-(-106.8))/((-93.2)-(-106.8)))*420+40;
-  const y=((36.7-lat)/(36.7-25.5))*460+28;
-  return[Math.round(x),Math.round(y)];
-}
-function getRegion(node){
-  if(!D) return'Other';
-  for(const[r,ns] of Object.entries(D.regions||{})) if(ns.includes(node)) return r;
-  return'Other';
-}
-function showPage(name,el){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  el.classList.add('active');
-  if(name==='fundamentals'&&D) renderFundamentals();
-  if(name==='map'&&D) renderMap();
-}
-async function loadData(){
-  try{
-    const r=await fetch(`latest.json?_=${Date.now()}`);
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    D=await r.json();
-    document.getElementById('data-date').textContent=`Data: ${D.data_date}`;
-    document.getElementById('status-dot').style.background='#3dba6f';
-    renderAll();
-  }catch(e){
-    document.getElementById('status-dot').style.background='#e05050';
-    document.getElementById('data-date').textContent='No data';
-    document.getElementById('page-overview').innerHTML=
-      `<div class="error-box"><div style="font-size:16px;margin-bottom:8px">No data yet</div>
-      <div style="color:#666">Run the GitHub Actions workflow manually to generate the first report.</div>
-      <div style="margin-top:12px;font-size:11px;color:#444">Error: ${e.message}</div></div>`;
-  }
-}
-function renderAll(){renderKPIs();renderCallouts();renderHourlyCharts();renderRegionalSummary();renderPriceTable();renderTopBottom();}
-
-function renderKPIs(){
-  const rt=D.rt||{},vals=Object.values(rt);
-  const avg=vals.length?(vals.reduce((s,v)=>s+v.avg,0)/vals.length).toFixed(2):'—';
-  const max=vals.length?Math.max(...vals.map(v=>v.max)).toFixed(2):'—';
-  const sp=vals.filter(v=>v.max>100).length,ng=vals.filter(v=>v.min<0).length;
-  document.getElementById('kpi-strip').innerHTML=`
-    <div class="kpi-card green"><div class="kpi-label">Fleet avg RT</div>
-      <div class="kpi-value">$${avg}</div><div class="kpi-sub">${Object.keys(rt).length} nodes · ${D.data_date}</div></div>
-    <div class="kpi-card red"><div class="kpi-label">Spike events</div>
-      <div class="kpi-value">${sp}</div><div class="kpi-sub">nodes &gt;$100/MWh</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Neg price nodes</div>
-      <div class="kpi-value">${ng}</div><div class="kpi-sub">charging opportunities</div></div>`;
+// ── Tab switching ────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
 }
 
-function renderCallouts(){
-  const dart=D.dart||{},rt=D.rt||{};
-  const ent=Object.entries(dart);
-  // Highest DART = DA most above RT (best DA seller)
-  // Lowest DART  = RT most above DA (best RT performer)
-  const bestDA =ent.length?ent.reduce((a,b)=>b[1]>a[1]?b:a):null;
-  const bestRT =ent.length?ent.reduce((a,b)=>b[1]<a[1]?b:a):null;
-  const sp=Object.entries(rt).filter(([,v])=>v.max>100).map(([n])=>n);
-  const ng=Object.entries(rt).filter(([,v])=>v.min<0).map(([n])=>n);
-  document.getElementById('callout-grid').innerHTML=`
-    <div class="callout amber"><div class="callout-label">Best DA premium (DA−RT)</div>
-      <div class="callout-value">${bestDA?`${bestDA[0]}<br>+$${bestDA[1].toFixed(2)}/MWh DA over RT`:'N/A'}</div></div>
-    <div class="callout green"><div class="callout-label">Best RT performer (RT&gt;DA)</div>
-      <div class="callout-value">${bestRT?`${bestRT[0]}<br>$${Math.abs(bestRT[1]).toFixed(2)}/MWh RT above DA`:'N/A'}</div></div>
-    <div class="callout red"><div class="callout-label">Spike nodes (&gt;$100/MWh RT)</div>
-      <div class="callout-value">${sp.length?sp.join(', '):'None'}</div></div>
-    <div class="callout blue"><div class="callout-label">Negative RT price nodes</div>
-      <div class="callout-value">${ng.length?ng.join(', '):'None'}</div></div>`;
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const fmt  = v => v == null ? '—' : '$' + Number(v).toFixed(2);
+const fmtK = v => v == null ? '—' : '$' + Number(v).toLocaleString(undefined, {maximumFractionDigits:0});
+const regionClass = r => 'region-' + (r || 'other').toLowerCase().replace(/\s+/g, '-');
 
-function renderHourlyCharts(){
-  const lh=D.gross_load_hourly||{},wh=D.wind_hourly||{},sh=D.solar_hourly||{};
-  const hrs=Array.from({length:24},(_,i)=>String(i+1));
-  const labels=hrs.map(h=>`HE${h.padStart(2,'0')}`);
-  const base={responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{labels:{color:'#666',font:{size:10}}}},
-    scales:{x:{ticks:{color:'#555',font:{size:9},maxRotation:45},grid:{color:'#1e2130'}},
-            y:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'}}}};
-  destroyChart('load-hourly-chart');
-  charts['load-hourly-chart']=new Chart(document.getElementById('load-hourly-chart'),{
-    type:'line',data:{labels,datasets:[{label:'Gross load (GW)',data:hrs.map(h=>lh[h]??null),
-      borderColor:'#3dba6f',backgroundColor:'rgba(61,186,111,.1)',fill:true,tension:.3,pointRadius:2}]},options:base});
-  destroyChart('gen-hourly-chart');
-  charts['gen-hourly-chart']=new Chart(document.getElementById('gen-hourly-chart'),{
-    type:'line',data:{labels,datasets:[
-      {label:'Wind (GW)',data:hrs.map(h=>wh[h]??null),borderColor:'#4a9eff',backgroundColor:'rgba(74,158,255,.08)',fill:true,tension:.3,pointRadius:2},
-      {label:'Solar (GW)',data:hrs.map(h=>sh[h]??null),borderColor:'#f0a500',backgroundColor:'rgba(240,165,0,.08)',fill:true,tension:.3,pointRadius:2}
-    ]},options:base});
-}
-
-function renderRegionalSummary(){
-  const reg=(D.top_bottom||{}).regional||{};
-  let html='<div class="table-scroll"><table><thead><tr><th class="left">Region</th><th>Nodes</th><th>Avg DART</th><th class="left">Best node</th><th>Best DART</th></tr></thead><tbody>';
-  for(const[region,v] of Object.entries(reg)){
-    const rc=RC[region]||'',dc=v.avg_dart>0?'rt-prem':'da-prem';
-    html+=`<tr><td class="left"><span class="rbadge ${rc}">${region}</span></td>
-      <td>${v.node_count}</td>
-      <td class="${dc}">${v.avg_dart>0?'+':''}$${v.avg_dart.toFixed(2)}</td>
-      <td class="left node-cell">${v.best_node}</td>
-      <td class="rt-prem">+$${v.best_dart.toFixed(2)}</td></tr>`;
-  }
-  html+='</tbody></table></div>';
-  document.getElementById('regional-summary').innerHTML=html;
-}
-
-function filterRegion(region,btn){priceRegion=region;document.querySelectorAll('.rfilt').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderPriceTable();}
-function sortPrices(key,btn){priceSort=key;document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderPriceTable();}
-
-function renderPriceTable(){
-  if(!D) return;
-  const rt=D.rt||{},da=D.da||{},dart=D.dart||{};
-  let nodes=Object.keys(rt);
-  if(priceRegion!=='all') nodes=nodes.filter(n=>getRegion(n)===priceRegion);
-  nodes.sort((a,b)=>{
-    if(priceSort==='node') return a.localeCompare(b);
-    if(priceSort==='rt_avg') return(rt[b]?.avg||0)-(rt[a]?.avg||0);
-    if(priceSort==='rt_max') return(rt[b]?.max||0)-(rt[a]?.max||0);
-    if(priceSort==='dart') return(dart[b]||0)-(dart[a]||0);
-    return 0;
-  });
-  document.getElementById('price-tbody').innerHTML=nodes.map(node=>{
-    const r=rt[node]||{},dv=da[node]||{},sp=dart[node];
-    const region=getRegion(node),rc=RC[region]||'';
-    const sc=r.max>100?'class="spike"':'',nc=r.min<0?'class="neg"':'';
-    const dc=sp>5?'class="rt-prem"':(sp<-5?'class="da-prem"':'');
-    const ss=sp!=null?(sp>=0?`+$${sp.toFixed(2)}`:`-$${Math.abs(sp).toFixed(2)}`):'—';
-    return`<tr onclick="openNodeModal('${node}')">
-      <td class="node-cell">${node}</td>
-      <td class="left"><span class="rbadge ${rc}">${region}</span></td>
-      <td ${sc}>$${(r.avg||0).toFixed(2)}</td><td ${nc}>$${(r.min||0).toFixed(2)}</td>
-      <td ${sc}>$${(r.max||0).toFixed(2)}</td><td>$${(dv.avg||0).toFixed(2)}</td>
-      <td ${dc}>${ss}</td></tr>`;
-  }).join('');
-}
-
-function renderTopBottom(){
-  if(!D) return;
-  const tb=D.top_bottom||{};
-  // Top 10: highest DART (DA > RT) — positive is good for DA sellers
-  // Bottom 10: lowest DART (RT > DA) — negative means RT outperformed
-  const mkTop=(item)=>{
-    const rc=RC[item.region]||'';
-    const dartCls=item.dart_avg>0?'da-prem':'rt-prem';
-    const sign=item.dart_avg>0?'+':'';
-    return`<tr onclick="openNodeModal('${item.node}')">
-      <td class="node-cell">${item.node}</td>
-      <td class="left"><span class="rbadge ${rc}">${item.region}</span></td>
-      <td class="${dartCls}">${sign}$${item.dart_avg.toFixed(2)}</td>
-      <td>$${(item.intraday_spread||0).toFixed(2)}</td>
-      <td>HE${String(item.best_hour).padStart(2,'0')}</td>
-      <td class="${dartCls}">${sign}$${item.best_spread.toFixed(2)}</td>
-      <td>${item.spike_hours}</td><td>${item.neg_hours}</td></tr>`;
-  };
-  const mkBot=(item)=>{
-    const rc=RC[item.region]||'';
-    const dartCls=item.dart_avg<0?'rt-prem':'da-prem';
-    const sign=item.dart_avg>0?'+':'';
-    return`<tr onclick="openNodeModal('${item.node}')">
-      <td class="node-cell">${item.node}</td>
-      <td class="left"><span class="rbadge ${rc}">${item.region}</span></td>
-      <td class="${dartCls}">${sign}$${item.dart_avg.toFixed(2)}</td>
-      <td>$${(item.intraday_spread||0).toFixed(2)}</td>
-      <td>HE${String(item.worst_hour).padStart(2,'0')}</td>
-      <td class="${dartCls}">$${item.worst_spread.toFixed(2)}</td>
-      <td>${item.spike_hours}</td><td>${item.neg_hours}</td></tr>`;
-  };
-  document.getElementById('top10-tbody').innerHTML=(tb.top10||[]).map(mkTop).join('');
-  document.getElementById('bot10-tbody').innerHTML=(tb.bottom10||[]).map(mkBot).join('');
-  const dart=D.dart||{},allN=Object.entries(dart).sort((a,b)=>b[1]-a[1]);
-  destroyChart('dart-bar-chart');
-  charts['dart-bar-chart']=new Chart(document.getElementById('dart-bar-chart'),{
-    type:'bar',
-    data:{labels:allN.map(([n])=>n),datasets:[{label:'DART DA−RT ($/MWh)',data:allN.map(([,v])=>v),
-      backgroundColor:allN.map(([,v])=>v>0?'rgba(200,120,0,.7)':'rgba(61,186,111,.7)'),
-      borderColor:allN.map(([,v])=>v>0?'#c87800':'#3dba6f'),borderWidth:1}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{ticks:{color:'#555',font:{size:9},maxRotation:60},grid:{color:'#1e2130'}},
-              y:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'},
-                 title:{display:true,text:'DA − RT ($/MWh)',color:'#555',font:{size:10}}}},
-      onClick:(_,els)=>{if(els.length) openNodeModal(allN[els[0].index][0]);}}
-  });
-}
-
-function renderFundamentals(){
-  if(!D) return;
-  const load=D.gross_load||{},wind=D.wind||{},solar=D.solar||{};
-  const days=[...new Set([...Object.keys(load),...Object.keys(wind),...Object.keys(solar)])]
-    .filter(d=>load[d]&&wind[d]&&solar[d]).sort().slice(-7);
-  const base={responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{labels:{color:'#666',font:{size:10}}}},
-    scales:{x:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'}},
-            y:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'}}}};
-  destroyChart('load-7day-chart');
-  charts['load-7day-chart']=new Chart(document.getElementById('load-7day-chart'),{
-    type:'bar',data:{labels:days.map(d=>d.slice(5)),datasets:[{label:'Peak load (GW)',
-      data:days.map(d=>load[d]||0),backgroundColor:'#1a5c40',borderColor:'#3dba6f',borderWidth:1}]},options:base});
-  destroyChart('gen-7day-chart');
-  charts['gen-7day-chart']=new Chart(document.getElementById('gen-7day-chart'),{
-    type:'bar',data:{labels:days.map(d=>d.slice(5)),datasets:[
-      {label:'Wind (GW)',data:days.map(d=>wind[d]||0),backgroundColor:'#0d3a5c',borderColor:'#4a9eff',borderWidth:1},
-      {label:'Solar (GW)',data:days.map(d=>solar[d]||0),backgroundColor:'#3a2800',borderColor:'#f0a500',borderWidth:1}
-    ]},options:base});
-  document.getElementById('fund-tbody').innerHTML=days.map(d=>{
-    const g=load[d]||0,w=wind[d]||0,s=solar[d]||0,net=(g-w-s).toFixed(1);
-    return`<tr ${net<30?'style="background:#0d1f14"':''}><td class="left" style="font-family:monospace">${d}</td>
-      <td>${g.toFixed(1)}</td><td>${w.toFixed(1)}</td><td>${s.toFixed(1)}</td><td>${net}</td></tr>`;
-  }).join('');
-}
-
-function renderMap(){
-  if(!D) return;
-  const coords=D.node_coords||{},dart=D.dart||{},rt=D.rt||{};
-  const nodeRegion={};
-  for(const[r,ns] of Object.entries(D.regions||{})) ns.forEach(n=>nodeRegion[n]=r);
-  const g=document.getElementById('map-nodes');
-  g.innerHTML='';
-  for(const[node,[lat,lon]] of Object.entries(coords)){
-    const[x,y]=txProject(lat,lon);
-    const region=nodeRegion[node]||'Other',color=RCOL[region]||'#888';
-    const sp=dart[node],rtAvg=(rt[node]?.avg||0),isSpike=(rt[node]?.max||0)>100;
-    if(isSpike) g.innerHTML+=`<circle cx="${x}" cy="${y}" r="12" fill="none" stroke="#e05050" stroke-width="1.5" opacity=".4"/>`;
-    g.innerHTML+=`<circle class="map-node" cx="${x}" cy="${y}" r="7"
-      fill="${color}" stroke="#0f1117" stroke-width="1.5" opacity=".9"
-      onclick="mapNodeClick('${node}')"
-      onmouseenter="showTip(event,'${node}','${region}',${sp!=null?sp:0},${rtAvg})"
-      onmouseleave="hideTip()"/>`;
-  }
-}
-
-function showTip(e,node,region,dart,rtAvg){
-  const tt=document.getElementById('map-tooltip');
-  const ds=dart>=0?`+$${dart.toFixed(2)}`:`-$${Math.abs(dart).toFixed(2)}`;
-  tt.innerHTML=`<div style="font-weight:600;color:#e8eaf0">${node}</div>
-    <div style="color:#666">${region}</div>
-    <div>RT avg: <span style="color:#e8eaf0">$${rtAvg.toFixed(2)}</span></div>
-    <div>DART: <span style="color:${dart>=0?'#3dba6f':'#c87800'}">${ds}/MWh</span></div>`;
-  const rect=e.target.closest('.map-container').getBoundingClientRect();
-  tt.style.left=(e.clientX-rect.left+14)+'px';
-  tt.style.top=(e.clientY-rect.top-10)+'px';
-  tt.style.display='block';
-}
-function hideTip(){document.getElementById('map-tooltip').style.display='none';}
-
-function mapNodeClick(node){
-  hideTip();
-  const rt=D.rt||{},da=D.da||{},dart=D.dart||{};
-  const r=rt[node]||{},dv=da[node]||{},sp=dart[node];
-  const region=getRegion(node),rc=RC[region]||'';
-  document.getElementById('map-detail-title').textContent=node;
-  document.getElementById('map-node-detail').innerHTML=`
-    <div style="margin-bottom:14px"><span class="rbadge ${rc}">${region}</span></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
-      <div class="mkpi"><div class="mkpi-label">RT avg</div>
-        <div class="mkpi-val" style="color:#3dba6f">$${(r.avg||0).toFixed(2)}</div></div>
-      <div class="mkpi"><div class="mkpi-label">DA avg</div>
-        <div class="mkpi-val" style="color:#4a9eff">$${(dv.avg||0).toFixed(2)}</div></div>
-      <div class="mkpi"><div class="mkpi-label">RT max</div>
-        <div class="mkpi-val" style="color:${(r.max||0)>100?'#e05050':'#c8cad4'}">$${(r.max||0).toFixed(2)}</div></div>
-      <div class="mkpi"><div class="mkpi-label">DART avg</div>
-        <div class="mkpi-val" style="color:${(sp||0)>=0?'#3dba6f':'#c87800'}">${sp!=null?(sp>=0?'+$'+sp.toFixed(2):'-$'+Math.abs(sp).toFixed(2)):'—'}</div></div>
-    </div>
-    <button onclick="openNodeModal('${node}')" style="width:100%;padding:9px;background:#1a3a2a;border:1px solid #3dba6f;border-radius:6px;color:#3dba6f;cursor:pointer;font-size:12px">
-      View full 24-hour curve →
-    </button>`;
-}
-
-function openNodeModal(node){
-  if(!D) return;
-  const rt=D.rt||{},da=D.da||{},dart=D.dart||{};
-  const rth=(D.rt_hourly||{})[node]||{};
-  const dah=(D.da_hourly||{})[node]||{};
-  const darth=(D.dart_hourly||{})[node]||{};
-  const r=rt[node]||{},dv=da[node]||{},sp=dart[node];
-  const region=getRegion(node);
-  const negHrs=Object.values(rth).filter(v=>v<0).length;
-  const spikeHrs=Object.values(rth).filter(v=>v>100).length;
-  document.getElementById('modal-title').textContent=node;
-  document.getElementById('modal-meta').textContent=`${region} · ${D.data_date} · 24-hour detail`;
-  document.getElementById('modal-kpis').innerHTML=`
-    <div class="mkpi"><div class="mkpi-label">RT avg</div><div class="mkpi-val" style="color:#3dba6f">$${(r.avg||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">RT max</div><div class="mkpi-val" style="color:${(r.max||0)>100?'#e05050':'#c8cad4'}">$${(r.max||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">RT min</div><div class="mkpi-val" style="color:${(r.min||0)<0?'#4a9eff':'#c8cad4'}">$${(r.min||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">DA avg</div><div class="mkpi-val" style="color:#4a9eff">$${(dv.avg||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">DART avg</div><div class="mkpi-val" style="color:${(sp||0)>=0?'#3dba6f':'#c87800'}">${sp!=null?(sp>=0?'+$'+sp.toFixed(2):'-$'+Math.abs(sp).toFixed(2)):'—'}</div></div>
-    <div class="mkpi"><div class="mkpi-label">DA max</div><div class="mkpi-val">$${(dv.max||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">Spike hours</div><div class="mkpi-val" style="color:${spikeHrs>0?'#e05050':'#c8cad4'}">${spikeHrs}</div></div>
-    <div class="mkpi"><div class="mkpi-label">Neg hours</div><div class="mkpi-val" style="color:${negHrs>0?'#4a9eff':'#c8cad4'}">${negHrs}</div></div>`;
-  const hrs=Array.from({length:24},(_,i)=>String(i+1));
-  const labels=hrs.map(h=>`HE${h.padStart(2,'0')}`);
-  const rtData=hrs.map(h=>rth[h]??null);
-  const daData=hrs.map(h=>dah[h]??null);
-  const dtData=hrs.map(h=>darth[h]??null);
-  const base={responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{labels:{color:'#666',font:{size:10}}}},
-    scales:{x:{ticks:{color:'#555',font:{size:9},maxRotation:45},grid:{color:'#1e2130'}},
-            y:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'}}}};
-  destroyChart('modal-price-chart');
-  charts['modal-price-chart']=new Chart(document.getElementById('modal-price-chart'),{
-    type:'line',data:{labels,datasets:[
-      {label:'RT ($/MWh)',data:rtData,borderColor:'#3dba6f',fill:false,tension:.3,pointRadius:2},
-      {label:'DA ($/MWh)',data:daData,borderColor:'#4a9eff',fill:false,tension:.3,borderDash:[4,3],pointRadius:2}
-    ]},options:base});
-  destroyChart('modal-dart-chart');
-  charts['modal-dart-chart']=new Chart(document.getElementById('modal-dart-chart'),{
-    type:'bar',data:{labels,datasets:[{label:'DART ($/MWh)',data:dtData,
-      backgroundColor:dtData.map(v=>v==null?'transparent':v>=0?'rgba(61,186,111,.7)':'rgba(224,80,80,.7)'),
-      borderColor:dtData.map(v=>v==null?'transparent':v>=0?'#3dba6f':'#e05050'),borderWidth:1}]},
-    options:base});
-  document.getElementById('modal-table-body').innerHTML=hrs.map(h=>{
-    const rtv=rth[h],dav=dah[h],dtv=darth[h];
-    const sc=(rtv||0)>100?'class="spike"':'',nc=(rtv||0)<0?'class="neg"':'';
-    const dc=dtv==null?'':(dtv>5?'class="rt-prem"':dtv<-5?'class="da-prem"':'');
-    const ds=dtv!=null?(dtv>=0?`+$${dtv.toFixed(2)}`:`-$${Math.abs(dtv).toFixed(2)}`):'—';
-    return`<tr><td class="left" style="font-family:monospace">HE${h.padStart(2,'0')}:00</td>
-      <td ${sc}>${rtv!=null?`$${rtv.toFixed(2)}`:'—'}</td>
-      <td ${nc}>${dav!=null?`$${dav.toFixed(2)}`:'—'}</td>
-      <td ${dc}>${ds}</td></tr>`;
-  }).join('');
-  document.getElementById('modal-overlay').classList.add('open');
-  document.body.style.overflow='hidden';
-}
-function closeModal(e){if(e.target===document.getElementById('modal-overlay'))closeModalDirect();}
-function closeModalDirect(){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';}
-function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
-
-// ── LIVE INTRADAY DATA ────────────────────────────────────────────────────────
-let L = null;
-let liveSort = 'rt_avg';
-let liveCountdown = 900; // 15 minutes in seconds
-let liveTimer = null;
-
-async function loadLive(manual=false) {
+// ── Load data ────────────────────────────────────────────────────────────────
+async function loadData() {
+  let latest = {}, history = [], aiData = {};
   try {
-    const r = await fetch(`live.json?_=${Date.now()}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    L = await r.json();
-    if (document.getElementById('page-live').classList.contains('active')) {
-      renderLive();
-    }
-    // Reset countdown on successful load
-    liveCountdown = 900;
+    const [r1, r2, r3] = await Promise.all([
+      fetch('latest.json?_=' + Date.now()),
+      fetch('history.json?_=' + Date.now()),
+      fetch('ai_analysis.json?_=' + Date.now()).catch(() => ({ok:false}))
+    ]);
+    if (r1.ok) latest  = await r1.json();
+    if (r2.ok) history = await r2.json();
+    if (r3.ok) aiData  = await r3.json();
   } catch(e) {
-    if (manual) {
-      document.getElementById('live-status-bar').textContent =
-        `Live data unavailable — ${e.message}`;
-    }
+    console.error('Failed to load data:', e);
   }
+  renderAll(latest, history, aiData);
 }
 
-function startLiveCountdown() {
-  if (liveTimer) clearInterval(liveTimer);
-  liveTimer = setInterval(() => {
-    liveCountdown--;
-    const el = document.getElementById('live-countdown');
-    if (el) {
-      const m = Math.floor(liveCountdown / 60);
-      const s = liveCountdown % 60;
-      el.textContent = `Next refresh in ${m}:${String(s).padStart(2,'0')}`;
-    }
-    if (liveCountdown <= 0) {
-      liveCountdown = 900;
-      loadLive();
-    }
-  }, 1000);
-}
+function renderAll(d, history, aiData) {
+  // Header
+  document.getElementById('data-date').textContent = 'Data: ' + (d.data_date || '—');
+  document.getElementById('gen-time').textContent  = 'Generated: ' + (d.generated_at || '—');
+  document.getElementById('overview-date').textContent = d.data_date || '';
 
-function renderLive() {
-  if (!L) {
-    document.getElementById('live-status-bar').textContent =
-      'No live data yet — live updates run every 15 min during market hours (6 AM–11 PM CT)';
-    return;
-  }
+  // ── KPIs ─────────────────────────────────────────────────────────────────
+  const rt = d.rt || {};
+  const rtVals = Object.values(rt);
+  const fleetAvg = rtVals.length ? rtVals.reduce((a,v) => a + v.avg, 0) / rtVals.length : 0;
+  const fleetMax = rtVals.length ? Math.max(...rtVals.map(v => v.max)) : 0;
+  const spikes   = rtVals.filter(v => v.max > 100).length;
+  const negs     = rtVals.filter(v => v.min < 0).length;
 
-  const liveRt  = L.rt       || {};
-  const liveRth = L.rt_hourly || {};
-  const fleet   = L.fleet    || {};
-  const hours   = L.hours_cleared || [];
-  const maxHr   = L.max_hour_cleared || 0;
+  document.getElementById('kpi-rt-avg').textContent = '$' + fleetAvg.toFixed(2);
+  document.getElementById('kpi-rt-max').textContent = '$' + fleetMax.toFixed(2);
+  document.getElementById('kpi-spikes').textContent  = spikes;
+  document.getElementById('kpi-neg').textContent     = negs;
 
-  // Status bar
-  document.getElementById('live-status-bar').innerHTML =
-    `<span style="color:#3dba6f">&#9679;</span>&nbsp;
-     <strong style="color:#e8eaf0">Today ${L.date}</strong> &nbsp;·&nbsp;
-     As of <strong style="color:#e8eaf0">${L.as_of}</strong> &nbsp;·&nbsp;
-     HE01–HE${String(maxHr).padStart(2,'0')} cleared &nbsp;·&nbsp;
-     ${fleet.node_count || 0} nodes`;
+  // ── Callouts ─────────────────────────────────────────────────────────────
+  const dart = d.dart || {};
+  const dartEntries = Object.entries(dart);
+  const bestNode  = dartEntries.length ? dartEntries.reduce((a,b) => b[1]>a[1]?b:a) : null;
+  const worstNode = dartEntries.length ? dartEntries.reduce((a,b) => b[1]<a[1]?b:a) : null;
+  const spikeNodes = Object.entries(rt).filter(([,v]) => v.max > 100).map(([k]) => k);
+  const negNodes   = Object.entries(rt).filter(([,v]) => v.min < 0).map(([k]) => k);
 
-  document.getElementById('live-hours-badge').textContent =
-    `HE01–HE${String(maxHr).padStart(2,'0')} cleared`;
+  document.getElementById('callout-grid').innerHTML = `
+    <div class="callout green"><div class="callout-label">Best DART</div>
+      <div class="callout-value">${bestNode ? bestNode[0] + ' +$' + bestNode[1].toFixed(2) + '/MWh' : 'N/A'}</div></div>
+    <div class="callout amber"><div class="callout-label">Largest DA Premium</div>
+      <div class="callout-value">${worstNode ? worstNode[0] + ' $' + worstNode[1].toFixed(2) + '/MWh' : 'N/A'}</div></div>
+    <div class="callout red"><div class="callout-label">Spike Nodes</div>
+      <div class="callout-value">${spikeNodes.join(', ') || 'None'}</div></div>
+    <div class="callout blue"><div class="callout-label">Negative Nodes</div>
+      <div class="callout-value">${negNodes.join(', ') || 'None'}</div></div>`;
 
-  // KPIs
-  document.getElementById('live-kpi-strip').innerHTML = `
-    <div class="kpi-card green"><div class="kpi-label">Fleet avg RT today</div>
-      <div class="kpi-value">$${(fleet.rt_avg||0).toFixed(2)}</div>
-      <div class="kpi-sub">${fleet.node_count||0} nodes · ${hours.length} hrs cleared</div></div>
-    <div class="kpi-card amber"><div class="kpi-label">Fleet peak RT today</div>
-      <div class="kpi-value">$${(fleet.rt_max||0).toFixed(2)}</div>
-      <div class="kpi-sub">$/MWh highest interval</div></div>
-    <div class="kpi-card red"><div class="kpi-label">Spike nodes today</div>
-      <div class="kpi-value">${fleet.spike_nodes||0}</div>
-      <div class="kpi-sub">&gt;$100/MWh so far</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Negative price nodes</div>
-      <div class="kpi-value">${fleet.neg_nodes||0}</div>
-      <div class="kpi-sub">charging opportunities today</div></div>`;
+  // ── Top 5 overview ────────────────────────────────────────────────────────
+  const tb = d.top_bottom || {};
+  const top5 = (tb.top10 || []).slice(0,5);
+  document.getElementById('top5-body').innerHTML = top5.map(n => `
+    <tr>
+      <td class="node-name">${n.node}</td>
+      <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
+      <td class="rt-prem">+$${n.dart_avg.toFixed(2)}</td>
+      <td>${fmt(rt[n.node]?.avg)}</td>
+      <td>${fmt((d.da||{})[n.node]?.avg)}</td>
+    </tr>`).join('');
 
-  // Callouts
-  const liveEntries = Object.entries(liveRt);
-  const bestToday  = liveEntries.length ? liveEntries.reduce((a,b)=>b[1].avg>a[1].avg?b:a) : null;
-  const worstToday = liveEntries.length ? liveEntries.reduce((a,b)=>b[1].avg<a[1].avg?b:a) : null;
-  document.getElementById('live-callout-grid').innerHTML = `
-    <div class="callout green"><div class="callout-label">Highest RT avg today</div>
-      <div class="callout-value">${bestToday?`${bestToday[0]}<br>$${bestToday[1].avg.toFixed(2)}/MWh`:'N/A'}</div></div>
-    <div class="callout blue"><div class="callout-label">Lowest RT avg today</div>
-      <div class="callout-value">${worstToday?`${worstToday[0]}<br>$${worstToday[1].avg.toFixed(2)}/MWh`:'N/A'}</div></div>
-    <div class="callout red"><div class="callout-label">Spike nodes (&gt;$100)</div>
-      <div class="callout-value">${(fleet.spike_list||[]).join(', ')||'None'}</div></div>
-    <div class="callout amber"><div class="callout-label">Negative price nodes</div>
-      <div class="callout-value">${(fleet.neg_list||[]).join(', ')||'None'}</div></div>`;
+  // ── Prices tab ────────────────────────────────────────────────────────────
+  const da = d.da || {};
+  document.getElementById('top10-body').innerHTML = (tb.top10 || []).map(n => `
+    <tr>
+      <td class="node-name">${n.node}</td>
+      <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
+      <td class="da-prem">+$${n.dart_avg.toFixed(2)}</td>
+      <td>$${n.intraday_spread.toFixed(2)}</td>
+      <td>HE ${String(n.best_hour).padStart(2,'0')}:00</td>
+      <td class="da-prem">+$${n.best_spread.toFixed(2)}</td>
+      <td>${n.spike_hours} hrs</td>
+      <td>${n.neg_hours} hrs</td>
+    </tr>`).join('');
 
-  // Hourly fleet avg chart — average across all nodes per hour
-  const hrsAll = Array.from({length: maxHr}, (_, i) => String(i + 1));
-  const fleetHourly = hrsAll.map(hr => {
-    const vals = Object.values(liveRth)
-      .map(nh => nh[hr])
-      .filter(v => v != null);
-    return vals.length ? round2(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
-  });
+  document.getElementById('bot10-body').innerHTML = (tb.bottom10 || []).map(n => `
+    <tr>
+      <td class="node-name">${n.node}</td>
+      <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
+      <td class="rt-prem">$${n.dart_avg.toFixed(2)}</td>
+      <td>$${n.intraday_spread.toFixed(2)}</td>
+      <td>HE ${String(n.worst_hour).padStart(2,'0')}:00</td>
+      <td class="rt-prem">$${n.worst_spread.toFixed(2)}</td>
+      <td>${n.spike_hours} hrs</td>
+      <td>${n.neg_hours} hrs</td>
+    </tr>`).join('');
 
-  destroyChart('live-hourly-chart');
-  charts['live-hourly-chart'] = new Chart(document.getElementById('live-hourly-chart'), {
-    type: 'line',
-    data: {
-      labels: hrsAll.map(h => `HE${h.padStart(2,'0')}`),
-      datasets: [{
-        label: 'Fleet avg RT ($/MWh)',
-        data: fleetHourly,
-        borderColor: '#3dba6f', backgroundColor: 'rgba(61,186,111,.1)',
-        fill: true, tension: .3, pointRadius: 3
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {legend: {labels: {color:'#666', font:{size:10}}}},
-      scales: {
-        x: {ticks:{color:'#555',font:{size:9},maxRotation:45}, grid:{color:'#1e2130'}},
-        y: {ticks:{color:'#555',font:{size:9}}, grid:{color:'#1e2130'}}
-      }
-    }
-  });
+  document.getElementById('all-nodes-body').innerHTML = Object.entries(rt)
+    .sort((a,b) => b[1].avg - a[1].avg)
+    .map(([node, r]) => {
+      const dv = da[node] || {};
+      const sp = dart[node];
+      const spStr = sp != null ? (sp >= 0 ? '+$' + sp.toFixed(2) : '-$' + Math.abs(sp).toFixed(2)) : '—';
+      const spClass = sp > 5 ? 'rt-prem' : sp < -5 ? 'da-prem' : '';
+      // Infer region from node name patterns
+      const reg = node.includes('TOYAH')||node.includes('SADL')||node.includes('FAUL')||
+                  node.includes('COYOT')||node.includes('LONE')||node.includes('RTLS')||
+                  node.includes('CEDR')||node.includes('SBEAN')||node.includes('GOMZ')||
+                  node.includes('GRDNE')||node.includes('JDKNS')||node.includes('SANDL') ? 'West Texas' :
+                  node.includes('OLNEY')||node.includes('DIBOL')||node.includes('FRMR')||
+                  node.includes('MNWL')||node.includes('LFST')||node.includes('PAUL')||
+                  node.includes('CISC') ? 'North Texas' :
+                  node.includes('MV_V')||node.includes('WLTC')||node.includes('MAINL')||
+                  node.includes('FALF')||node.includes('PAVL')||node.includes('POTE')||
+                  node.includes('TYNA') ? 'Coastal' :
+                  node.includes('CATA')||node.includes('HOLC')||node.includes('HAMI')||
+                  node.includes('JUNC')||node.includes('RUSS')||node.includes('FTDU') ? 'Premium' : 'Other';
+      return `<tr>
+        <td class="node-name">${node}</td>
+        <td><span class="region-tag ${regionClass(reg)}">${reg}</span></td>
+        <td${r.max>100?' class="spike"':''}>${fmt(r.avg)}</td>
+        <td${r.min<0?' class="neg"':''}>${fmt(r.min)}</td>
+        <td${r.max>100?' class="spike"':''}>${fmt(r.max)}</td>
+        <td>${fmt(dv.avg)}</td>
+        <td${spClass?' class="'+spClass+'"':''}>${spStr}</td>
+      </tr>`;
+    }).join('');
 
-  // Today vs yesterday comparison — top 10 nodes by |difference|
-  const yesterdayRt = (D && D.rt) ? D.rt : {};
-  const nodesDiff = Object.keys(liveRt)
-    .filter(n => yesterdayRt[n])
-    .map(n => ({
-      node: n,
-      today: liveRt[n].avg,
-      yest:  yesterdayRt[n].avg,
-      diff:  round2(liveRt[n].avg - yesterdayRt[n].avg)
-    }))
-    .sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff))
-    .slice(0, 12);
+  // ── Modo tab ──────────────────────────────────────────────────────────────
+  const modo    = d.modo || {};
+  const indices = modo.indices || {};
+  const modoEntries = Object.values(indices);
 
-  destroyChart('live-vs-yest-chart');
-  charts['live-vs-yest-chart'] = new Chart(document.getElementById('live-vs-yest-chart'), {
-    type: 'bar',
-    data: {
-      labels: nodesDiff.map(n => n.node),
-      datasets: [{
-        label: 'Today vs yesterday ($/MWh)',
-        data: nodesDiff.map(n => n.diff),
-        backgroundColor: nodesDiff.map(n => n.diff >= 0 ? 'rgba(224,80,80,.7)' : 'rgba(74,158,255,.7)'),
-        borderColor:     nodesDiff.map(n => n.diff >= 0 ? '#e05050' : '#4a9eff'),
-        borderWidth: 1
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {legend: {display: false}},
-      scales: {
-        x: {ticks:{color:'#555',font:{size:9},maxRotation:60}, grid:{color:'#1e2130'}},
-        y: {ticks:{color:'#555',font:{size:9}}, grid:{color:'#1e2130'},
-            title:{display:true,text:'Today − Yesterday ($/MWh)',color:'#555',font:{size:10}}}
-      }
-    }
-  });
+  document.getElementById('modo-date-range').textContent =
+    modo.data_date ? 'Latest settled data through ' + modo.data_date : '';
 
-  renderLivePriceTable();
-}
+  if (modoEntries.length) {
+    const maxRev = Math.max(...modoEntries.map(v => v.revenue_mw_year || 0)) || 1;
 
-function round2(v) { return Math.round(v * 100) / 100; }
-
-function sortLive(key, btn) {
-  liveSort = key;
-  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderLivePriceTable();
-}
-
-function renderLivePriceTable() {
-  if (!L) return;
-  const liveRt  = L.rt || {};
-  const yesterdayRt = (D && D.rt) ? D.rt : {};
-
-  let nodes = Object.keys(liveRt);
-  nodes.sort((a, b) => {
-    if (liveSort === 'node')     return a.localeCompare(b);
-    if (liveSort === 'rt_avg')   return (liveRt[b]?.avg||0) - (liveRt[a]?.avg||0);
-    if (liveSort === 'rt_max')   return (liveRt[b]?.max||0) - (liveRt[a]?.max||0);
-    if (liveSort === 'vs_yest') {
-      const da = round2((liveRt[a]?.avg||0) - (yesterdayRt[a]?.avg||0));
-      const db = round2((liveRt[b]?.avg||0) - (yesterdayRt[b]?.avg||0));
-      return Math.abs(db) - Math.abs(da);
-    }
-    return 0;
-  });
-
-  document.getElementById('live-price-tbody').innerHTML = nodes.map(node => {
-    const r     = liveRt[node] || {};
-    const yest  = yesterdayRt[node] || {};
-    const diff  = yest.avg ? round2(r.avg - yest.avg) : null;
-    const region = getRegion(node);
-    const rc     = RC[region] || '';
-    const skCls  = r.max > 100 ? 'class="spike"' : '';
-    const ngCls  = r.min < 0   ? 'class="neg"'   : '';
-    const diffCls = diff == null ? '' : diff > 5 ? 'class="spike"' : diff < -5 ? 'class="neg"' : '';
-    const diffStr = diff == null ? '—' : (diff >= 0 ? `+$${diff.toFixed(2)}` : `-$${Math.abs(diff).toFixed(2)}`);
-    return `<tr onclick="openLiveNodeModal('${node}')">
-      <td class="node-cell">${node}</td>
-      <td class="left"><span class="rbadge ${rc}">${region}</span></td>
-      <td ${skCls}>$${(r.avg||0).toFixed(2)}</td>
-      <td ${skCls}>$${(r.max||0).toFixed(2)}</td>
-      <td ${ngCls}>$${(r.min||0).toFixed(2)}</td>
-      <td>$${(yest.avg||0).toFixed(2)}</td>
-      <td ${diffCls}>${diffStr}</td>
-      <td style="color:#555">${r.intervals||0}</td>
-    </tr>`;
-  }).join('');
-}
-
-function openLiveNodeModal(node) {
-  if (!L) return;
-  const r     = (L.rt||{})[node]        || {};
-  const rth   = (L.rt_hourly||{})[node] || {};
-  const yestR = (D?.rt||{})[node]        || {};
-  const yestH = (D?.rt_hourly||{})[node] || {};
-  const region = getRegion(node);
-  const maxHr  = L.max_hour_cleared || 0;
-
-  document.getElementById('modal-title').textContent = `${node} — Today Live`;
-  document.getElementById('modal-meta').textContent  =
-    `${region} · ${L.date} · As of ${L.as_of} · HE01–HE${String(maxHr).padStart(2,'0')} cleared`;
-
-  const diff = yestR.avg ? round2(r.avg - yestR.avg) : null;
-  document.getElementById('modal-kpis').innerHTML = `
-    <div class="mkpi"><div class="mkpi-label">RT avg today</div>
-      <div class="mkpi-val" style="color:#3dba6f">$${(r.avg||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">RT max today</div>
-      <div class="mkpi-val" style="color:${(r.max||0)>100?'#e05050':'#c8cad4'}">$${(r.max||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">RT min today</div>
-      <div class="mkpi-val" style="color:${(r.min||0)<0?'#4a9eff':'#c8cad4'}">$${(r.min||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">Intervals cleared</div>
-      <div class="mkpi-val">${r.intervals||0}</div></div>
-    <div class="mkpi"><div class="mkpi-label">Yest RT avg</div>
-      <div class="mkpi-val" style="color:#4a9eff">$${(yestR.avg||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">vs Yesterday</div>
-      <div class="mkpi-val" style="color:${(diff||0)>0?'#e05050':'#4a9eff'}">${diff!=null?(diff>=0?'+$'+diff.toFixed(2):'-$'+Math.abs(diff).toFixed(2)):'—'}</div></div>
-    <div class="mkpi"><div class="mkpi-label">Yest RT max</div>
-      <div class="mkpi-val">$${(yestR.max||0).toFixed(2)}</div></div>
-    <div class="mkpi"><div class="mkpi-label">Yest RT min</div>
-      <div class="mkpi-val" style="color:${(yestR.min||0)<0?'#4a9eff':'#c8cad4'}">$${(yestR.min||0).toFixed(2)}</div></div>`;
-
-  const hrs     = Array.from({length: maxHr}, (_, i) => String(i + 1));
-  const labels  = hrs.map(h => `HE${h.padStart(2,'0')}`);
-  const rtData  = hrs.map(h => rth[h]  ?? null);
-  const yestData= hrs.map(h => yestH[h] ?? null);
-
-  const base = {
-    responsive:true, maintainAspectRatio:false,
-    plugins:{legend:{labels:{color:'#666',font:{size:10}}}},
-    scales:{
-      x:{ticks:{color:'#555',font:{size:9},maxRotation:45},grid:{color:'#1e2130'}},
-      y:{ticks:{color:'#555',font:{size:9}},grid:{color:'#1e2130'}}
-    }
-  };
-
-  destroyChart('modal-price-chart');
-  charts['modal-price-chart'] = new Chart(document.getElementById('modal-price-chart'), {
-    type:'line',
-    data:{labels, datasets:[
-      {label:`Today RT ($/MWh)`, data:rtData,
-        borderColor:'#3dba6f', fill:false, tension:.3, pointRadius:3},
-      {label:`Yesterday RT ($/MWh)`, data:yestData,
-        borderColor:'#4a9eff', fill:false, tension:.3, borderDash:[4,3], pointRadius:2}
-    ]},
-    options:base
-  });
-
-  // Diff chart
-  const diffData = hrs.map(h => {
-    const t = rth[h], y = yestH[h];
-    return (t != null && y != null) ? round2(t - y) : null;
-  });
-  destroyChart('modal-dart-chart');
-  charts['modal-dart-chart'] = new Chart(document.getElementById('modal-dart-chart'), {
-    type:'bar',
-    data:{labels, datasets:[{
-      label:'Today − Yesterday ($/MWh)', data:diffData,
-      backgroundColor:diffData.map(v=>v==null?'transparent':v>=0?'rgba(224,80,80,.7)':'rgba(74,158,255,.7)'),
-      borderColor:diffData.map(v=>v==null?'transparent':v>=0?'#e05050':'#4a9eff'),
-      borderWidth:1
-    }]},
-    options:{...base, plugins:{...base.plugins}}
-  });
-
-  document.getElementById('modal-table-body').innerHTML = hrs.map(h => {
-    const tv = rth[h], yv = yestH[h];
-    const dv = (tv!=null&&yv!=null) ? round2(tv-yv) : null;
-    const sc = (tv||0)>100?'class="spike"':'', nc=(tv||0)<0?'class="neg"':'';
-    const dc = dv==null?'':(dv>5?'class="spike"':dv<-5?'class="neg"':'');
-    const ds = dv!=null?(dv>=0?`+$${dv.toFixed(2)}`:`-$${Math.abs(dv).toFixed(2)}`):'—';
-    return `<tr>
-      <td class="left" style="font-family:monospace">HE${h.padStart(2,'0')}:00</td>
-      <td ${sc}>${tv!=null?`$${tv.toFixed(2)}`:'—'}</td>
-      <td ${nc}>${yv!=null?`$${yv.toFixed(2)}`:'—'}</td>
-      <td ${dc}>${ds}</td>
-    </tr>`;
-  }).join('');
-
-  document.getElementById('modal-overlay').classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
-let H = null;
-let histRegion = 'all';
-
-async function loadHistory() {
-  try {
-    const r = await fetch(`history.json?_=${Date.now()}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    H = await r.json();
-  } catch(e) {
-    H = null;
-  }
-}
-
-function renderHistory() {
-  if (!H || !H.length) {
-    document.getElementById('page-history').innerHTML =
-      `<div class="error-box" style="margin-top:20px">
-        <div style="font-size:15px;margin-bottom:8px">No history yet</div>
-        <div style="color:#666">History builds up automatically — after 2+ daily runs you'll see trend lines here.</div>
+    // Bar chart
+    document.getElementById('modo-bars').innerHTML = modoEntries.map(v => {
+      const pct = ((v.revenue_mw_year || 0) / maxRev * 100).toFixed(1);
+      return `<div class="bar-row">
+        <div class="bar-label">${v.display_name}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-val">${fmtK(v.revenue_mw_year)}/MW/yr</div>
+      </div>
+      <div class="bar-row" style="margin-top:-4px;margin-bottom:10px">
+        <div class="bar-sub" style="color:#aaa;font-size:10px">&nbsp;</div>
+        <div style="flex:1"></div>
+        <div style="font-size:10px;color:#aaa;width:100px;text-align:right">
+          ${v.window_start} → ${v.window_end} · ${v.n_days || 0}d
+        </div>
       </div>`;
-    return;
+    }).join('');
+
+    // Table
+    document.getElementById('modo-table-body').innerHTML = modoEntries.map(v => {
+      const bk = v.market_breakdown || {};
+      const top3 = Object.entries(bk).sort((a,b)=>b[1]-a[1]).slice(0,3)
+        .map(([m,r]) => `${m}: ${fmtK(r)}`).join(' / ') || '—';
+      return `<tr>
+        <td class="node-name">${v.display_name}</td>
+        <td>${fmtK(v.revenue_mw_year)}</td>
+        <td style="font-family:monospace;font-size:11px">${v.window_start}</td>
+        <td>${v.n_days || 0}</td>
+        <td style="font-size:11px;color:#555">${top3}</td>
+      </tr>`;
+    }).join('');
+
+    // Overview snapshot (mini bar)
+    document.getElementById('overview-modo').innerHTML = modoEntries.map(v => {
+      const pct = ((v.revenue_mw_year || 0) / maxRev * 100).toFixed(1);
+      return `<div class="bar-row">
+        <div class="bar-label" style="width:200px">${v.display_name}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-val">${fmtK(v.revenue_mw_year)}/MW/yr</div>
+      </div>`;
+    }).join('');
+  } else {
+    document.getElementById('modo-bars').innerHTML =
+      '<div style="color:#aaa;font-size:12px;padding:8px">No Modo data available</div>';
+    document.getElementById('overview-modo').innerHTML =
+      '<div style="color:#aaa;font-size:12px">No Modo data available yet</div>';
   }
 
-  const dates  = H.map(e => e.date.slice(5));   // MM-DD
-  const fleet  = H.map(e => e.fleet  || {});
-  const fund   = H.map(e => e.fundamentals || {});
-  const reg    = H.map(e => e.regional || {});
+  // ── Weather tab ───────────────────────────────────────────────────────────
+  const wx     = d.weather || {};
+  const cities = wx.cities || {};
+  document.getElementById('weather-source').textContent = wx.source || '';
 
-  const base = {
-    responsive:true, maintainAspectRatio:false,
-    plugins:{legend:{labels:{color:'#666',font:{size:10}}}},
-    scales:{
-      x:{ticks:{color:'#555',font:{size:10}},grid:{color:'#1e2130'}},
-      y:{ticks:{color:'#555',font:{size:10}},grid:{color:'#1e2130'}}
-    }
-  };
+  document.getElementById('weather-grid').innerHTML = Object.entries(cities)
+    .sort((a,b) => a[0].localeCompare(b[0]))
+    .map(([cityName, cityData]) => {
+      const days = (cityData.days || []).slice(0,7);
+      const rows = days.map(day => {
+        const precip = day.precip_pct
+          ? `<span class="precip">${day.precip_pct}%</span>` : '';
+        return `<div class="city-row">
+          <span class="city-date">${day.date.slice(5)}</span>
+          <span>${day.high}° / ${day.low}°</span>
+          ${precip}
+        </div>`;
+      }).join('');
+      return `<div class="city-card">
+        <div class="city-name">${cityName}</div>
+        ${rows}
+      </div>`;
+    }).join('') || '<div style="color:#aaa;font-size:12px;padding:8px">No weather data available — check AG2 credentials</div>';
 
-  // Fleet RT trend
-  destroyChart('hist-rt-chart');
-  charts['hist-rt-chart'] = new Chart(document.getElementById('hist-rt-chart'), {
-    type:'line',
-    data:{labels:dates, datasets:[{
-      label:'Fleet avg RT ($/MWh)',
-      data:fleet.map(f=>f.rt_avg||null),
-      borderColor:'#3dba6f', backgroundColor:'rgba(61,186,111,.1)',
-      fill:true, tension:.3, pointRadius:4
-    }]},
-    options:base
-  });
+  // ── Fundamentals tab ──────────────────────────────────────────────────────
+  const load  = d.gross_load  || {};
+  const wind  = d.wind        || {};
+  const solar = d.solar       || {};
+  const allDays = [...new Set([...Object.keys(load), ...Object.keys(wind), ...Object.keys(solar)])]
+    .sort().slice(-7);
 
-  // Fundamentals trend
-  destroyChart('hist-fund-chart');
-  charts['hist-fund-chart'] = new Chart(document.getElementById('hist-fund-chart'), {
-    type:'line',
-    data:{labels:dates, datasets:[
-      {label:'Gross load (GW)', data:fund.map(f=>f.gross_load||null),
-        borderColor:'#e8eaf0', fill:false, tension:.3, pointRadius:4},
-      {label:'Wind (GW)',  data:fund.map(f=>f.wind||null),
-        borderColor:'#4a9eff', fill:false, tension:.3, pointRadius:4},
-      {label:'Solar (GW)', data:fund.map(f=>f.solar||null),
-        borderColor:'#f0a500', fill:false, tension:.3, pointRadius:4},
-      {label:'Net load (GW)', data:fund.map(f=>f.net_load||null),
-        borderColor:'#e05050', fill:false, tension:.3, pointRadius:4, borderDash:[4,3]}
-    ]},
-    options:base
-  });
-
-  // Regional DART trend
-  const regions = ['West Texas','North Texas','Coastal','Premium'];
-  const regionColors = {'West Texas':'#6a9fff','North Texas':'#6abf6a','Coastal':'#4ab0ff','Premium':'#d47fbf'};
-  destroyChart('hist-region-chart');
-  charts['hist-region-chart'] = new Chart(document.getElementById('hist-region-chart'), {
-    type:'line',
-    data:{labels:dates, datasets: regions.map(region=>({
-      label: region,
-      data: reg.map(r => r[region]?.avg_dart ?? null),
-      borderColor: regionColors[region],
-      fill:false, tension:.3, pointRadius:4
-    }))},
-    options:{...base, plugins:{...base.plugins,
-      annotation:{annotations:{zero:{type:'line',yMin:0,yMax:0,
-        borderColor:'#555',borderWidth:1,borderDash:[4,3]}}}}}
-  });
-
-  // Spike / neg count trend
-  destroyChart('hist-spike-chart');
-  charts['hist-spike-chart'] = new Chart(document.getElementById('hist-spike-chart'), {
-    type:'bar',
-    data:{labels:dates, datasets:[
-      {label:'Spike nodes (>$100)',  data:fleet.map(f=>f.spike_nodes||0),
-        backgroundColor:'rgba(224,80,80,.7)', borderColor:'#e05050', borderWidth:1},
-      {label:'Neg price nodes', data:fleet.map(f=>f.neg_nodes||0),
-        backgroundColor:'rgba(74,158,255,.7)', borderColor:'#4a9eff', borderWidth:1}
-    ]},
-    options:base
-  });
-
-  renderHistNodeTable();
-}
-
-function histFilterRegion(region, btn) {
-  histRegion = region;
-  document.querySelectorAll('#hist-region-filters .rfilt')
-    .forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderHistNodeTable();
-}
-
-function renderHistNodeTable() {
-  if (!H || !H.length) return;
-  const dates = H.map(e => e.date);
-
-  // Collect all nodes across all days, filter by region
-  const allNodes = new Set();
-  H.forEach(entry => {
-    Object.keys(entry.nodes || {}).forEach(n => {
-      const region = (entry.nodes[n] || {}).region || 'Other';
-      if (histRegion === 'all' || region === histRegion) allNodes.add(n);
-    });
-  });
-
-  // Sort nodes by most recent day's DART desc
-  const lastDay = H[H.length - 1];
-  const sorted  = [...allNodes].sort((a, b) => {
-    const da = lastDay.nodes?.[a]?.dart || 0;
-    const db = lastDay.nodes?.[b]?.dart || 0;
-    return db - da;
-  });
-
-  // Header: Node | Region | date1 | date2 ... | Intraday (latest)
-  const header = document.getElementById('hist-node-header');
-  header.innerHTML = `
-    <th class="left">Node</th>
-    <th class="left">Region</th>
-    ${dates.map(d=>`<th>${d.slice(5)}<br><span style="font-weight:400;font-size:9px">DART</span></th>`).join('')}
-    <th>Intraday<br><span style="font-weight:400;font-size:9px">latest</span></th>
-    <th>RT avg<br><span style="font-weight:400;font-size:9px">latest</span></th>`;
-
-  const tbody = document.getElementById('hist-node-tbody');
-  tbody.innerHTML = sorted.map(node => {
-    const lastNodeData = lastDay.nodes?.[node] || {};
-    const region = lastNodeData.region || 'Other';
-    const rc = RC[region] || '';
-    const dartCells = dates.map(date => {
-      const entry  = H.find(e => e.date === date);
-      const nd     = entry?.nodes?.[node];
-      const dart   = nd?.dart;
-      if (dart == null) return `<td style="color:#444">—</td>`;
-      const cls    = dart > 5 ? 'da-prem' : dart < -5 ? 'rt-prem' : '';
-      const sign   = dart >= 0 ? '+' : '';
-      return `<td class="${cls}">${sign}$${dart.toFixed(2)}</td>`;
-    }).join('');
-    const intraday = lastNodeData.intraday || 0;
-    const rtAvg    = lastNodeData.rt_avg   || 0;
-    return `<tr onclick="openNodeModal('${node}')">
-      <td class="node-cell">${node}</td>
-      <td class="left"><span class="rbadge ${rc}">${region}</span></td>
-      ${dartCells}
-      <td>$${intraday.toFixed(2)}</td>
-      <td>$${rtAvg.toFixed(2)}</td>
+  document.getElementById('fund-body').innerHTML = allDays.map(day => {
+    const g   = load[day]  || 0;
+    const w   = wind[day]  || 0;
+    const s   = solar[day] || 0;
+    const net = (g - w - s).toFixed(1);
+    const cls = net < 30 ? ' style="background:#f0faf4"' : '';
+    return `<tr${cls}>
+      <td>${day}</td><td>${g.toFixed(1)}</td><td>${w.toFixed(1)}</td>
+      <td>${s.toFixed(1)}</td><td>${net}</td>
     </tr>`;
-  }).join('');
-}
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:16px">Data not available</td></tr>';
 
-// Extend showPage to handle live and history tabs
-const _origShowPage = showPage;
-showPage = function(name, el) {
-  _origShowPage(name, el);
-  if (name === 'live') {
-    if (L) renderLive();
-    else loadLive(true);
-    startLiveCountdown();
-  }
-  if (name === 'battery') {
-    if (L) renderBattery();
-    else loadLive(true).then(renderBattery);
-  }
-  if (name === 'ai') {
-    if (AI) renderAI();
-    else loadAI().then(renderAI);
-  }
-  if (name === 'history') {
-    if (H) renderHistory();
-    else loadHistory().then(renderHistory);
-  }
-};
+  document.getElementById('history-body').innerHTML = (history || []).slice().reverse().map(e => `
+    <tr>
+      <td>${e.date}</td>
+      <td>${fmt(e.fleet?.rt_avg)}</td>
+      <td>${fmt(e.fleet?.rt_max)}</td>
+      <td>${e.fleet?.spike_nodes ?? '—'}</td>
+      <td>${e.fleet?.neg_nodes ?? '—'}</td>
+      <td>${e.fundamentals?.gross_load?.toFixed(1) ?? '—'} GW</td>
+      <td>${e.battery?.ending_soc ?? '—'}%</td>
+    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:16px">No history yet</td></tr>';
 
-// ── AI ANALYSIS ───────────────────────────────────────────────────────────────
-let AI = null;
-
-async function loadAI() {
-  try {
-    const r = await fetch(`ai_analysis.json?_=${Date.now()}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    AI = await r.json();
-  } catch(e) {
-    AI = null;
-  }
-}
-
-function renderAI() {
-  const el = document.getElementById('ai-content');
-  if (!AI) {
-    el.innerHTML = `<div style="text-align:center;padding:60px;color:#444">
-      <div style="font-size:15px;margin-bottom:8px;color:#666">No AI analysis yet</div>
-      <div style="color:#444;font-size:12px">Analysis is generated each morning by the 6 AM CT workflow.<br>Add ANTHROPIC_API_KEY to GitHub secrets to enable it.</div>
-    </div>`;
-    return;
-  }
-
-  const signalColor = AI.charging_signal === 'bullish' ? '#3dba6f' :
-                      AI.charging_signal === 'bearish' ? '#e05050' : '#f0a500';
-  const signalLabel = AI.charging_signal === 'bullish' ? '⚡ Bullish — charging opportunity' :
-                      AI.charging_signal === 'bearish' ? '⚠ Bearish — high dispatch value' :
-                      '◎ Neutral';
-
-  const intraday = AI.intraday || null;
-
-  el.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-      <div class="card" style="border-left:3px solid ${signalColor}">
-        <div class="kpi-label">Charging signal — ${AI.data_date || AI.generated_at}</div>
-        <div style="font-size:20px;font-weight:700;color:${signalColor};margin:8px 0">${signalLabel}</div>
-        <div style="font-size:12px;color:#888;line-height:1.5">${AI.charging_rationale || ''}</div>
-      </div>
-      <div class="card">
-        <div class="kpi-label">Market conditions</div>
-        <div style="font-size:12px;color:#c8cad4;line-height:1.6;margin-top:8px">${AI.market_conditions || '—'}</div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-title">Fleet narrative — ${AI.data_date || ''}</div>
-      <div style="font-size:13px;color:#c8cad4;line-height:1.7">${AI.fleet_narrative || ''}</div>
-    </div>
-
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-title">5-day trend analysis</div>
-      <div style="font-size:13px;color:#c8cad4;line-height:1.7">${AI.trend_analysis || ''}</div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-      <div class="card">
-        <div class="card-title">Anomaly flags</div>
-        ${(AI.anomalies || []).length === 0
-          ? '<div style="color:#444;font-size:12px">No anomalies detected</div>'
-          : (AI.anomalies || []).map(a => `
-            <div style="padding:10px 0;border-bottom:1px solid #1e2130">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-                <span style="font-family:monospace;font-size:11px;color:#9ea0a8">${a.node}</span>
-                <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:#2a2d3a;color:#f0a500">${a.flag}</span>
-              </div>
-              <div style="font-size:12px;color:#888;line-height:1.4">${a.detail}</div>
-            </div>`).join('')}
-      </div>
-      <div class="card">
-        <div class="card-title">Nodes to watch today</div>
-        ${(AI.nodes_to_watch || []).map((n, i) => `
-          <div style="padding:10px 0;border-bottom:1px solid #1e2130">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <span style="font-size:10px;font-weight:700;color:#555">${i+1}</span>
-              <span style="font-family:monospace;font-size:11px;color:#9ea0a8">${n.node}</span>
-              <span style="font-size:10px;color:#555">${n.region}</span>
-            </div>
-            <div style="font-size:12px;color:#888;line-height:1.4">${n.reason}</div>
-          </div>`).join('')}
-      </div>
-    </div>
-
-    ${intraday ? `
-    <div class="card" style="border-left:3px solid #4a9eff">
-      <div class="card-title">Intraday update — as of ${intraday.generated_at}</div>
-      <div style="font-size:13px;color:#c8cad4;line-height:1.7;margin-bottom:12px">${intraday.intraday_narrative || ''}</div>
-      <div style="font-size:12px;color:#888;margin-bottom:12px">${intraday.vs_yesterday || ''}</div>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:${(intraday.alerts||[]).length?'12px':'0'}">
-        <span style="font-size:11px;color:#555">Intraday signal:</span>
-        <span style="font-size:13px;font-weight:700;color:${intraday.charging_signal==='bullish'?'#3dba6f':intraday.charging_signal==='bearish'?'#e05050':'#f0a500'}">${intraday.charging_signal?.toUpperCase()}</span>
-        <span style="font-size:12px;color:#888">${intraday.charging_rationale||''}</span>
-      </div>
-      ${(intraday.alerts||[]).map(a=>`
-        <div style="font-size:11px;padding:6px 10px;background:#1e2130;border-radius:6px;margin-top:6px;color:#c8cad4">
-          <span style="color:#f0a500;font-family:monospace">${a.node}</span> — ${a.detail}
-        </div>`).join('')}
-    </div>` : ''}
-
-    <div style="font-size:10px;color:#333;text-align:right;margin-top:8px">
-      Analysis generated ${AI.generated_at} · Model: claude-haiku-4-5-20251001 · Data: ${AI.data_date}
-    </div>`;
-}
-
-// ── BATTERY DISPATCH & IMPLIED SOC ───────────────────────────────────────────
-
-function renderBattery() {
-  const el = document.getElementById('battery-content');
-  if (!L || !L.battery) {
-    el.innerHTML = `<div style="text-align:center;padding:60px;color:#444">
-      <div style="font-size:15px;color:#666;margin-bottom:8px">No live battery data yet</div>
-      <div style="font-size:12px;color:#444">Battery dispatch updates every 15 min during market hours.</div>
-    </div>`;
-    return;
-  }
-
-  const bat = L.battery;
-  const esr = bat.esr_actual || {};
-  const esrMW = esr.latest_mw;
-  const hasRealESR = esrMW !== null && esrMW !== undefined;
-  const currentHr = L.max_hour_cleared || 0;
-
-  // SOC — use ESR-integrated value if available, else price-implied
-  const soc = bat.current_soc || 50;
-  const socColor = soc < 25 ? '#e05050' : soc < 50 ? '#f0a500' : '#3dba6f';
-
-  // ESR net MW display
-  const esrColor = !hasRealESR ? '#555' : esrMW < -1000 ? '#4a9eff' : esrMW < 0 ? '#7fc8ff' : esrMW < 1000 ? '#f0a500' : '#e05050';
-  const esrLabel = !hasRealESR ? '— Awaiting data'
-    : esrMW < 0 ? `${Math.abs(esrMW).toFixed(0)} MW Charging`
-    : `${esrMW.toFixed(0)} MW Discharging`;
-  const esrSubtitle = hasRealESR ? 'ERCOT ESR API' : 'ESR API not yet returning data';
-
-  // Build SOC curve from ESR hourly if available, else price-implied
-  const esrHrs = Object.keys(esr.hourly || {}).map(Number).sort((a,b)=>a-b);
-  const esrData = esrHrs.map(h => esr.hourly[h]);
-  const socHrs  = Object.keys(bat.soc_curve || {}).map(Number).sort((a,b)=>a-b);
-  const socData  = socHrs.map(h => bat.soc_curve[h]);
-  const socSource = hasRealESR ? 'ESR MW integration' : 'price-implied (ESR API pending)';
-  const esrDotColor = hasRealESR ? '#3dba6f' : '#555';
-  const esrDotLabel = hasRealESR ? '● Live' : '● No ESR data yet';
-
-  // Build detail section as variable to avoid nested template literal issues
-  let detailHTML = '';
-  if (hasRealESR) {
-    const tableRows = socHrs.map(h => {
-      const mw  = (esr.hourly || {})[h];
-      const s   = bat.soc_curve ? bat.soc_curve[h] : '—';
-      const col = mw == null ? '#555' : mw < 0 ? '#4a9eff' : '#e05050';
-      const lbl = mw == null ? '—' : mw < 0 ? 'Charging' : 'Discharging';
-      const mwStr = mw != null ? (mw > 0 ? '+' : '') + mw.toFixed(0) + ' MW' : '—';
-      const socStr = typeof s === 'number' ? s.toFixed(1) + '%' : String(s);
-      return '<tr><td class="left" style="font-family:monospace">HE' + String(h).padStart(2,'0') + '</td>'
-        + '<td style="color:' + col + ';font-family:monospace">' + mwStr + '</td>'
-        + '<td style="color:' + col + '">' + lbl + '</td>'
-        + '<td style="font-family:monospace">' + socStr + '</td></tr>';
-    }).join('');
-    detailHTML = '<div class="card" style="margin-bottom:16px">'
-      + '<div class="card-title">ERCOT ESR net output — hourly detail (MW)</div>'
-      + '<div class="table-scroll"><table><thead><tr>'
-      + '<th class="left">Hour Ending</th><th>ESR Net (MW)</th><th>Status</th><th>Implied SOC (%)</th>'
-      + '</tr></thead><tbody>' + tableRows + '</tbody></table></div></div>';
-  } else {
-    detailHTML = '<div class="card" style="border:1px solid #2a2d3a;padding:24px;text-align:center;margin-bottom:16px">'
-      + '<div style="font-size:13px;color:#555;margin-bottom:8px">ERCOT ESR API data pending</div>'
-      + '<div style="font-size:12px;color:#444;line-height:1.7">'
-      + 'The <code style="color:#7fc8ff">rptesr-m/4_sec_esr_charging_mw</code> endpoint is being queried each run. '
-      + 'Once it returns data, the SOC curve will be driven by real ESR net output integration.'
-      + '</div></div>';
-  }
-
-  el.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-      <div class="card" style="border-left:3px solid ${socColor}">
-        <div class="kpi-label">Implied Grid SOC — HE${String(currentHr).padStart(2,'0')}</div>
-        <div style="font-size:36px;font-weight:700;color:${socColor};margin:10px 0">${soc.toFixed(1)}%</div>
-        <div style="background:#1e2130;border-radius:6px;height:12px;margin-bottom:8px">
-          <div style="background:${socColor};width:${soc}%;height:100%;border-radius:6px;transition:width .5s"></div>
-        </div>
-        <div style="font-size:11px;color:#555">Source: ${socSource} · Rolls forward from prior day</div>
-      </div>
-      <div class="card" style="border-left:3px solid ${esrColor}">
-        <div class="kpi-label">ERCOT Grid ESR Net Output — Current</div>
-        <div style="font-size:28px;font-weight:700;color:${esrColor};margin:10px 0">${esrLabel}</div>
-        <div style="font-size:11px;color:#555">${esrSubtitle} · As of ${L.as_of}</div>
-        <div style="font-size:11px;color:#444;margin-top:6px">Negative = charging · Positive = discharging</div>
-      </div>
-    </div>
-    <div class="two-col" style="margin-bottom:16px">
-      <div class="card">
-        <div class="card-title">ERCOT grid ESR net output by hour (MW)
-          <span style="font-size:10px;color:${esrDotColor}">${esrDotLabel}</span>
-        </div>
-        <div class="chart-wrap"><canvas id="esr-actual-chart"></canvas></div>
-        <div style="font-size:10px;color:#333;margin-top:6px">Blue = charging (negative MW) · Red = discharging (positive MW)</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Rolling implied SOC — today intraday (%)</div>
-        <div class="chart-wrap"><canvas id="soc-curve-chart"></canvas></div>
-        <div style="font-size:10px;color:#333;margin-top:6px">${socSource}</div>
-      </div>
-    </div>
-    ${detailHTML}`;
-
-  // ESR net output chart
-  destroyChart('esr-actual-chart');
-  if (esrHrs.length) {
-    charts['esr-actual-chart'] = new Chart(document.getElementById('esr-actual-chart'), {
-      type: 'bar',
-      data: {
-        labels: esrHrs.map(h => `HE${String(h).padStart(2,'0')}`),
-        datasets: [{ label: 'ESR Net MW', data: esrData,
-          backgroundColor: esrData.map(v => v < 0 ? 'rgba(74,158,255,.75)' : 'rgba(224,80,80,.75)'),
-          borderColor:     esrData.map(v => v < 0 ? '#4a9eff' : '#e05050'), borderWidth:1 }]
-      },
-      options: { responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false}, tooltip:{callbacks:{label: ctx => `${ctx.raw<0?'Charging':'Discharging'}: ${Math.abs(ctx.raw).toFixed(0)} MW`}}},
-        scales:{
-          x:{ticks:{color:'#555',font:{size:9},maxRotation:45},grid:{color:'#1e2130'}},
-          y:{ticks:{color:'#555',font:{size:9},callback:v=>(v>0?'+':'')+v+' MW'},grid:{color:'#1e2130'},
-             title:{display:true,text:'MW (negative = charging)',color:'#555',font:{size:10}}}
-        }
-      }
-    });
-  } else {
-    const ctx = document.getElementById('esr-actual-chart').getContext('2d');
-    ctx.fillStyle = '#2a2d3a'; ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
-    ctx.fillStyle = '#444'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('Awaiting ESR API data', ctx.canvas.width/2, ctx.canvas.height/2);
-  }
-
-  // SOC curve chart
-  destroyChart('soc-curve-chart');
-  if (socData.length) {
-    const socMin = Math.max(0,  Math.min(...socData) - 5);
-    const socMax = Math.min(100, Math.max(...socData) + 5);
-    charts['soc-curve-chart'] = new Chart(document.getElementById('soc-curve-chart'), {
-      type: 'line',
-      data: {
-        labels: socHrs.map(h => `HE${String(h).padStart(2,'0')}`),
-        datasets: [{ label: 'Implied SOC (%)', data: socData,
-          borderColor: socColor, backgroundColor: `${socColor}20`,
-          fill:true, tension:.3, pointRadius:3, pointBackgroundColor: socColor }]
-      },
-      options: { responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{labels:{color:'#666',font:{size:10}}}},
-        scales:{
-          x:{ticks:{color:'#555',font:{size:9},maxRotation:45},grid:{color:'#1e2130'}},
-          y:{min:socMin, max:socMax, ticks:{color:'#555',font:{size:9},callback:v=>v+'%'},grid:{color:'#1e2130'}}
-        }
-      }
-    });
-  }
+  // ── AI Analysis tab ───────────────────────────────────────────────────────
+  const morning = (aiData.morning) || {};
+  document.getElementById('ai-date').textContent = morning.data_date
+    ? 'Data date: ' + morning.data_date : '';
+  document.getElementById('ai-text').textContent = morning.analysis
+    || 'AI analysis not yet available for this report date.';
 }
 
 loadData();
-loadLive();
-loadHistory();
-loadAI();
+// Auto-refresh every 5 minutes
 setInterval(loadData, 5 * 60 * 1000);
 </script>
 </body>
