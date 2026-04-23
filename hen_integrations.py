@@ -1501,12 +1501,13 @@ def collect_ercot_forecasts(token, sub_key):
             hour = int(str(he).split(":")[0]) - 1
         except:
             hour = 0
+        # Solar field names from ERCOT np4-745-cd/spp_hrly_actual_fcast_geo:
+        # STPPFSystemWide = Short-Term PV Power Forecast (best forward-looking)
+        # PVGRPPSystemWide = PV Generation Resource Power Potential
         mw = safe_float(
-            row.get("stppf")             or row.get("Stppf")             or
-            row.get("pvgrpp")            or row.get("Pvgrpp")            or
-            row.get("genHSL")            or row.get("GenHSL")            or
-            row.get("genForecast")       or row.get("GenForecast")       or
-            row.get("pvGenForecast")     or row.get("PvGenForecast")     or 0
+            row.get("STPPFSystemWide")   or row.get("PVGRPPSystemWide")  or
+            row.get("COPHSLSystemWide")  or row.get("genSystemWide")     or
+            row.get("stppf")             or row.get("pvgrpp")            or 0
         )
         if dt and mw > 0:
             key = f"{dt} {hour:02d}"
