@@ -60,8 +60,10 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           cp latest.json dashboard/latest.json
+          cp dashboard/index.html index.html
           git add dashboard/latest.json dashboard/history.json
           git add dashboard/ai_analysis.json || true
+          git add index.html
           git diff --staged --quiet || git commit -m "Data update — $(date -u +%Y-%m-%d)"
           git push
 
