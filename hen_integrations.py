@@ -298,18 +298,24 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
 
 AG2_BASE = "https://www.wsitrader.com/Services/CSVDownloadService.svc"
 
-# Major ERCOT metro weather stations. These are ASOS/ICAO station IDs used by
-# AG2 Trader. GetCityTableForecast with CurrentTabName=MinMax returns high/low
-# temp per day; a second call with CurrentTabName=POP returns precip probability.
+# ERCOT city names exactly as they appear in AG2 Trader's ERCOT region table.
+# The API returns City column values matching these display names.
+# Using a set for fast membership testing; we pull all cities and filter to these.
 AG2_ERCOT_CITIES = {
-    "Dallas/Ft Worth": "KDFW",
-    "Houston":         "KHOU",
-    "San Antonio":     "KSAT",
-    "Austin":          "KAUS",
-    "Abilene":         "KABI",
-    "Corpus Christi":  "KCRP",
-    "Lubbock":         "KLBB",
-    "Midland":         "KMAF",
+    "Abilene, TX",
+    "Austin, TX",
+    "Corpus Christi, TX",
+    "Dallas Fort Worth, TX",
+    "Galveston, TX",
+    "Houston Iah, TX",
+    "Lubbock, TX",
+    "Midland, TX",
+    "San Antonio, TX",
+    "Waco, TX",
+    "Wichita Falls, TX",
+    "Brownsville, TX",
+    "Laredo Afb, TX",
+    "Victoria, TX",
 }
 
 
@@ -416,53 +422,77 @@ def collect_ag2_weather():
     )
     pop_rows = _parse_ag2_csv(pop_csv)
 
-    # Build lookup: station_id → date → precip_pct
-    # AG2 MinMax/POP CSV columns include Station (or City), Date, and data columns
-    pop_lookup = {}  # station_upper → {date: precip_pct}
-    for row in pop_rows:
-        station = str(row.get("Station") or row.get("City") or row.get("ID") or "").upper().strip()
-        dt      = str(row.get("Date") or row.get("date") or "")[:10]
-        pop_val = int(safe_float(row.get("POP") or row.get("Precip") or row.get("PoP") or 0))
-        if station and dt:
-            pop_lookup.setdefault(station, {})[dt] = pop_val
+    # pop_rows parsed above — matching and lookup built in city loop below
 
-    # Build city forecasts by matching station IDs
-    station_to_name = {v: k for k, v in AG2_ERCOT_CITIES.items()}
+    # Build city forecasts by matching AG2 display names.
+    # The CSV City column contains values like "Dallas Fort Worth, TX".
+    # We match case-insensitively against AG2_ERCOT_CITIES.
     cities_out = {}
-    station_days = {}  # station → {date: {high, low}}
+    city_days  = {}   # city_name → {date: {high, low}}
+    ag2_lower  = {c.lower(): c for c in AG2_ERCOT_CITIES}
 
     for row in minmax_rows:
-        station = str(row.get("Station") or row.get("City") or row.get("ID") or "").upper().strip()
-        if station not in station_to_name:
+        city = str(
+            row.get("City") or row.get("Station") or row.get("Location") or
+            row.get("CityName") or row.get("city") or ""
+        ).strip()
+        city_key = city.lower()
+        if city_key not in ag2_lower:
             continue
-        dt  = str(row.get("Date") or row.get("date") or "")[:10]
-        hi  = int(safe_float(row.get("MaxTemp") or row.get("Max") or row.get("High") or 0))
-        lo  = int(safe_float(row.get("MinTemp") or row.get("Min") or row.get("Low")  or 0))
+        canonical = ag2_lower[city_key]
+        dt = str(row.get("Date") or row.get("date") or "")[:10]
+        # MinMax columns: MaxTemp / Max / High and MinTemp / Min / Low
+        hi = int(safe_float(
+            row.get("MaxTemp") or row.get("Max") or row.get("High") or
+            row.get("maxtemp") or row.get("max") or 0
+        ))
+        lo = int(safe_float(
+            row.get("MinTemp") or row.get("Min") or row.get("Low") or
+            row.get("mintemp") or row.get("min") or 0
+        ))
         if dt:
-            station_days.setdefault(station, {})[dt] = {"high": hi, "low": lo}
+            city_days.setdefault(canonical, {})[dt] = {"high": hi, "low": lo}
 
-    for station, name in station_to_name.items():
-        days_data = station_days.get(station, {})
-        if not days_data:
+    # Build POP lookup by city name
+    pop_by_city = {}
+    for row in pop_rows:
+        city = str(
+            row.get("City") or row.get("Station") or row.get("Location") or ""
+        ).strip()
+        city_key = city.lower()
+        if city_key not in ag2_lower:
             continue
-        pop_for_station = pop_lookup.get(station, {})
-        days_list = []
+        canonical = ag2_lower[city_key]
+        dt      = str(row.get("Date") or row.get("date") or "")[:10]
+        pop_val = int(safe_float(
+            row.get("POP") or row.get("Precip") or row.get("PoP") or
+            row.get("pop") or 0
+        ))
+        if dt:
+            pop_by_city.setdefault(canonical, {})[dt] = pop_val
+
+    for city_name, days_data in city_days.items():
+        pop_for_city = pop_by_city.get(city_name, {})
+        days_list    = []
         for dt in sorted(days_data.keys())[:15]:
             d = days_data[dt]
             days_list.append({
                 "date":       dt,
                 "high":       d["high"],
                 "low":        d["low"],
-                "precip_pct": pop_for_station.get(dt, 0),
+                "precip_pct": pop_for_city.get(dt, 0),
             })
         if days_list:
-            cities_out[name] = {
-                "station": station,
-                "days":    days_list,
-            }
+            cities_out[city_name] = {"days": days_list}
 
-    print(f"    AG2: {len(cities_out)} cities · "
-          f"{len(next(iter(cities_out.values()))['days']) if cities_out else 0} days each")
+    n_days = len(next(iter(cities_out.values()))["days"]) if cities_out else 0
+    print(f"    AG2: {len(cities_out)} cities · {n_days} days each")
+    if not cities_out:
+        # Log first few raw rows to help debug column name mismatches
+        sample = minmax_rows[:3]
+        if sample:
+            print(f"    DEBUG — sample CSV columns: {list(sample[0].keys())}")
+            print(f"    DEBUG — sample City values: {[r.get('City') or r.get('Station') or r.get('Location') or '?' for r in sample]}")
 
     return {
         "weather": {
