@@ -78,6 +78,11 @@ IN_15_DAYS = (date.today() + timedelta(days=15)).isoformat()
 PRIOR_15   = (date.today() - timedelta(days=15)).isoformat()
 DAY_BEFORE = (date.today() - timedelta(days=2)).isoformat()
 
+# Modo Energy ERCOT index data has a ~60-day publication lag (settled market data).
+# Use 62 days ago as the target date and 63 days ago as the prior day for DoD delta.
+MODO_DATE       = (date.today() - timedelta(days=62)).isoformat()
+MODO_DATE_PRIOR = (date.today() - timedelta(days=63)).isoformat()
+
 
 def safe_float(val):
     try:
@@ -288,18 +293,24 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2.  AG2 — 15-day weather outlook with prior-forecast delta
+# 2.  AG2 — 15-day city temperature & precip forecast for major ERCOT metros
 # ══════════════════════════════════════════════════════════════════════════════
 
 AG2_BASE = "https://www.wsitrader.com/Services/CSVDownloadService.svc"
 
-# ERCOT SouthCentral region station IDs most relevant to HEN's Texas portfolio.
-# GetCityTableForecast uses the region pool; GetHourlyForecast uses individual
-# station IDs. Run GetCityIds to get your full list of provisioned stations.
-# Default anchor is the SOUTHCENTRAL pool which covers DFW, Houston, and SA.
-AG2_ERCOT_REGION    = "SOUTHCENTRAL"
-AG2_ERCOT_POOL_ID   = "SOUTHCENTRAL-pool"  # returns region + aggregate
-AG2_ERCOT_STATIONS  = ["KDFW", "KHOU", "KSAT"]   # individual city fallbacks
+# Major ERCOT metro weather stations. These are ASOS/ICAO station IDs used by
+# AG2 Trader. GetCityTableForecast with CurrentTabName=MinMax returns high/low
+# temp per day; a second call with CurrentTabName=POP returns precip probability.
+AG2_ERCOT_CITIES = {
+    "Dallas/Ft Worth": "KDFW",
+    "Houston":         "KHOU",
+    "San Antonio":     "KSAT",
+    "Austin":          "KAUS",
+    "Abilene":         "KABI",
+    "Corpus Christi":  "KCRP",
+    "Lubbock":         "KLBB",
+    "Midland":         "KMAF",
+}
 
 
 def _ag2_auth_params():
@@ -314,10 +325,7 @@ def _ag2_auth_params():
 def _ag2_csv_get(endpoint, extra_params, timeout=25):
     """
     GET an AG2 Trader CSV endpoint and return the raw response text.
-    All AG2 endpoints return .csv — auth is passed as query parameters.
-
-    Base URL: https://www.wsitrader.com/Services/CSVDownloadService.svc/{endpoint}
-    Auth pattern (from docs): Account, Profile, Password as query params — NO headers.
+    Auth is passed as query parameters — no headers needed.
     """
     url = f"{AG2_BASE}/{endpoint}"
     params = {**_ag2_auth_params(), **extra_params}
@@ -331,11 +339,7 @@ def _ag2_csv_get(endpoint, extra_params, timeout=25):
 
 
 def _parse_ag2_csv(csv_text):
-    """
-    Parse an AG2 Trader CSV response into a list of dicts.
-    AG2 returns standard comma-separated CSV with a header row.
-    Strips blank lines and handles quoted fields.
-    """
+    """Parse an AG2 Trader CSV response into a list of dicts."""
     import csv, io
     rows = []
     if not csv_text or not csv_text.strip():
@@ -349,84 +353,30 @@ def _parse_ag2_csv(csv_text):
     return rows
 
 
-def _ag2_icon(max_t, precip_pct):
-    """Derive a simple weather icon label from temperature and precip probability."""
-    if precip_pct >= 60:
-        return "rainy"
-    if precip_pct >= 30:
-        return "partly_cloudy_rain"
-    if max_t >= 95:
-        return "hot_sunny"
-    if max_t >= 80:
-        return "sunny"
-    if max_t >= 60:
-        return "partly_cloudy"
-    return "cloudy"
-
-
 def collect_ag2_weather():
     """
-    Pull the 15-day weather outlook for ERCOT's SouthCentral region from
-    AG2 Trader (wsitrader.com) and compute deltas vs the prior forecast run.
+    Pull 15-day MinMax temperature and precip probability for 8 major ERCOT
+    metro stations using AG2 Trader's GetCityTableForecast endpoint.
 
-    AG2 Trader endpoints used (documented in AG2 Trader API, Mar 31, 2026):
+    Two calls per station batch:
+      CurrentTabName=MinMax  → daily high/low °F
+      CurrentTabName=POP     → probability of precipitation (%)
 
-    Current forecast — Section 1 GetCityTableForecast:
-      GET /GetCityTableForecast
-        Account, Profile, Password  (required auth)
-        IsCustom=false
-        CurrentTabName=MinMax       (Min/Max temp per day)
-        TempUnits=F
-        Id=SOUTHCENTRAL-pool        (SOUTHCENTRAL region + aggregate)
-        Region=NA
-
-    Prior forecast delta — Section 3 GetModelForecast (WSI model):
-      GET /GetModelForecast
-        Account, Profile, Password
-        Region=NA
-        forecasttype=Daily
-        Model=WSI
-        TempUnits=F
-        showdecimals=true
-        BiasCorrected=false
-        ShowDifferences=true        (returns diff vs prior run — exactly what we need)
-        DataTypes[]=Temp
-        DataTypes[]=CDD
-        DataTypes[]=HDD
-
-    ERCOT hourly load forecast — Section 13 GetHourlyLoadData:
-      GET /GetHourlyLoadData
-        Account, Profile, Password
-        ISO=ERCOT
-        Regions[]=RTO               (ERCOT aggregate)
-        Regions[]=SouthCentral      (South Central sub-region)
-        Sources[]=WSI               (latest AG2 forecast)
-        timeutc=false               (return in local CT)
+    Uses allcities with Region=NA to get all provisioned stations in one call,
+    then filters to the ERCOT metros we care about by station ID.
 
     Returns:
     {
       "weather": {
-        "region":  "SOUTHCENTRAL",
-        "days": [
-          {
-            "date":         "2026-04-22",
-            "temp_high":    88,
-            "temp_low":     64,
-            "cdd":          18,
-            "hdd":          0,
-            "delta_high":   +4,    # vs prior WSI forecast run
-            "delta_low":    +3,
-            "icon":         "sunny"
-          }, ...
-        ],
-        "hourly_load_forecast": {
-          "RTO":          { "2026-04-22 06:00": 42100, ... },
-          "SouthCentral": { ... }
-        },
-        "load_impact": {
-          "days_warmer":             5,
-          "peak_warm_delta_f":       6,
-          "estimated_load_delta_gw": 2.1
+        "cities": {
+          "Dallas/Ft Worth": {
+            "station": "KDFW",
+            "days": [
+              { "date": "2026-04-23", "high": 88, "low": 64, "precip_pct": 10 },
+              ...
+            ]
+          },
+          ...
         },
         "generated_at": "ISO",
         "source": "AG2 Trader (wsitrader.com)"
@@ -438,184 +388,89 @@ def collect_ag2_weather():
         print("  SKIP [AG2 Trader] AG2_ACCOUNT not set")
         return {"weather": {}}
 
-    print(f"  Pulling AG2 Trader 15-day forecast for ERCOT SouthCentral...")
+    print(f"  Pulling AG2 Trader 15-day city forecasts for ERCOT metros...")
 
-    # ── Call 1: Current MinMax forecast via GetCityTableForecast ──────────
-    city_csv = _ag2_csv_get(
+    # ── Call 1: MinMax temperature for all provisioned NA cities ─────────
+    minmax_csv = _ag2_csv_get(
         "GetCityTableForecast",
         {
             "IsCustom":       "false",
             "CurrentTabName": "MinMax",
             "TempUnits":      "F",
-            "Id":             AG2_ERCOT_POOL_ID,
+            "Id":             "allcities",
             "Region":         "NA",
         },
     )
-    city_rows = _parse_ag2_csv(city_csv)
+    minmax_rows = _parse_ag2_csv(minmax_csv)
 
-    # Build a date → {max, min} lookup from the MinMax rows.
-    # AG2 MinMax CSV columns: City, Date, MaxTemp, MinTemp (+ others)
-    city_by_date = {}
-    for row in city_rows:
-        # Prefer the aggregate pool row (City will contain "SOUTHCENTRAL" or "Pool")
-        city = str(row.get("City", "") or row.get("Station", "")).upper()
-        if "POOL" not in city and "SOUTHCENTRAL" not in city:
-            continue
-        dt   = str(row.get("Date", "") or row.get("date", ""))[:10]
-        hi   = int(safe_float(row.get("MaxTemp") or row.get("Max") or row.get("High") or 0))
-        lo   = int(safe_float(row.get("MinTemp") or row.get("Min") or row.get("Low")  or 0))
-        if dt:
-            city_by_date[dt] = {"temp_high": hi, "temp_low": lo}
-
-    print(f"    MinMax forecast: {len(city_by_date)} days")
-
-    # ── Call 2: WSI model forecast with ShowDifferences=true ──────────────
-    # This gives us the forecast AND the delta vs the prior model run in one call.
-    # Columns returned: ISO/Region, Date, Period, MaxTemp, MaxDiff, MinTemp, MinDiff, CDD, HDD
-    diff_csv = _ag2_csv_get(
-        "GetModelForecast",
+    # ── Call 2: POP (precip probability) for all provisioned NA cities ───
+    pop_csv = _ag2_csv_get(
+        "GetCityTableForecast",
         {
-            "Region":           "NA",
-            "forecasttype":     "Daily",
-            "Model":            "WSI",
-            "TempUnits":        "F",
-            "showdecimals":     "true",
-            "BiasCorrected":    "false",
-            "ShowDifferences":  "true",
-            "DataTypes[]":      "Temp",   # Note: pass as repeated param below
+            "IsCustom":       "false",
+            "CurrentTabName": "POP",
+            "TempUnits":      "F",
+            "Id":             "allcities",
+            "Region":         "NA",
         },
     )
-    # GetModelForecast needs DataTypes as repeated params — rebuild with requests manually
-    try:
-        params = {
-            **_ag2_auth_params(),
-            "Region":          "NA",
-            "forecasttype":    "Daily",
-            "Model":           "WSI",
-            "TempUnits":       "F",
-            "showdecimals":    "true",
-            "BiasCorrected":   "false",
-            "ShowDifferences": "true",
-        }
-        # Append repeated DataTypes[] params
-        param_list = list(params.items())
-        for dt_val in ["Temp", "CDD", "HDD"]:
-            param_list.append(("DataTypes[]", dt_val))
+    pop_rows = _parse_ag2_csv(pop_csv)
 
-        r = requests.get(
-            f"{AG2_BASE}/GetModelForecast",
-            params=param_list,
-            timeout=25,
-        )
-        r.raise_for_status()
-        diff_csv = r.text
-    except Exception as e:
-        print(f"  WARN [AG2 GetModelForecast] {e}")
-        diff_csv = ""
+    # Build lookup: station_id → date → precip_pct
+    # AG2 MinMax/POP CSV columns include Station (or City), Date, and data columns
+    pop_lookup = {}  # station_upper → {date: precip_pct}
+    for row in pop_rows:
+        station = str(row.get("Station") or row.get("City") or row.get("ID") or "").upper().strip()
+        dt      = str(row.get("Date") or row.get("date") or "")[:10]
+        pop_val = int(safe_float(row.get("POP") or row.get("Precip") or row.get("PoP") or 0))
+        if station and dt:
+            pop_lookup.setdefault(station, {})[dt] = pop_val
 
-    diff_rows   = _parse_ag2_csv(diff_csv)
-    diff_by_date = {}
-    for row in diff_rows:
-        # Filter to SOUTHCENTRAL or ERCOT rows
-        region_val = str(row.get("ISO", "") or row.get("Region", "") or
-                         row.get("Station", "")).upper()
-        if "SOUTH" not in region_val and "ERCOT" not in region_val and "CONUS" not in region_val:
+    # Build city forecasts by matching station IDs
+    station_to_name = {v: k for k, v in AG2_ERCOT_CITIES.items()}
+    cities_out = {}
+    station_days = {}  # station → {date: {high, low}}
+
+    for row in minmax_rows:
+        station = str(row.get("Station") or row.get("City") or row.get("ID") or "").upper().strip()
+        if station not in station_to_name:
             continue
-        dt = str(row.get("Date", "") or row.get("date", ""))[:10]
-        if not dt:
+        dt  = str(row.get("Date") or row.get("date") or "")[:10]
+        hi  = int(safe_float(row.get("MaxTemp") or row.get("Max") or row.get("High") or 0))
+        lo  = int(safe_float(row.get("MinTemp") or row.get("Min") or row.get("Low")  or 0))
+        if dt:
+            station_days.setdefault(station, {})[dt] = {"high": hi, "low": lo}
+
+    for station, name in station_to_name.items():
+        days_data = station_days.get(station, {})
+        if not days_data:
             continue
-        diff_by_date[dt] = {
-            "delta_high": int(safe_float(
-                row.get("MaxDiff") or row.get("MaxTempDiff") or row.get("DiffMax") or 0
-            )),
-            "delta_low": int(safe_float(
-                row.get("MinDiff") or row.get("MinTempDiff") or row.get("DiffMin") or 0
-            )),
-            "cdd": int(safe_float(row.get("CDD") or row.get("cdd") or 0)),
-            "hdd": int(safe_float(row.get("HDD") or row.get("hdd") or 0)),
-        }
+        pop_for_station = pop_lookup.get(station, {})
+        days_list = []
+        for dt in sorted(days_data.keys())[:15]:
+            d = days_data[dt]
+            days_list.append({
+                "date":       dt,
+                "high":       d["high"],
+                "low":        d["low"],
+                "precip_pct": pop_for_station.get(dt, 0),
+            })
+        if days_list:
+            cities_out[name] = {
+                "station": station,
+                "days":    days_list,
+            }
 
-    print(f"    Model diff forecast: {len(diff_by_date)} days")
-
-    # ── Call 3: ERCOT hourly load forecast (Section 13 GetHourlyLoadData) ──
-    load_by_region = {}
-    try:
-        load_params = [
-            *list(_ag2_auth_params().items()),
-            ("ISO",        "ERCOT"),
-            ("Regions[]",  "RTO"),
-            ("Regions[]",  "SouthCentral"),
-            ("Sources[]",  "WSI"),
-            ("timeutc",    "false"),
-        ]
-        r = requests.get(
-            f"{AG2_BASE}/GetHourlyLoadData",
-            params=load_params,
-            timeout=25,
-        )
-        r.raise_for_status()
-        load_rows = _parse_ag2_csv(r.text)
-        for row in load_rows:
-            region_key = str(row.get("Region") or row.get("Subzone") or "RTO")
-            dt_str     = str(row.get("Date") or row.get("DateTime") or "")
-            load_mw    = int(safe_float(row.get("Load") or row.get("LoadMW") or
-                                        row.get("WSI") or 0))
-            if dt_str and load_mw:
-                load_by_region.setdefault(region_key, {})[dt_str] = load_mw
-        print(f"    Hourly load forecast: {sum(len(v) for v in load_by_region.values())} intervals "
-              f"across {len(load_by_region)} regions")
-    except Exception as e:
-        print(f"  WARN [AG2 GetHourlyLoadData] {e}")
-
-    # ── Build unified day-by-day output ───────────────────────────────────
-    all_dates = sorted(set(list(city_by_date.keys()) + list(diff_by_date.keys())))
-    days_out  = []
-    for dt in all_dates[:15]:  # cap at 15 days
-        c = city_by_date.get(dt, {})
-        d = diff_by_date.get(dt, {})
-        hi     = c.get("temp_high", 0)
-        lo     = c.get("temp_low",  0)
-        d_hi   = d.get("delta_high", 0)
-        d_lo   = d.get("delta_low",  0)
-        cdd    = d.get("cdd", 0)
-        hdd    = d.get("hdd", 0)
-        # Derive a precip probability proxy from HDD/CDD context (AG2 MinMax
-        # doesn't include POP directly — use POP endpoint if subscribed)
-        days_out.append({
-            "date":        dt,
-            "temp_high":   hi,
-            "temp_low":    lo,
-            "cdd":         cdd,
-            "hdd":         hdd,
-            "delta_high":  d_hi,
-            "delta_low":   d_lo,
-            "icon":        _ag2_icon(hi, 0),
-        })
-
-    # ── Load impact estimate ───────────────────────────────────────────────
-    LOAD_PER_DEGREE_GW = 0.35
-    warmer_days = [d for d in days_out if d["delta_high"] > 2]
-    peak_warm   = max((d["delta_high"] for d in warmer_days), default=0)
-    est_load_gw = round(peak_warm * LOAD_PER_DEGREE_GW, 2)
-
-    print(f"    AG2: {len(days_out)} days · {len(warmer_days)} days warmer than prior · "
-          f"peak delta +{peak_warm}°F → ~{est_load_gw} GW load impact")
+    print(f"    AG2: {len(cities_out)} cities · "
+          f"{len(next(iter(cities_out.values()))['days']) if cities_out else 0} days each")
 
     return {
         "weather": {
-            "region":                AG2_ERCOT_REGION,
-            "days":                  days_out,
-            "hourly_load_forecast":  load_by_region,
-            "load_impact": {
-                "days_warmer":             len(warmer_days),
-                "peak_warm_delta_f":       peak_warm,
-                "estimated_load_delta_gw": est_load_gw,
-            },
+            "cities":       cities_out,
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "source":       "AG2 Trader (wsitrader.com)",
         }
     }
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3.  MODO ENERGY — HEN custom index performance
@@ -881,7 +736,7 @@ def collect_modo_indices():
     index_ids = _modo_resolve_index_ids()
     if not index_ids:
         print("  WARN [Modo] No index IDs resolved — skipping revenue pull")
-        return {"modo": {"data_date": YESTERDAY, "source": "Modo Energy",
+        return {"modo": {"data_date": MODO_DATE, "source": "Modo Energy",
                          "error": "No index IDs resolved"}}
 
     # ── Step 2: Pull yesterday + prior day revenue for each index ──────────
@@ -916,7 +771,7 @@ def collect_modo_indices():
 
     return {
         "modo": {
-            "data_date": YESTERDAY,
+            "data_date": MODO_DATE,
             "source":    "Modo Energy (api.modoenergy.com)",
             "indices":   indices_out,
         }
@@ -1200,6 +1055,13 @@ def collect_powertools_assets():
     # ── Step 1: Auto-detect endpoint mode ─────────────────────────────────
     mode, detected_url = _powertools_probe(base_url, headers)
     print(f"    Detection result: {mode} → {detected_url}")
+
+    # Check for Power Apps / Microsoft Power Platform URL patterns
+    if any(x in base_url for x in ["powerapps.com", "gateway.prod", ".island", "powerautomate"]):
+        print("  SKIP [PowerTools] URL appears to be a Microsoft Power Apps dashboard.")
+        print("    To integrate: ask IT to create a Power Automate HTTP trigger that")
+        print("    returns asset availability JSON, then set POWERTOOLS_URL to that URL.")
+        return {"asset_status": {"error": "Power Apps URL — needs HTTP trigger endpoint from IT"}}
 
     if mode == "html_dashboard":
         print(
