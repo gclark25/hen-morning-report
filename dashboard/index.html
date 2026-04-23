@@ -624,120 +624,19 @@ function renderAll(d, history, aiData) {
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:#aaa">No 24-hr data</td></tr>';
 
   // ── Forecast time-series chart ───────────────────────────────────────────
-  (function() {
-    const canvas = document.getElementById('fc-chart');
-    if (!canvas) return;
-
-    const glData   = (h24.gross_load || []);
-    const netData  = (h24.net_load   || []);
-    const windData = (h24.wind       || []);
-    const solData  = (h24.solar      || []);
-    // Format labels: show "Apr 23 06" style — date changes visible at midnight
-    const labels = fcTimestamps.map((ts, i) => {
+  // Store chart data globally — Chart.js CDN loads after this runs
+  window._fcChartData = {
+    labels: fcTimestamps.map(ts => {
       const [d, hr] = ts.split(' ');
-      const h = parseInt(hr || '0');
-      // Show date at midnight (hour 0), otherwise just hour
-      return h === 0 ? d.slice(5) + ' 00' : hr;
-    });
-
-    if (!glData.length) {
-      canvas.parentElement.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px">No forecast data available</div>';
-      return;
-    }
-
-    if (window._fcChart) { window._fcChart.destroy(); window._fcChart = null; }
-    window._fcChart = new Chart(canvas, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Gross Load',
-            data: glData,
-            borderColor: '#e040fb',
-            backgroundColor: 'transparent',
-            borderWidth: 2.5,
-            pointRadius: 0,
-            tension: 0.4,
-            order: 4,
-          },
-          {
-            label: 'Net Load',
-            data: netData,
-            borderColor: '#212121',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.4,
-            order: 3,
-          },
-          {
-            label: 'Solar',
-            data: solData,
-            borderColor: '#ffa000',
-            backgroundColor: 'rgba(255,160,0,0.1)',
-            fill: true,
-            borderWidth: 1.5,
-            pointRadius: 0,
-            tension: 0.4,
-            order: 1,
-          },
-          {
-            label: 'Wind',
-            data: windData,
-            borderColor: '#7b1fa2',
-            backgroundColor: 'rgba(123,31,162,0.08)',
-            fill: true,
-            borderWidth: 1.5,
-            pointRadius: 0,
-            tension: 0.4,
-            order: 2,
-          },
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: {
-            position: 'top',
-            labels: { font: { size: 11 }, usePointStyle: true, pointStyleWidth: 14, padding: 16 }
-          },
-          tooltip: {
-            callbacks: {
-              label: ctx => ` ${ctx.dataset.label}: ${(ctx.parsed.y||0).toFixed(1)} GW`
-            }
-          }
-        },
-        scales: {
-          x: {
-            type: 'category',
-            ticks: {
-              font: { size: 10 },
-              maxRotation: 45,
-              autoSkip: true,
-              maxTicksLimit: 16,
-              callback: function(val, idx) {
-                const lbl = labels[idx] || '';
-                // Show at midnight (contains '-') and every 6 hours
-                if (lbl.includes('-')) return lbl;
-                const h = parseInt(lbl);
-                return (h % 6 === 0) ? lbl : '';
-              }
-            },
-            grid: { color: 'rgba(0,0,0,0.05)' }
-          },
-          y: {
-            title: { display: true, text: 'GW', font: { size: 11 } },
-            ticks: { font: { size: 10 }, callback: v => v.toFixed(0) },
-            grid: { color: 'rgba(0,0,0,0.06)' }
-          }
-        }
-      }
-    });
-  })();
-
+      return parseInt(hr||'0') === 0 ? d.slice(5)+' 00' : hr;
+    }),
+    gl:   h24.gross_load || [],
+    net:  h24.net_load   || [],
+    wind: h24.wind       || [],
+    sol:  h24.solar      || [],
+  };
+  // If Chart.js already loaded (e.g. tab re-visit), build immediately
+  if (typeof Chart !== 'undefined') window._buildFcChart && window._buildFcChart();
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
   document.getElementById('ai-date').textContent = morning.data_date
@@ -750,6 +649,44 @@ loadData();
 // Auto-refresh every 5 minutes
 setInterval(loadData, 5 * 60 * 1000);
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" onload="if(window._buildFcChart)window._buildFcChart()">
+window._buildFcChart = function() {
+  const d = window._fcChartData;
+  if (!d || !d.gl.length) return;
+  const canvas = document.getElementById('fc-chart');
+  if (!canvas) return;
+  if (window._fcChart) { window._fcChart.destroy(); window._fcChart = null; }
+  window._fcChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: d.labels,
+      datasets: [
+        { label:'Gross Load', data:d.gl,   borderColor:'#e040fb', backgroundColor:'transparent',           borderWidth:2.5, pointRadius:0, tension:0.4 },
+        { label:'Net Load',   data:d.net,  borderColor:'#212121', backgroundColor:'transparent',           borderWidth:2,   pointRadius:0, tension:0.4 },
+        { label:'Solar',      data:d.sol,  borderColor:'#ffa000', backgroundColor:'rgba(255,160,0,0.1)',   borderWidth:1.5, pointRadius:0, tension:0.4, fill:true },
+        { label:'Wind',       data:d.wind, borderColor:'#7b1fa2', backgroundColor:'rgba(123,31,162,0.08)', borderWidth:1.5, pointRadius:0, tension:0.4, fill:true },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{ position:'top', labels:{ font:{size:11}, usePointStyle:true, pointStyleWidth:14, padding:16 }},
+        tooltip:{ callbacks:{ label: ctx => ' '+ctx.dataset.label+': '+(ctx.parsed.y||0).toFixed(1)+' GW' }}
+      },
+      scales:{
+        x:{ type:'category',
+            ticks:{ font:{size:10}, maxRotation:45, autoSkip:true, maxTicksLimit:20,
+              callback(val,idx){ const l=d.labels[idx]||''; if(l.includes('-'))return l; const h=parseInt(l); return h%6===0?l:''; }
+            },
+            grid:{ color:'rgba(0,0,0,0.05)' }},
+        y:{ title:{display:true,text:'GW',font:{size:11}},
+            ticks:{font:{size:10}, callback:v=>v.toFixed(0)},
+            grid:{color:'rgba(0,0,0,0.06)'}}
+      }
+    }
+  });
+};
+</script>
 </body>
 </html>
