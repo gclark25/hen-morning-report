@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>HEN ERCOT Dashboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     background:#f4f5f7;color:#1a1a2e;min-height:100vh}
+.header{background:#0a3d2e;padding:16px 24px;display:flex;
+        justify-content:space-between;align-items:center;position:sticky;top:0;z-index:100}
+.header h1{font-size:18px;color:#fff;font-weight:600}
+.header .meta{font-size:11px;color:#7fc8a0;text-align:right}
+.header .meta span{display:block}
+.tabs{background:#fff;border-bottom:2px solid #e8e8e8;padding:0 24px;
+      display:flex;gap:0;position:sticky;top:53px;z-index:99}
+.tab{padding:10px 16px;font-size:12px;font-weight:600;color:#888;cursor:pointer;
+     border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap}
+.tab.active{color:#0a3d2e;border-bottom-color:#0a3d2e}
+.tab:hover{color:#0a3d2e}
+.page{display:none;padding:20px 24px;max-width:1200px;margin:0 auto}
+.page.active{display:block}
+
+/* KPI strip */
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.kpi{background:#fff;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8}
+.kpi-label{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;
+           letter-spacing:.05em;margin-bottom:5px}
+.kpi-value{font-size:22px;font-weight:700;color:#1a1a2e;font-family:monospace}
+.kpi-sub{font-size:11px;color:#aaa;margin-top:3px}
+
+/* Cards and sections */
+.card{background:#fff;border-radius:8px;border:1px solid #e8e8e8;margin-bottom:16px;overflow:hidden}
+.card-header{padding:12px 16px;border-bottom:1px solid #f0f0f0;
+             display:flex;justify-content:space-between;align-items:center}
+.card-title{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em}
+.card-meta{font-size:10px;color:#aaa}
+.card-body{padding:14px 16px}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#f8f9fa;padding:7px 10px;text-align:right;font-weight:600;
+   color:#555;font-size:11px;border-bottom:2px solid #e8e8e8}
+th:first-child,th:nth-child(2){text-align:left}
+td{padding:7px 10px;text-align:right;border-bottom:1px solid #f4f4f4;color:#2a2a3e}
+td:first-child{text-align:left}
+td:nth-child(2){text-align:left}
+tr:hover td{background:#fafbfc}
+.node-name{font-family:monospace;font-size:11px;color:#444}
+.spike{color:#b33000;font-weight:600}
+.neg{color:#0066cc}
+.rt-prem{color:#1a7a3f;font-weight:600}
+.da-prem{color:#7a3a1a}
+.region-tag{font-size:10px;padding:2px 6px;border-radius:3px;display:inline-block}
+.region-west-texas{background:#e8f0fe;color:#1a3a8a}
+.region-north-texas{background:#e8f5e9;color:#1a5c2a}
+.region-coastal{background:#e3f2fd;color:#0d47a1}
+.region-premium{background:#fce4ec;color:#880e4f}
+
+/* Modo chart */
+.bar-row{display:flex;align-items:center;margin-bottom:8px;gap:10px}
+.bar-label{font-size:12px;color:#333;width:200px;flex-shrink:0}
+.bar-track{flex:1;background:#e8e8e8;border-radius:4px;height:18px;position:relative}
+.bar-fill{height:18px;border-radius:4px;background:#1a7a3f;min-width:2px}
+.bar-val{font-size:11px;font-family:monospace;color:#333;width:100px;text-align:right;flex-shrink:0}
+.bar-sub{font-size:10px;color:#aaa;width:200px;flex-shrink:0}
+
+/* Weather grid */
+.weather-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.city-card{background:#f8f9fa;border-radius:6px;padding:10px 12px}
+.city-name{font-size:10px;font-weight:700;color:#555;text-transform:uppercase;
+           letter-spacing:.04em;margin-bottom:5px}
+.city-row{display:flex;justify-content:space-between;align-items:center;
+          font-size:11px;color:#333;padding:3px 0;border-bottom:1px solid #eee}
+.city-row:last-child{border-bottom:none}
+.city-date{color:#888;font-size:10px;font-family:monospace}
+.precip{color:#0066cc;font-size:10px}
+
+/* AI analysis */
+.ai-box{background:#f0f7f4;border-radius:6px;padding:16px;border-left:3px solid #1a7a3f}
+.ai-text{font-size:12px;color:#2a2a3e;line-height:1.7;white-space:pre-wrap}
+
+/* Loading */
+.loading{text-align:center;padding:40px;color:#aaa;font-size:13px}
+.error{text-align:center;padding:40px;color:#b33000;font-size:13px}
+
+/* Callout grid */
+.callout-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.callout{background:#f8f9fa;border-radius:6px;padding:12px 14px;border-left:3px solid #ddd}
+.callout.green{border-left-color:#1a7a3f}
+.callout.amber{border-left-color:#c87800}
+.callout.red{border-left-color:#b33000}
+.callout.blue{border-left-color:#0055aa}
+.callout-label{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;
+               letter-spacing:.05em;margin-bottom:4px}
+.callout-value{font-size:12px;color:#1a1a2e;font-family:monospace}
+
+@media(max-width:640px){
+  .kpi-strip{grid-template-columns:1fr 1fr}
+  .callout-grid{grid-template-columns:1fr}
+  .bar-label,.bar-sub{width:140px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div><h1>Hunt Energy Network</h1><div style="font-size:11px;color:#7fc8a0">ERCOT Commercial Dashboard</div></div>
+  <div class="meta">
+    <span id="data-date">Loading...</span>
+    <span id="gen-time"></span>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('overview')">Overview</div>
+  <div class="tab" onclick="showTab('prices')">Prices & DART</div>
+  <div class="tab" onclick="showTab('modo')">Modo Indices</div>
+  <div class="tab" onclick="showTab('weather')">Weather</div>
+  <div class="tab" onclick="showTab('fundamentals')">Fundamentals</div>
+  <div class="tab" onclick="showTab('analysis')">AI Analysis</div>
+</div>
+
+<!-- ── OVERVIEW TAB ─────────────────────────────────────────────────────── -->
+<div id="tab-overview" class="page active">
+  <div class="kpi-strip" id="kpi-strip">
+    <div class="kpi"><div class="kpi-label">Fleet avg RT</div>
+      <div class="kpi-value" id="kpi-rt-avg">—</div>
+      <div class="kpi-sub">$/MWh</div></div>
+    <div class="kpi"><div class="kpi-label">Fleet peak RT</div>
+      <div class="kpi-value" id="kpi-rt-max">—</div>
+      <div class="kpi-sub">$/MWh highest interval</div></div>
+    <div class="kpi"><div class="kpi-label">Spike events</div>
+      <div class="kpi-value" id="kpi-spikes">—</div>
+      <div class="kpi-sub">nodes &gt;$100/MWh</div></div>
+    <div class="kpi"><div class="kpi-label">Negative nodes</div>
+      <div class="kpi-value" id="kpi-neg">—</div>
+      <div class="kpi-sub">charging opportunities</div></div>
+  </div>
+
+  <div class="callout-grid" id="callout-grid"></div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Top 5 DART Performers</span>
+      <span class="card-meta" id="overview-date"></span>
+    </div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Node</th><th>Region</th><th>DART avg</th><th>RT avg</th><th>DA avg</th>
+      </tr></thead><tbody id="top5-body"></tbody></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Modo Indices — 2026 YTD Snapshot</span></div>
+    <div class="card-body" id="overview-modo"></div>
+  </div>
+</div>
+
+<!-- ── PRICES TAB ──────────────────────────────────────────────────────── -->
+<div id="tab-prices" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Top 10 DART Performers</span>
+      <span class="card-meta">DA avg − RT avg · higher = DA premium</span>
+    </div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Node</th><th>Region</th><th>DART avg</th>
+        <th>Intraday $/MWh</th><th>Best hour</th><th>Best spread</th>
+        <th>Spike hrs</th><th>Neg hrs</th>
+      </tr></thead><tbody id="top10-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Bottom 10 DART Performers</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Node</th><th>Region</th><th>DART avg</th>
+        <th>Intraday $/MWh</th><th>Worst hour</th><th>Worst spread</th>
+        <th>Spike hrs</th><th>Neg hrs</th>
+      </tr></thead><tbody id="bot10-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">All Nodes — RT vs DA</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Node</th><th>Region</th><th>RT avg</th><th>RT min</th>
+        <th>RT max</th><th>DA avg</th><th>DART</th>
+      </tr></thead><tbody id="all-nodes-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODO TAB ────────────────────────────────────────────────────────── -->
+<div id="tab-modo" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">HEN Custom Indices — 2026 YTD</span>
+      <span class="card-meta" id="modo-date-range"></span>
+    </div>
+    <div class="card-body">
+      <div id="modo-bars" style="margin-bottom:20px"></div>
+      <table><thead><tr>
+        <th style="text-align:left">Index</th>
+        <th>$/MW/yr (annualised)</th>
+        <th>Window Start</th>
+        <th>Days</th>
+        <th>Top Markets</th>
+      </tr></thead><tbody id="modo-table-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── WEATHER TAB ─────────────────────────────────────────────────────── -->
+<div id="tab-weather" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">15-Day City Forecasts — ERCOT Metro Stations</span>
+      <span class="card-meta" id="weather-source"></span>
+    </div>
+    <div class="card-body">
+      <div class="weather-grid" id="weather-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── FUNDAMENTALS TAB ────────────────────────────────────────────────── -->
+<div id="tab-fundamentals" class="page">
+  <div class="card">
+    <div class="card-header"><span class="card-title">ERCOT System Fundamentals — 7-day lookback (GW daily peak)</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Date</th><th>Gross load</th><th>Wind</th><th>Solar</th><th>Net load</th>
+      </tr></thead><tbody id="fund-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">5-Day History</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Date</th><th>Fleet RT avg</th><th>Fleet RT max</th>
+        <th>Spike nodes</th><th>Neg nodes</th><th>Gross load</th><th>Battery SOC</th>
+      </tr></thead><tbody id="history-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── AI ANALYSIS TAB ─────────────────────────────────────────────────── -->
+<div id="tab-analysis" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">AI Morning Analysis</span>
+      <span class="card-meta" id="ai-date"></span>
+    </div>
+    <div class="card-body">
+      <div class="ai-box"><div class="ai-text" id="ai-text">Loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const fmt  = v => v == null ? '—' : '$' + Number(v).toFixed(2);
+const fmtK = v => v == null ? '—' : '$' + Number(v).toLocaleString(undefined, {maximumFractionDigits:0});
+const regionClass = r => 'region-' + (r || 'other').toLowerCase().replace(/\s+/g, '-');
+
+// ── Load data ────────────────────────────────────────────────────────────────
+async function loadData() {
+  let latest = {}, history = [], aiData = {};
+  try {
+    const [r1, r2, r3] = await Promise.all([
+      fetch('latest.json?_=' + Date.now()),
+      fetch('history.json?_=' + Date.now()),
+      fetch('ai_analysis.json?_=' + Date.now()).catch(() => ({ok:false}))
+    ]);
+    if (r1.ok) latest  = await r1.json();
+    if (r2.ok) history = await r2.json();
+    if (r3.ok) aiData  = await r3.json();
+  } catch(e) {
+    console.error('Failed to load data:', e);
+  }
+  renderAll(latest, history, aiData);
+}
+
+function renderAll(d, history, aiData) {
+  // Header
+  document.getElementById('data-date').textContent = 'Data: ' + (d.data_date || '—');
+  document.getElementById('gen-time').textContent  = 'Generated: ' + (d.generated_at || '—');
+  document.getElementById('overview-date').textContent = d.data_date || '';
+
+  // ── KPIs ─────────────────────────────────────────────────────────────────
+  const rt = d.rt || {};
+  const rtVals = Object.values(rt);
+  const fleetAvg = rtVals.length ? rtVals.reduce((a,v) => a + v.avg, 0) / rtVals.length : 0;
+  const fleetMax = rtVals.length ? Math.max(...rtVals.map(v => v.max)) : 0;
+  const spikes   = rtVals.filter(v => v.max > 100).length;
+  const negs     = rtVals.filter(v => v.min < 0).length;
+
+  document.getElementById('kpi-rt-avg').textContent = '$' + fleetAvg.toFixed(2);
+  document.getElementById('kpi-rt-max').textContent = '$' + fleetMax.toFixed(2);
+  document.getElementById('kpi-spikes').textContent  = spikes;
+  document.getElementById('kpi-neg').textContent     = negs;
+
+  // ── Callouts ─────────────────────────────────────────────────────────────
+  const dart = d.dart || {};
+  const dartEntries = Object.entries(dart);
+  const bestNode  = dartEntries.length ? dartEntries.reduce((a,b) => b[1]>a[1]?b:a) : null;
+  const worstNode = dartEntries.length ? dartEntries.reduce((a,b) => b[1]<a[1]?b:a) : null;
+  const spikeNodes = Object.entries(rt).filter(([,v]) => v.max > 100).map(([k]) => k);
+  const negNodes   = Object.entries(rt).filter(([,v]) => v.min < 0).map(([k]) => k);
+
+  document.getElementById('callout-grid').innerHTML = `
+    <div class="callout green"><div class="callout-label">Best DART</div>
+      <div class="callout-value">${bestNode ? bestNode[0] + ' +$' + bestNode[1].toFixed(2) + '/MWh' : 'N/A'}</div></div>
+    <div class="callout amber"><div class="callout-label">Largest DA Premium</div>
+      <div class="callout-value">${worstNode ? worstNode[0] + ' $' + worstNode[1].toFixed(2) + '/MWh' : 'N/A'}</div></div>
+    <div class="callout red"><div class="callout-label">Spike Nodes</div>
+      <div class="callout-value">${spikeNodes.join(', ') || 'None'}</div></div>
+    <div class="callout blue"><div class="callout-label">Negative Nodes</div>
+      <div class="callout-value">${negNodes.join(', ') || 'None'}</div></div>`;
+
+  // ── Top 5 overview ────────────────────────────────────────────────────────
+  const tb = d.top_bottom || {};
+  const top5 = (tb.top10 || []).slice(0,5);
+  document.getElementById('top5-body').innerHTML = top5.map(n => `
+    <tr>
+      <td class="node-name">${n.node}</td>
+      <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
+      <td class="rt-prem">+$${n.dart_avg.toFixed(2)}</td>
+      <td>${fmt(rt[n.node]?.avg)}</td>
+      <td>${fmt((d.da||{})[n.node]?.avg)}</td>
+    </tr>`).join('');
+
+  // ── Prices tab ────────────────────────────────────────────────────────────
+  const da = d.da || {};
+  document.getElementById('top10-body').innerHTML = (tb.top10 || []).map(n => `
+    <tr>
+      <td class="node-name">${n.node}</td>
+      <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
+      <td class="da-prem">+$${n.dart_avg.toFixed(2)}</td>
+      <td>$${n.intraday_spread.toFixed(2)}</td>
+      <td>HE ${String(n.best_hour).padStart(2,'0')}:00</td>
+      <td class="da-prem">+$${n.best_spread.toFixed(2)}</td>
+      <td>${n.spike_hours} hrs</td>
+      <td>${n.neg_hours} hrs</td>
+    </tr>`).join('');
+
+  document.getElementById('bot10-body').innerHTML = (tb.bottom10 || []).map(n => `
+    <tr>
+      <td class="node-name">${n.node}</td>
+      <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
+      <td class="rt-prem">$${n.dart_avg.toFixed(2)}</td>
+      <td>$${n.intraday_spread.toFixed(2)}</td>
+      <td>HE ${String(n.worst_hour).padStart(2,'0')}:00</td>
+      <td class="rt-prem">$${n.worst_spread.toFixed(2)}</td>
+      <td>${n.spike_hours} hrs</td>
+      <td>${n.neg_hours} hrs</td>
+    </tr>`).join('');
+
+  document.getElementById('all-nodes-body').innerHTML = Object.entries(rt)
+    .sort((a,b) => b[1].avg - a[1].avg)
+    .map(([node, r]) => {
+      const dv = da[node] || {};
+      const sp = dart[node];
+      const spStr = sp != null ? (sp >= 0 ? '+$' + sp.toFixed(2) : '-$' + Math.abs(sp).toFixed(2)) : '—';
+      const spClass = sp > 5 ? 'rt-prem' : sp < -5 ? 'da-prem' : '';
+      // Infer region from node name patterns
+      const reg = node.includes('TOYAH')||node.includes('SADL')||node.includes('FAUL')||
+                  node.includes('COYOT')||node.includes('LONE')||node.includes('RTLS')||
+                  node.includes('CEDR')||node.includes('SBEAN')||node.includes('GOMZ')||
+                  node.includes('GRDNE')||node.includes('JDKNS')||node.includes('SANDL') ? 'West Texas' :
+                  node.includes('OLNEY')||node.includes('DIBOL')||node.includes('FRMR')||
+                  node.includes('MNWL')||node.includes('LFST')||node.includes('PAUL')||
+                  node.includes('CISC') ? 'North Texas' :
+                  node.includes('MV_V')||node.includes('WLTC')||node.includes('MAINL')||
+                  node.includes('FALF')||node.includes('PAVL')||node.includes('POTE')||
+                  node.includes('TYNA') ? 'Coastal' :
+                  node.includes('CATA')||node.includes('HOLC')||node.includes('HAMI')||
+                  node.includes('JUNC')||node.includes('RUSS')||node.includes('FTDU') ? 'Premium' : 'Other';
+      return `<tr>
+        <td class="node-name">${node}</td>
+        <td><span class="region-tag ${regionClass(reg)}">${reg}</span></td>
+        <td${r.max>100?' class="spike"':''}>${fmt(r.avg)}</td>
+        <td${r.min<0?' class="neg"':''}>${fmt(r.min)}</td>
+        <td${r.max>100?' class="spike"':''}>${fmt(r.max)}</td>
+        <td>${fmt(dv.avg)}</td>
+        <td${spClass?' class="'+spClass+'"':''}>${spStr}</td>
+      </tr>`;
+    }).join('');
+
+  // ── Modo tab ──────────────────────────────────────────────────────────────
+  const modo    = d.modo || {};
+  const indices = modo.indices || {};
+  const modoEntries = Object.values(indices);
+
+  document.getElementById('modo-date-range').textContent =
+    modo.data_date ? 'Latest settled data through ' + modo.data_date : '';
+
+  if (modoEntries.length) {
+    const maxRev = Math.max(...modoEntries.map(v => v.revenue_mw_year || 0)) || 1;
+
+    // Bar chart
+    document.getElementById('modo-bars').innerHTML = modoEntries.map(v => {
+      const pct = ((v.revenue_mw_year || 0) / maxRev * 100).toFixed(1);
+      return `<div class="bar-row">
+        <div class="bar-label">${v.display_name}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-val">${fmtK(v.revenue_mw_year)}/MW/yr</div>
+      </div>
+      <div class="bar-row" style="margin-top:-4px;margin-bottom:10px">
+        <div class="bar-sub" style="color:#aaa;font-size:10px">&nbsp;</div>
+        <div style="flex:1"></div>
+        <div style="font-size:10px;color:#aaa;width:100px;text-align:right">
+          ${v.window_start} → ${v.window_end} · ${v.n_days || 0}d
+        </div>
+      </div>`;
+    }).join('');
+
+    // Table
+    document.getElementById('modo-table-body').innerHTML = modoEntries.map(v => {
+      const bk = v.market_breakdown || {};
+      const top3 = Object.entries(bk).sort((a,b)=>b[1]-a[1]).slice(0,3)
+        .map(([m,r]) => `${m}: ${fmtK(r)}`).join(' / ') || '—';
+      return `<tr>
+        <td class="node-name">${v.display_name}</td>
+        <td>${fmtK(v.revenue_mw_year)}</td>
+        <td style="font-family:monospace;font-size:11px">${v.window_start}</td>
+        <td>${v.n_days || 0}</td>
+        <td style="font-size:11px;color:#555">${top3}</td>
+      </tr>`;
+    }).join('');
+
+    // Overview snapshot (mini bar)
+    document.getElementById('overview-modo').innerHTML = modoEntries.map(v => {
+      const pct = ((v.revenue_mw_year || 0) / maxRev * 100).toFixed(1);
+      return `<div class="bar-row">
+        <div class="bar-label" style="width:200px">${v.display_name}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-val">${fmtK(v.revenue_mw_year)}/MW/yr</div>
+      </div>`;
+    }).join('');
+  } else {
+    document.getElementById('modo-bars').innerHTML =
+      '<div style="color:#aaa;font-size:12px;padding:8px">No Modo data available</div>';
+    document.getElementById('overview-modo').innerHTML =
+      '<div style="color:#aaa;font-size:12px">No Modo data available yet</div>';
+  }
+
+  // ── Weather tab ───────────────────────────────────────────────────────────
+  const wx     = d.weather || {};
+  const cities = wx.cities || {};
+  document.getElementById('weather-source').textContent = wx.source || '';
+
+  document.getElementById('weather-grid').innerHTML = Object.entries(cities)
+    .sort((a,b) => a[0].localeCompare(b[0]))
+    .map(([cityName, cityData]) => {
+      const days = (cityData.days || []).slice(0,7);
+      const rows = days.map(day => {
+        const precip = day.precip_pct
+          ? `<span class="precip">${day.precip_pct}%</span>` : '';
+        return `<div class="city-row">
+          <span class="city-date">${day.date.slice(5)}</span>
+          <span>${day.high}° / ${day.low}°</span>
+          ${precip}
+        </div>`;
+      }).join('');
+      return `<div class="city-card">
+        <div class="city-name">${cityName}</div>
+        ${rows}
+      </div>`;
+    }).join('') || '<div style="color:#aaa;font-size:12px;padding:8px">No weather data available — check AG2 credentials</div>';
+
+  // ── Fundamentals tab ──────────────────────────────────────────────────────
+  const load  = d.gross_load  || {};
+  const wind  = d.wind        || {};
+  const solar = d.solar       || {};
+  const allDays = [...new Set([...Object.keys(load), ...Object.keys(wind), ...Object.keys(solar)])]
+    .sort().slice(-7);
+
+  document.getElementById('fund-body').innerHTML = allDays.map(day => {
+    const g   = load[day]  || 0;
+    const w   = wind[day]  || 0;
+    const s   = solar[day] || 0;
+    const net = (g - w - s).toFixed(1);
+    const cls = net < 30 ? ' style="background:#f0faf4"' : '';
+    return `<tr${cls}>
+      <td>${day}</td><td>${g.toFixed(1)}</td><td>${w.toFixed(1)}</td>
+      <td>${s.toFixed(1)}</td><td>${net}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:16px">Data not available</td></tr>';
+
+  document.getElementById('history-body').innerHTML = (history || []).slice().reverse().map(e => `
+    <tr>
+      <td>${e.date}</td>
+      <td>${fmt(e.fleet?.rt_avg)}</td>
+      <td>${fmt(e.fleet?.rt_max)}</td>
+      <td>${e.fleet?.spike_nodes ?? '—'}</td>
+      <td>${e.fleet?.neg_nodes ?? '—'}</td>
+      <td>${e.fundamentals?.gross_load?.toFixed(1) ?? '—'} GW</td>
+      <td>${e.battery?.ending_soc ?? '—'}%</td>
+    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:16px">No history yet</td></tr>';
+
+  // ── AI Analysis tab ───────────────────────────────────────────────────────
+  const morning = (aiData.morning) || {};
+  document.getElementById('ai-date').textContent = morning.data_date
+    ? 'Data date: ' + morning.data_date : '';
+  document.getElementById('ai-text').textContent = morning.analysis
+    || 'AI analysis not yet available for this report date.';
+}
+
+loadData();
+// Auto-refresh every 5 minutes
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
