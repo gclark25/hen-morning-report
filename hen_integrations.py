@@ -1330,6 +1330,222 @@ def collect_powertools_assets():
     }
 
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 5.  ERCOT PUBLIC FORECASTS — Load, Wind, Solar (24hr hourly + 7-day daily)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def collect_ercot_forecasts(token, sub_key):
+    """
+    Pull ERCOT forward-looking forecasts for portfolio hedging context.
+
+    Endpoints used:
+      np3-560-cd/lf_by_model_weather_zone  — Short-Term Load Forecast by weather zone
+      np4-732-cd/wpp_hrly                  — Wind Power Production hourly forecast
+      np4-745-cd/pvgf_by_model_weather_zone — Solar PV Generation Forecast by weather zone
+
+    Returns:
+    {
+      "ercot_forecasts": {
+        "generated_at": "ISO",
+        "forecast_date": "YYYY-MM-DD",
+        "hourly_24hr": {
+          "hours":      [0..23],           # HE labels for today+tomorrow
+          "timestamps": ["YYYY-MM-DD HH"], # human-readable
+          "gross_load": [float, ...],      # GW
+          "wind":       [float, ...],      # GW
+          "solar":      [float, ...],      # GW
+          "net_load":   [float, ...],      # GW = gross - wind - solar
+        },
+        "daily_7day": {
+          "dates":      ["YYYY-MM-DD", ...],
+          "gross_load_peak": [float, ...], # GW daily peak
+          "wind_avg":        [float, ...], # GW daily average
+          "solar_peak":      [float, ...], # GW daily peak
+          "net_load_peak":   [float, ...], # GW daily peak net load
+        },
+        "source": "ERCOT Public API"
+      }
+    }
+    """
+    base = "https://api.ercot.com/api/public-reports"
+    headers = {
+        "Authorization":     f"Bearer {token}",
+        "Ocp-Apim-Subscription-Key": sub_key,
+    }
+
+    today     = date.today()
+    day7_end  = (today + timedelta(days=7)).isoformat()
+    day2_end  = (today + timedelta(days=2)).isoformat()
+    today_str = today.isoformat()
+
+    def _ercot_get(path, params):
+        try:
+            url = f"{base}/{path}"
+            r   = requests.get(url, headers=headers, params=params, timeout=30)
+            r.raise_for_status()
+            body  = r.json()
+            # ERCOT API returns {"data": [...], "fields": [...]}
+            # or paginated {"_meta": {...}, "data": [...]}
+            fields = body.get("fields") or []
+            rows   = body.get("data")   or []
+            # Convert list-of-lists to list-of-dicts using fields
+            if rows and isinstance(rows[0], list) and fields:
+                rows = [dict(zip(fields, row)) for row in rows]
+            return rows
+        except Exception as e:
+            print(f"  WARN [ERCOT forecast] {path} — {e}")
+            return []
+
+    print("  Pulling ERCOT short-term load forecast...")
+    load_rows = _ercot_get(
+        "np3-560-cd/lf_by_model_weather_zone",
+        {"deliveryDateFrom": today_str, "deliveryDateTo": day7_end,
+         "size": 5000}
+    )
+
+    print("  Pulling ERCOT wind power forecast...")
+    wind_rows = _ercot_get(
+        "np4-732-cd/wpp_hrly",
+        {"deliveryDateFrom": today_str, "deliveryDateTo": day7_end,
+         "size": 5000}
+    )
+
+    print("  Pulling ERCOT solar PV forecast...")
+    solar_rows = _ercot_get(
+        "np4-745-cd/pvgf_by_model_weather_zone",
+        {"deliveryDateFrom": today_str, "deliveryDateTo": day7_end,
+         "size": 5000}
+    )
+
+    # ── Parse load forecast ────────────────────────────────────────────────
+    # Fields: deliveryDate, hourEnding, systemTotal (MW) or weatherZone + value
+    # We want ERCOT system total — sum all zones per hour
+    load_by_dt = {}  # "YYYY-MM-DD HH" → MW
+    for row in load_rows:
+        dt  = str(row.get("deliveryDate") or row.get("DeliveryDate") or "")[:10]
+        he  = str(row.get("hourEnding")   or row.get("HourEnding")   or "0")
+        # hourEnding is 1-24, convert to 0-23
+        try:
+            hour = int(str(he).split(":")[0]) - 1
+        except:
+            hour = 0
+        # System total — try multiple field names
+        mw = safe_float(
+            row.get("systemTotal") or row.get("SystemTotal") or
+            row.get("loadForecast") or row.get("LoadForecast") or
+            row.get("total")        or row.get("Total")        or 0
+        )
+        if dt and mw > 0:
+            key = f"{dt} {hour:02d}"
+            load_by_dt[key] = load_by_dt.get(key, 0) + mw
+
+    # ── Parse wind forecast ────────────────────────────────────────────────
+    wind_by_dt = {}
+    for row in wind_rows:
+        dt  = str(row.get("deliveryDate") or row.get("DeliveryDate") or "")[:10]
+        he  = str(row.get("hourEnding")   or row.get("HourEnding")   or "0")
+        try:
+            hour = int(str(he).split(":")[0]) - 1
+        except:
+            hour = 0
+        mw = safe_float(
+            row.get("windPowerForecast") or row.get("WindPowerForecast") or
+            row.get("genForecast")       or row.get("GenForecast")       or
+            row.get("totalForecast")     or row.get("TotalForecast")     or 0
+        )
+        if dt and mw > 0:
+            key = f"{dt} {hour:02d}"
+            wind_by_dt[key] = wind_by_dt.get(key, 0) + mw
+
+    # ── Parse solar forecast ───────────────────────────────────────────────
+    solar_by_dt = {}
+    for row in solar_rows:
+        dt  = str(row.get("deliveryDate") or row.get("DeliveryDate") or "")[:10]
+        he  = str(row.get("hourEnding")   or row.get("HourEnding")   or "0")
+        try:
+            hour = int(str(he).split(":")[0]) - 1
+        except:
+            hour = 0
+        mw = safe_float(
+            row.get("genForecast")       or row.get("GenForecast")       or
+            row.get("pvGenForecast")     or row.get("PvGenForecast")     or
+            row.get("solarForecast")     or row.get("SolarForecast")     or 0
+        )
+        if dt and mw > 0:
+            key = f"{dt} {hour:02d}"
+            solar_by_dt[key] = solar_by_dt.get(key, 0) + mw
+
+    # ── Build 24-hour hourly series (today + tomorrow) ─────────────────────
+    hourly_keys = sorted(set(
+        list(load_by_dt.keys()) + list(wind_by_dt.keys()) + list(solar_by_dt.keys())
+    ))[:48]  # cap at 48 hours
+
+    h24_timestamps = []
+    h24_load = []
+    h24_wind = []
+    h24_solar = []
+    h24_net   = []
+
+    for key in hourly_keys:
+        gl  = round(load_by_dt.get(key, 0) / 1000, 2)   # MW → GW
+        wnd = round(wind_by_dt.get(key, 0) / 1000, 2)
+        sol = round(solar_by_dt.get(key, 0) / 1000, 2)
+        net = round(gl - wnd - sol, 2)
+        h24_timestamps.append(key)
+        h24_load.append(gl)
+        h24_wind.append(wnd)
+        h24_solar.append(sol)
+        h24_net.append(net)
+
+    # ── Build 7-day daily series ───────────────────────────────────────────
+    all_dates = sorted(set(k[:10] for k in
+        list(load_by_dt.keys()) + list(wind_by_dt.keys()) + list(solar_by_dt.keys())
+    ))[:7]
+
+    d7_dates     = []
+    d7_load_peak = []
+    d7_wind_avg  = []
+    d7_solar_peak= []
+    d7_net_peak  = []
+
+    for day in all_dates:
+        day_load  = [load_by_dt.get(f"{day} {h:02d}", 0) / 1000 for h in range(24)]
+        day_wind  = [wind_by_dt.get(f"{day} {h:02d}", 0) / 1000 for h in range(24)]
+        day_solar = [solar_by_dt.get(f"{day} {h:02d}", 0) / 1000 for h in range(24)]
+        day_net   = [day_load[h] - day_wind[h] - day_solar[h] for h in range(24)]
+
+        d7_dates.append(day)
+        d7_load_peak.append(round(max(day_load), 2)  if any(day_load)  else 0)
+        d7_wind_avg.append(round(sum(day_wind) / max(len([x for x in day_wind if x > 0]), 1), 2))
+        d7_solar_peak.append(round(max(day_solar), 2) if any(day_solar) else 0)
+        d7_net_peak.append(round(max(day_net), 2)    if any(day_net)   else 0)
+
+    print(f"    Load: {len(load_by_dt)} intervals · Wind: {len(wind_by_dt)} · Solar: {len(solar_by_dt)}")
+    print(f"    24hr series: {len(h24_timestamps)} hours · 7-day series: {len(d7_dates)} days")
+
+    return {
+        "ercot_forecasts": {
+            "generated_at":  datetime.utcnow().isoformat() + "Z",
+            "forecast_date": today_str,
+            "hourly_24hr": {
+                "timestamps": h24_timestamps,
+                "gross_load": h24_load,
+                "wind":       h24_wind,
+                "solar":      h24_solar,
+                "net_load":   h24_net,
+            },
+            "daily_7day": {
+                "dates":           d7_dates,
+                "gross_load_peak": d7_load_peak,
+                "wind_avg":        d7_wind_avg,
+                "solar_peak":      d7_solar_peak,
+                "net_load_peak":   d7_net_peak,
+            },
+            "source": "ERCOT Public API",
+        }
+    }
+
 # ══════════════════════════════════════════════════════════════════════════════
 # CONVENIENCE — collect all four active integrations in one call
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1374,6 +1590,12 @@ def collect_all_integrations(token=None, sub_key=None, asset_nodes=None):
 
     print("\n── Integration 4/4: PowerTools asset availability ──")
     out.update(collect_powertools_assets())
+
+    if token and sub_key:
+        print("\n── Integration 5/5: ERCOT load/wind/solar forecasts ──")
+        out.update(collect_ercot_forecasts(token, sub_key))
+    else:
+        out["ercot_forecasts"] = {}
 
     return out
 
