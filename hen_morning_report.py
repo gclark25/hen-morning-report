@@ -1027,10 +1027,10 @@ def _fmt_modo(data):
         return "  No index data returned"
     lines = []
     for key, v in indices.items():
-        sign = "+" if v.get("delta_dod", 0) >= 0 else ""
+        n = v.get("n_days", 0)
         lines.append(
             f"  {v['display_name']}: ${v['revenue_mw_year']:,.0f}/MW/yr "
-            f"({sign}${v['delta_dod']:,.0f} DoD)"
+            f"({v['window_start']} → {v['window_end']}, {n} days)"
         )
         if v.get("market_breakdown"):
             breakdown = ", ".join(
@@ -1163,7 +1163,7 @@ def run_ai_analysis(data, history, api_key):
                 "content-type":      "application/json",
             },
             json={
-                "model":      "claude-sonnet-4-6",
+                "model":      "claude-sonnet-4-20250514",
                 "max_tokens": 2000,
                 "messages":   [{"role": "user", "content": prompt}],
             },
