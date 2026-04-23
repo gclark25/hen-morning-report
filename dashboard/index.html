@@ -119,6 +119,7 @@ tr:hover td{background:#fafbfc}
   <div class="tab" onclick="showTab('modo')">Modo Indices</div>
   <div class="tab" onclick="showTab('weather')">Weather</div>
   <div class="tab" onclick="showTab('fundamentals')">Fundamentals</div>
+  <div class="tab" onclick="showTab('forecast')">Forecast</div>
   <div class="tab" onclick="showTab('analysis')">AI Analysis</div>
 </div>
 
@@ -245,6 +246,45 @@ tr:hover td{background:#fafbfc}
         <th>Date</th><th>Fleet RT avg</th><th>Fleet RT max</th>
         <th>Spike nodes</th><th>Neg nodes</th><th>Gross load</th><th>Battery SOC</th>
       </tr></thead><tbody id="history-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── FORECAST TAB ──────────────────────────────────────────────────────── -->
+<div id="tab-forecast" class="page">
+  <div class="kpi-strip">
+    <div class="kpi"><div class="kpi-label">7-Day Peak Load</div>
+      <div class="kpi-value" id="fc-peak-load">—</div><div class="kpi-sub">GW gross</div></div>
+    <div class="kpi"><div class="kpi-label">7-Day Peak Net Load</div>
+      <div class="kpi-value" id="fc-peak-net">—</div><div class="kpi-sub">GW after renewables</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Wind</div>
+      <div class="kpi-value" id="fc-max-wind">—</div><div class="kpi-sub">GW 7-day avg</div></div>
+    <div class="kpi"><div class="kpi-label">Peak Solar</div>
+      <div class="kpi-value" id="fc-max-solar">—</div><div class="kpi-sub">GW 7-day peak</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">7-Day Forward Forecast — Daily Peaks</span>
+      <span class="card-meta" id="fc-source"></span>
+    </div>
+    <div class="card-body">
+      <div id="fc-bars" style="margin-bottom:20px"></div>
+      <table><thead><tr>
+        <th style="text-align:left">Date</th><th>Peak Gross Load</th>
+        <th>Wind Avg</th><th>Solar Peak</th><th>Peak Net Load</th><th>Renewables %</th>
+      </tr></thead><tbody id="fc-7day-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">24-Hour Hourly Outlook</span>
+      <span class="card-meta" id="fc-24hr-meta"></span>
+    </div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th style="text-align:left">Hour</th><th>Gross Load GW</th>
+        <th>Wind GW</th><th>Solar GW</th><th>Net Load GW</th><th>Renewables %</th>
+      </tr></thead><tbody id="fc-24hr-body"></tbody></table>
     </div>
   </div>
 </div>
@@ -511,6 +551,66 @@ function renderAll(d, history, aiData) {
       <td>${e.fundamentals?.gross_load?.toFixed(1) ?? '—'} GW</td>
       <td>${e.battery?.ending_soc ?? '—'}%</td>
     </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:16px">No history yet</td></tr>';
+
+  // ── Forecast tab ──────────────────────────────────────────────────────────
+  const fc   = d.ercot_forecasts || {};
+  const d7fc = fc.daily_7day     || {};
+  const h24  = fc.hourly_24hr    || {};
+  document.getElementById('fc-source').textContent =
+    fc.forecast_date ? 'As of ' + fc.forecast_date + ' · ERCOT Public API' : '';
+  const fcDates = d7fc.dates || [];
+  const fcLoad  = d7fc.gross_load_peak || [];
+  const fcWind  = d7fc.wind_avg        || [];
+  const fcSolar = d7fc.solar_peak      || [];
+  const fcNet   = d7fc.net_load_peak   || [];
+  if (fcDates.length) {
+    document.getElementById('fc-peak-load').textContent  = Math.max(...fcLoad).toFixed(1)  + ' GW';
+    document.getElementById('fc-peak-net').textContent   = Math.max(...fcNet).toFixed(1)   + ' GW';
+    document.getElementById('fc-max-wind').textContent   = Math.max(...fcWind).toFixed(1)  + ' GW';
+    document.getElementById('fc-max-solar').textContent  = Math.max(...fcSolar).toFixed(1) + ' GW';
+    const maxLoad = Math.max(...fcLoad) || 1;
+    document.getElementById('fc-bars').innerHTML = fcDates.map((day, i) => {
+      const gl = fcLoad[i] || 0, net = fcNet[i] || 0;
+      const pct = (gl / maxLoad * 100).toFixed(1);
+      const netPct = (net / maxLoad * 100).toFixed(1);
+      const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(day + 'T12:00:00').getDay()];
+      return `<div class="bar-row">
+        <div class="bar-label" style="width:80px">${dow} ${day.slice(5)}</div>
+        <div class="bar-track" style="position:relative;height:18px">
+          <div style="position:absolute;top:0;height:18px;border-radius:4px;width:${pct}%;background:#dde8f5"></div>
+          <div style="position:absolute;top:0;height:18px;border-radius:4px;width:${netPct}%;background:#0055aa;opacity:0.85"></div>
+        </div>
+        <div class="bar-val" style="width:170px;font-size:10px">${gl.toFixed(1)} GW gross / ${net.toFixed(1)} net</div>
+      </div>`;
+    }).join('');
+    document.getElementById('fc-7day-body').innerHTML = fcDates.map((day, i) => {
+      const gl = fcLoad[i]||0, wnd = fcWind[i]||0, sol = fcSolar[i]||0, net = fcNet[i]||0;
+      const ren = gl > 0 ? ((wnd+sol)/gl*100).toFixed(0)+'%' : '—';
+      const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(day + 'T12:00:00').getDay()];
+      return `<tr><td>${dow} ${day.slice(5)}</td>
+        <td style="font-family:monospace">${gl.toFixed(1)} GW</td>
+        <td style="font-family:monospace;color:#1a7a3f">${wnd.toFixed(1)} GW</td>
+        <td style="font-family:monospace;color:#c87800">${sol.toFixed(1)} GW</td>
+        <td style="font-family:monospace;font-weight:600">${net.toFixed(1)} GW</td>
+        <td>${ren}</td></tr>`;
+    }).join('');
+  } else {
+    document.getElementById('fc-bars').innerHTML = '<div style="color:#aaa;font-size:12px;padding:8px">No forecast data — ERCOT API may not have published yet</div>';
+    document.getElementById('fc-7day-body').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:16px">No forecast data available</td></tr>';
+  }
+  const fcTs = h24.timestamps || [];
+  document.getElementById('fc-24hr-meta').textContent = fcTs.length ? fcTs[0] + ' → ' + fcTs[fcTs.length-1] : '';
+  document.getElementById('fc-24hr-body').innerHTML = fcTs.slice(0,48).map((ts,i) => {
+    const gl=(h24.gross_load||[])[i]||0, wnd=(h24.wind||[])[i]||0,
+          sol=(h24.solar||[])[i]||0,    net=(h24.net_load||[])[i]||0;
+    const ren = gl > 0 ? ((wnd+sol)/gl*100).toFixed(0)+'%' : '—';
+    return `<tr><td style="font-family:monospace">${ts}</td>
+      <td style="font-family:monospace">${gl.toFixed(1)}</td>
+      <td style="font-family:monospace;color:#1a7a3f">${wnd.toFixed(1)}</td>
+      <td style="font-family:monospace;color:#c87800">${sol.toFixed(1)}</td>
+      <td style="font-family:monospace;font-weight:600">${net.toFixed(1)}</td>
+      <td>${ren}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#aaa">No 24-hr data</td></tr>';
 
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
