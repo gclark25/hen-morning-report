@@ -102,6 +102,8 @@ tr:hover td{background:#fafbfc}
   .bar-label,.bar-sub{width:140px}
 }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/3.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 <body>
 
@@ -262,10 +264,21 @@ tr:hover td{background:#fafbfc}
     <div class="kpi"><div class="kpi-label">Peak Solar</div>
       <div class="kpi-value" id="fc-max-solar">—</div><div class="kpi-sub">GW 7-day peak</div></div>
   </div>
+
+  <!-- ── Time-series chart ── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">48-Hour Forecast — Gross Load · Net Load · Wind · Solar</span>
+      <span class="card-meta" id="fc-source"></span>
+    </div>
+    <div class="card-body" style="position:relative;height:320px">
+      <canvas id="fc-chart"></canvas>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header">
       <span class="card-title">7-Day Forward Forecast — Daily Peaks</span>
-      <span class="card-meta" id="fc-source"></span>
     </div>
     <div class="card-body">
       <div id="fc-bars" style="margin-bottom:20px"></div>
@@ -277,7 +290,7 @@ tr:hover td{background:#fafbfc}
   </div>
   <div class="card">
     <div class="card-header">
-      <span class="card-title">24-Hour Hourly Outlook</span>
+      <span class="card-title">48-Hour Hourly Detail</span>
       <span class="card-meta" id="fc-24hr-meta"></span>
     </div>
     <div class="card-body">
@@ -611,6 +624,104 @@ function renderAll(d, history, aiData) {
       <td style="font-family:monospace;font-weight:600">${net.toFixed(1)}</td>
       <td>${ren}</td></tr>`;
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:#aaa">No 24-hr data</td></tr>';
+
+  // ── Forecast time-series chart ───────────────────────────────────────────
+  (function() {
+    const canvas = document.getElementById('fc-chart');
+    if (!canvas || !fcTimestamps.length) return;
+
+    // Build labels as Date objects from "YYYY-MM-DD HH" strings
+    const labels = fcTimestamps.map(ts => {
+      const [datePart, hourPart] = ts.split(' ');
+      return new Date(datePart + 'T' + (hourPart || '00') + ':00:00');
+    });
+
+    const glData  = (h24.gross_load || []).slice(0, 48);
+    const netData = (h24.net_load   || []).slice(0, 48);
+    const windData= (h24.wind       || []).slice(0, 48);
+    const solData = (h24.solar      || []).slice(0, 48);
+
+    if (window._fcChart) window._fcChart.destroy();
+    window._fcChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Gross Load',
+            data: glData,
+            borderColor: '#e040fb',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.3,
+            order: 4,
+          },
+          {
+            label: 'Net Load',
+            data: netData,
+            borderColor: '#212121',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.3,
+            order: 3,
+          },
+          {
+            label: 'Solar',
+            data: solData,
+            borderColor: '#ffa000',
+            backgroundColor: 'rgba(255,160,0,0.08)',
+            fill: true,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            order: 1,
+          },
+          {
+            label: 'Wind',
+            data: windData,
+            borderColor: '#7b1fa2',
+            backgroundColor: 'rgba(123,31,162,0.07)',
+            fill: true,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            order: 2,
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { font: { size: 11 }, usePointStyle: true, pointStyleWidth: 16 }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} GW`
+            }
+          }
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'hour', displayFormats: { hour: 'MMM d HH:mm' } },
+            ticks: { font: { size: 10 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 16 },
+            grid: { color: 'rgba(0,0,0,0.05)' }
+          },
+          y: {
+            title: { display: true, text: 'GW', font: { size: 11 } },
+            ticks: { font: { size: 10 } },
+            grid: { color: 'rgba(0,0,0,0.06)' }
+          }
+        }
+      }
+    });
+  })();
 
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
