@@ -1481,12 +1481,18 @@ def collect_ercot_forecasts(token, sub_key):
             hour = int(str(he).split(":")[0]) - 1
         except:
             hour = 0
+        # Wind: use explicit None checks so valid 0.0 doesn't skip good values
+        # STWPFSystemWide = Short-Term Wind Power Forecast (forward-looking)
+        # genSystemWide = actual generation
+        _wstw  = row.get("STWPFSystemWide")
+        _wgen  = row.get("genSystemWide")
+        _wcop  = row.get("COPHSLSystemWide")
+        _wwgrp = row.get("WGRPPSystemWide")
         mw = safe_float(
-            row.get("genHSL")            or row.get("GenHSL")            or
-            row.get("wppHSL")            or row.get("WppHSL")            or
-            row.get("systemTotal")       or row.get("SystemTotal")       or
-            row.get("windPowerForecast") or row.get("WindPowerForecast") or
-            row.get("genForecast")       or row.get("GenForecast")       or 0
+            _wstw  if _wstw  is not None else
+            _wgen  if _wgen  is not None else
+            _wcop  if _wcop  is not None else
+            _wwgrp if _wwgrp is not None else 0
         )
         if dt and mw > 0:
             key = f"{dt} {hour:02d}"
