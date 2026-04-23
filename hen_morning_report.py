@@ -999,29 +999,22 @@ def _fmt_constraints(data):
 
 
 def _fmt_weather(data):
-    wx   = data.get("weather", {})
-    days = wx.get("days", [])
-    if not days:
+    wx     = data.get("weather", {})
+    cities = wx.get("cities", {})
+    if not cities:
         return "  Not available"
     lines = []
-    for d in days[:15]:
-        delta_str = (f" (delta {d['delta_high']:+d}°F vs prior)"
-                     if d.get("delta_high") else "")
-        cdd_str   = f" CDD:{d.get('cdd', 0)}" if d.get("cdd") else ""
-        hdd_str   = f" HDD:{d.get('hdd', 0)}" if d.get("hdd") else ""
-        lines.append(
-            f"  {d['date']}: Hi {d['temp_high']}°F / Lo {d['temp_low']}°F"
-            f"{cdd_str}{hdd_str}{delta_str}"
-        )
-    li = wx.get("load_impact", {})
-    if li.get("peak_warm_delta_f"):
-        lines.append(
-            f"  Load impact: +{li['estimated_load_delta_gw']} GW peak from "
-            f"+{li['peak_warm_delta_f']}°F anomaly over {li['days_warmer']} days"
-        )
-    lf = wx.get("hourly_load_forecast", {})
-    if lf:
-        lines.append(f"  AG2 load forecast: {len(lf.get('RTO', {}))} hourly intervals for ERCOT RTO")
+    # Show first 7 days for each city
+    for city_name, city_data in cities.items():
+        days = city_data.get("days", [])[:7]
+        if not days:
+            continue
+        lines.append(f"  {city_name} ({city_data.get('station', '')}):")
+        for d in days:
+            precip = f" {d['precip_pct']}% precip" if d.get("precip_pct") else ""
+            lines.append(
+                f"    {d['date']}: Hi {d['high']}°F / Lo {d['low']}°F{precip}"
+            )
     return "\n".join(lines)
 
 
@@ -1170,7 +1163,7 @@ def run_ai_analysis(data, history, api_key):
                 "content-type":      "application/json",
             },
             json={
-                "model":      "claude-sonnet-4-6",
+                "model":      "claude-sonnet-4-20250514",
                 "max_tokens": 2000,
                 "messages":   [{"role": "user", "content": prompt}],
             },
@@ -1240,17 +1233,6 @@ def main():
     with open("morning_report.html", "w", encoding="utf-8") as f:
         f.write(html)
     print("  Report saved to morning_report.html")
-
-    # ── Send email ────────────────────────────────────────────────────────
-    sg_key     = os.environ.get("SENDGRID_API_KEY", "")
-    from_email = os.environ.get("FROM_EMAIL", "")
-    to_emails  = [e.strip() for e in
-                  os.environ.get("TO_EMAILS", "").split(",") if e.strip()]
-    if sg_key and from_email and to_emails:
-        try:
-            send_email(html, subject, from_email, to_emails, sg_key)
-        except Exception as e:
-            print(f"  WARN: Email failed — {e}")
 
     # ── Write dashboard JSON ──────────────────────────────────────────────
     print("\nWriting dashboard data...")
