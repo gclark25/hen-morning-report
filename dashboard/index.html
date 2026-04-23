@@ -79,7 +79,14 @@ tr:hover td{background:#fafbfc}
 
 /* AI analysis */
 .ai-box{background:#f0f7f4;border-radius:6px;padding:16px;border-left:3px solid #1a7a3f}
-.ai-text{font-size:12px;color:#2a2a3e;line-height:1.7;white-space:pre-wrap}
+.ai-text{font-size:12px;color:#2a2a3e;line-height:1.7}
+.ai-text h1,.ai-text h2{font-size:14px;font-weight:700;color:#1a1a2e;margin:16px 0 6px;padding-bottom:4px;border-bottom:1px solid #eee}
+.ai-text h3{font-size:12px;font-weight:700;color:#1a1a2e;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 4px}
+.ai-text p{margin:0 0 10px}
+.ai-text strong{color:#1a1a2e;font-weight:600}
+.ai-text hr{border:none;border-top:1px solid #eee;margin:12px 0}
+.ai-text ul,.ai-text ol{margin:0 0 10px;padding-left:18px}
+.ai-text li{margin-bottom:3px}
 
 /* Loading */
 .loading{text-align:center;padding:40px;color:#aaa;font-size:13px}
@@ -102,6 +109,7 @@ tr:hover td{background:#fafbfc}
   .bar-label,.bar-sub{width:140px}
 }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 </head>
 <body>
 
@@ -641,8 +649,18 @@ function renderAll(d, history, aiData) {
   const morning = (aiData.morning) || {};
   document.getElementById('ai-date').textContent = morning.data_date
     ? 'Data date: ' + morning.data_date : '';
-  document.getElementById('ai-text').textContent = morning.analysis
-    || 'AI analysis not yet available for this report date.';
+  const rawMd = morning.analysis || '';
+  try {
+    document.getElementById('ai-text').innerHTML = (typeof marked !== 'undefined')
+      ? marked.parse(rawMd)
+      : rawMd.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+               .replace(/^## (.*)/gm, '<h3 style="margin:14px 0 6px;color:#1a1a2e;font-size:13px;text-transform:uppercase;letter-spacing:.05em">$1</h3>')
+               .replace(/^# (.*)/gm,  '<h2 style="margin:14px 0 6px;color:#1a1a2e;font-size:14px">$1</h2>')
+               .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #eee;margin:12px 0">')
+               .replace(/\n/g, '<br>');
+  } catch(e) {
+    document.getElementById('ai-text').textContent = rawMd;
+  }
 }
 
 loadData();
