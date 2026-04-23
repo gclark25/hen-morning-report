@@ -1397,17 +1397,28 @@ def collect_ercot_forecasts(token, sub_key):
             # Shape B: {"data": [{"f1":v1,...}, ...]}
             # Shape C: {"data": {"rows": [...], "fields": [...]}}  (nested)
             # Shape D: {"_meta": {...}, "data": [...]}
-            fields = body.get("fields") or []
-            raw    = body.get("data")   or []
+            fields_raw = body.get("fields") or []
+            raw        = body.get("data")   or []
             # Shape C — unwrap nested dict
             if isinstance(raw, dict):
-                fields = raw.get("fields") or fields
-                raw    = raw.get("rows") or raw.get("data") or []
+                fields_raw = raw.get("fields") or fields_raw
+                raw        = raw.get("rows") or raw.get("data") or []
             if not raw:
                 return []
+            # fields may be list-of-strings or list-of-dicts {"name": "...", ...}
+            fields = []
+            for f in fields_raw:
+                if isinstance(f, dict):
+                    fields.append(str(f.get("name") or f.get("label") or f.get("column") or ""))
+                else:
+                    fields.append(str(f))
+            # Log field names on first call
+            if not hasattr(_ercot_get, "_fields_logged"):
+                _ercot_get._fields_logged = True
+                print(f"    DEBUG fields ({len(fields)}): {fields[:15]}")
             rows = raw
             # Shape A — list-of-lists, convert to dicts
-            if isinstance(rows[0], list):
+            if rows and isinstance(rows[0], list):
                 if fields:
                     rows = [dict(zip(fields, row)) for row in rows]
                 else:
