@@ -2,8 +2,8 @@ name: HEN Daily Morning Report
 
 on:
   schedule:
-    - cron: '0 11 * * 1-5'
-  workflow_dispatch:
+    - cron: '0 11 * * 1-5'   # 06:00 CT on weekdays
+  workflow_dispatch:          # manual trigger from GitHub UI
 
 jobs:
   morning-report:
@@ -23,13 +23,59 @@ jobs:
 
       - name: Run morning report
         env:
-          ERCOT_USERNAME: ${{ secrets.ERCOT_USERNAME }}
-          ERCOT_PASSWORD: ${{ secrets.ERCOT_PASSWORD }}
+          # ── ERCOT (existing) ─────────────────────────────────────────────
+          ERCOT_USERNAME:         ${{ secrets.ERCOT_USERNAME }}
+          ERCOT_PASSWORD:         ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
-          ERCOT_NODES: ${{ secrets.ERCOT_TEST_NODES }}
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
-          TO_EMAILS: ${{ secrets.TO_EMAILS }}
+          ERCOT_NODES:            ${{ secrets.ERCOT_TEST_NODES }}
+
+          # ── SendGrid (existing) ──────────────────────────────────────────
+          SENDGRID_API_KEY:       ${{ secrets.SENDGRID_API_KEY }}
+          FROM_EMAIL:             ${{ secrets.FROM_EMAIL }}
+          TO_EMAILS:              ${{ secrets.TO_EMAILS }}
+
+          # ── S3 archive (existing, optional) ─────────────────────────────
+          S3_BUCKET:              ${{ secrets.S3_BUCKET }}
+
+          # ── Claude AI analysis (existing) ────────────────────────────────
+          ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # ── NEW: AG2 Trader weather & load forecasts ─────────────────────
+          # Credentials are your wsitrader.com login — same as you use on the website.
+          # Account = username, Profile = email address, Password = your password.
+          # See AG2 Trader API docs (wsitrader.com) for endpoint details.
+          AG2_ACCOUNT:            ${{ secrets.AG2_ACCOUNT }}
+          AG2_PROFILE:            ${{ secrets.AG2_PROFILE }}
+          AG2_PASSWORD:           ${{ secrets.AG2_PASSWORD }}
+
+          # ── NEW: Modo Energy custom indices ──────────────────────────────
+          # X-Token from modoenergy.com/profile/developers (NOT a Bearer token).
+          # MODO_INDEX_IDS is optional — set it after first run to hardcode the
+          # integer IDs for your 4 custom indices and skip the discovery call.
+          # Format: "2026 - 1Hr Without HEN:1234,HEN 2026:1235,..."
+          MODO_API_KEY:           ${{ secrets.MODO_API_KEY }}
+          MODO_INDEX_IDS:         ${{ secrets.MODO_INDEX_IDS }}
+
+          # ── NEW: PowerTools asset availability & outages ─────────────────
+          # Set POWERTOOLS_URL to your PowerTools platform URL.
+          # Add API key (preferred) or username/password depending on how
+          # your PowerTools instance handles authentication.
+          POWERTOOLS_URL:         ${{ secrets.POWERTOOLS_URL }}
+          POWERTOOLS_API_KEY:     ${{ secrets.POWERTOOLS_API_KEY }}
+          POWERTOOLS_USERNAME:    ${{ secrets.POWERTOOLS_USERNAME }}
+          POWERTOOLS_PASSWORD:    ${{ secrets.POWERTOOLS_PASSWORD }}
+
+          # ── COMING SOON: Drew internal forward curve ──────────────────────
+          # Uncomment and add secrets once Drew service is accessible:
+          # DREW_API_URL:         ${{ secrets.DREW_API_URL }}
+          # DREW_API_KEY:         ${{ secrets.DREW_API_KEY }}
+          # DREW_HUB:             ${{ secrets.DREW_HUB }}
+
+          # ── COMING SOON: Meteologica 7-day forecasts ─────────────────────
+          # Uncomment and add secrets once Meteologica access is provisioned:
+          # METEOLOGICA_API_KEY:  ${{ secrets.METEOLOGICA_API_KEY }}
+          # METEOLOGICA_SITE_ID:  ${{ secrets.METEOLOGICA_SITE_ID }}
+
         run: python hen_morning_report.py
 
       - name: Upload report as artifact
@@ -47,8 +93,8 @@ jobs:
           script: |
             await github.rest.issues.create({
               owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Morning report failed - ${new Date().toISOString().slice(0,10)}`,
-              body: `Pipeline failed. Check run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              repo:  context.repo.repo,
+              title: `Morning report failed — ${new Date().toISOString().slice(0,10)}`,
+              body:  `Pipeline failed. Check run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               labels: ['report-failure']
             })
