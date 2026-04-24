@@ -585,12 +585,12 @@ function renderAll(d, history, aiData) {
 
   // Patch yesterday's row with actuals from gross_load / wind / solar historical dicts
   const dataDate = d.data_date || '';  // "YYYY-MM-DD" = yesterday
-  if (dataDate2 && fcDates[0] === dataDate2) {
+  if (dataDate && fcDates[0] === dataDate) {
     const glActuals   = d.gross_load_hourly  || {};
     const wndActuals  = d.wind_hourly        || {};
     const solActuals  = d.solar_hourly       || {};
     // gross_load dict: {date: peak GW} — use it directly
-    const glPeak = d.gross_load && d.gross_load[dataDate2] ? d.gross_load[dataDate2] : 0;
+    const glPeak = d.gross_load && d.gross_load[dataDate] ? d.gross_load[dataDate] : 0;
     const wndVals = Object.values(wndActuals).map(Number).filter(x => x > 0);
     const solVals = Object.values(solActuals).map(Number).filter(x => x > 0);
     const wndAvg  = wndVals.length ? wndVals.reduce((a,b)=>a+b,0)/wndVals.length : 0;
@@ -684,7 +684,6 @@ function renderAll(d, history, aiData) {
   // ercot_forecasts.hourly_24hr has forecast starting from yesterday or today
   // We prefer actuals for yesterday hours, forecast for today+
 
-  const dataDate2  = d.data_date || '';   // "YYYY-MM-DD" of yesterday (chart blend)
   const glActuals  = d.gross_load_hourly  || {};  // {"1": GW, "2": GW, ...}
   const windActuals= d.wind_hourly        || {};
   const solActuals = d.solar_hourly       || {};
