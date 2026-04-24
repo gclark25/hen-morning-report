@@ -606,11 +606,20 @@ function renderAll(d, history, aiData) {
       const gl = fcLoad[i]||0, wnd = fcWind[i]||0, sol = fcSolar[i]||0, net = fcNet[i]||0;
       const ren = gl > 0 ? ((wnd+sol)/gl*100).toFixed(0)+'%' : '—';
       const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(day + 'T12:00:00').getDay()];
-      return `<tr><td>${dow} ${day.slice(5)}</td>
+      // Risk highlighting: net load >55 GW = scarcity/price spike risk
+      const isHighRisk = net > 55;
+      const rowStyle = isHighRisk ? ' style="background:#fff3e0"' : '';
+      const netStyle = isHighRisk
+        ? 'font-family:monospace;font-weight:700;color:#b33000'
+        : 'font-family:monospace;font-weight:600';
+      const riskBadge = isHighRisk
+        ? ' <span style="background:#b33000;color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;letter-spacing:.04em;vertical-align:middle">⚠ SPIKE RISK</span>'
+        : '';
+      return `<tr${rowStyle}><td>${dow} ${day.slice(5)}</td>
         <td style="font-family:monospace">${gl.toFixed(1)} GW</td>
         <td style="font-family:monospace;color:#1a7a3f">${wnd.toFixed(1)} GW</td>
         <td style="font-family:monospace;color:#c87800">${sol.toFixed(1)} GW</td>
-        <td style="font-family:monospace;font-weight:600">${net.toFixed(1)} GW</td>
+        <td style="${netStyle}">${net.toFixed(1)} GW${riskBadge}</td>
         <td>${ren}</td></tr>`;
     }).join('');
   } else {
