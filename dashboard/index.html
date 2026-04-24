@@ -648,14 +648,57 @@ function renderAll(d, history, aiData) {
   }
   const fcTs = h24.timestamps || [];
   document.getElementById('fc-24hr-meta').textContent = fcTs.length ? fcTs[0] + ' → ' + fcTs[fcTs.length-1] : '';
-  // Use blended data (actuals for yesterday + forecast for today+) in hourly table
-  const blendSrc = window._fcChartData || {};
-  const blendLabels = blendSrc.labels || fcTs;
-  const blendGl     = blendSrc.gl     || (h24.gross_load||[]);
-  const blendNet    = blendSrc.net    || (h24.net_load||[]);
-  const blendWind   = blendSrc.wind   || (h24.wind||[]);
-  const blendSol    = blendSrc.sol    || (h24.solar||[]);
-  const splitAt     = blendSrc.splitAt || 0;
+  // Build blended actuals+forecast directly for the hourly table
+  // (don't rely on _fcChartData which may not be set yet)
+  const tblGlAct  = d.gross_load_hourly || {};
+  const tblWndAct = d.wind_hourly       || {};
+  const tblSolAct = d.solar_hourly      || {};
+  const tblDate   = d.data_date         || '';
+
+  // Build yesterday's 24 rows from actuals (HE 1-24)
+  const tblYestGl  = Array.from({length:24}, (_,i) => {
+    const v = tblGlAct[String(i+1)];
+    return (v !== undefined && v !== null) ? Number(v) : null;
+  });
+  const tblYestWnd = Array.from({length:24}, (_,i) => Number(tblWndAct[String(i+1)]||0));
+  const tblYestSol = Array.from({length:24}, (_,i) => Number(tblSolAct[String(i+1)]||0));
+  const tblYestNet = tblYestGl.map((g,i) =>
+    g !== null ? parseFloat((g - tblYestWnd[i] - tblYestSol[i]).toFixed(2)) : null
+  );
+  // HE labels for yesterday: HE 1→"01"...HE 23→"23", HE 24→next day "00"
+  const tblYestLabels = Array.from({length:24}, (_,i) => {
+    const he = i + 1;
+    if (he === 24) {
+      // midnight boundary — compute next day
+      const parts = tblDate.split('-');
+      const d2 = new Date(Date.UTC(+parts[0],+parts[1]-1,+parts[2]+1));
+      return d2.toISOString().slice(5,10) + ' 00';
+    }
+    return tblDate.slice(5) + ' ' + String(he).padStart(2,'0');
+  });
+
+  // Forecast rows starting from today
+  const tblFcTs   = fcTs || [];
+  const tblFcGl   = h24.gross_load || [];
+  const tblFcNet  = h24.net_load   || [];
+  const tblFcWnd  = h24.wind       || [];
+  const tblFcSol  = h24.solar      || [];
+  const tblTodayStr = (()=>{ const t=new Date(); return t.toISOString().slice(0,10); })();
+  let tblFcStart = 0;
+  for (let i=0; i<tblFcTs.length; i++) {
+    if (tblFcTs[i] >= tblTodayStr) { tblFcStart = i; break; }
+  }
+  const tblFcLabels = tblFcTs.slice(tblFcStart).map(ts => {
+    const [d3,hr] = ts.split(' ');
+    return parseInt(hr||'0')===0 ? d3.slice(5)+' 00' : hr;
+  });
+
+  const blendLabels = [...tblYestLabels, ...tblFcLabels];
+  const blendGl     = [...tblYestGl,    ...tblFcGl.slice(tblFcStart)];
+  const blendNet    = [...tblYestNet,   ...tblFcNet.slice(tblFcStart)];
+  const blendWind   = [...tblYestWnd,   ...tblFcWnd.slice(tblFcStart)];
+  const blendSol    = [...tblYestSol,   ...tblFcSol.slice(tblFcStart)];
+  const splitAt     = 24;
 
   document.getElementById('fc-24hr-body').innerHTML = blendLabels.map((lbl,i) => {
     const gl  = blendGl[i]   != null ? blendGl[i]   : 0;
