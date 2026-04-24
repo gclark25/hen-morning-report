@@ -712,7 +712,7 @@ function renderAll(d, history, aiData) {
       ? 'font-family:monospace;color:#1a1a2e;font-weight:600'
       : 'font-family:monospace';
     // reconstruct full timestamp from blended label
-    const ts = blendSrc.labels ? fcTs[i - splitAt < 0 ? 0 : i] || lbl : lbl;
+    const ts = lbl;  // label already correct from blendLabels
     return `<tr${rowStyle}><td style="font-family:monospace">${lbl}${isActual ? ' <span style="font-size:9px;color:#1a7a3f;font-weight:600">ACT</span>' : ''}</td>
       <td style="${glStyle}">${gl !== null ? gl.toFixed(1) : '—'}</td>
       <td style="font-family:monospace;color:#1a7a3f">${wnd.toFixed(1)}</td>
