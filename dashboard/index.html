@@ -301,7 +301,7 @@ tr:hover td{background:#fafbfc}
     </div>
     <div class="card-body">
       <table><thead><tr>
-        <th style="text-align:left">Hour</th><th>Gross Load GW</th>
+        <th style="text-align:left">Hour (HE)</th><th>Gross Load GW</th>
         <th>Wind GW</th><th>Solar GW</th><th>Net Load GW</th><th>Renewables %</th>
       </tr></thead><tbody id="fc-24hr-body"></tbody></table>
     </div>
@@ -671,7 +671,7 @@ function renderAll(d, history, aiData) {
     // reconstruct full timestamp from blended label
     const ts = blendSrc.labels ? fcTs[i - splitAt < 0 ? 0 : i] || lbl : lbl;
     return `<tr${rowStyle}><td style="font-family:monospace">${lbl}${isActual ? ' <span style="font-size:9px;color:#1a7a3f;font-weight:600">ACT</span>' : ''}</td>
-      <td style="${glStyle}">${gl > 0 ? gl.toFixed(1) : '—'}</td>
+      <td style="${glStyle}">${gl !== null ? gl.toFixed(1) : '—'}</td>
       <td style="font-family:monospace;color:#1a7a3f">${wnd.toFixed(1)}</td>
       <td style="font-family:monospace;color:#c87800">${sol.toFixed(1)}</td>
       <td style="font-family:monospace;font-weight:600">${net.toFixed(1)}</td>
@@ -689,15 +689,35 @@ function renderAll(d, history, aiData) {
   const solActuals = d.solar_hourly       || {};
 
   // Build 24-label array for yesterday using actuals
+  // ERCOT hour-ending: HE 1 = 00:00-01:00, HE 24 = 23:00-00:00
+  // Display as the END of each hour: HE 1 → "01", HE 24 → "00*" (midnight end)
   const yestLabels = Array.from({length:24}, (_,i) => {
-    const hr = i;  // 0-23
-    return hr === 0 ? dataDate.slice(5)+' 00' : String(hr).padStart(2,'0');
+    const he = i + 1;  // HE 1 through HE 24
+    if (he === 24) {
+      // HE 24 ends at midnight — show as date boundary
+      const nextDay = new Date(dataDate + 'T12:00:00');
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nd = nextDay.toISOString().slice(5,10);
+      return nd + ' 00';
+    }
+    return String(he).padStart(2,'0');
   });
   // Actuals keys are "1"-"24" (hour-ending), convert to 0-based index
-  const yestGl   = Array.from({length:24}, (_,i) => glActuals[String(i+1)]   || null);
-  const yestWind = Array.from({length:24}, (_,i) => windActuals[String(i+1)] || null);
-  const yestSol  = Array.from({length:24}, (_,i) => solActuals[String(i+1)]  || null);
-  const yestNet  = yestGl.map((g,i) => g !== null ? g - (yestWind[i]||0) - (yestSol[i]||0) : null);
+  // hour-ending keys "1"-"24" map to display hours 0-23
+  // Use explicit undefined check — 0 is valid for midnight solar
+  const yestGl   = Array.from({length:24}, (_,i) => {
+    const v = glActuals[String(i+1)];
+    return (v !== undefined && v !== null) ? Number(v) : null;
+  });
+  const yestWind = Array.from({length:24}, (_,i) => {
+    const v = windActuals[String(i+1)];
+    return (v !== undefined && v !== null) ? Number(v) : 0;
+  });
+  const yestSol  = Array.from({length:24}, (_,i) => {
+    const v = solActuals[String(i+1)];
+    return (v !== undefined && v !== null) ? Number(v) : 0;
+  });
+  const yestNet  = yestGl.map((g,i) => g !== null ? parseFloat((g - yestWind[i] - yestSol[i]).toFixed(2)) : null);
 
   // Forecast series — skip rows that are for yesterday (already covered by actuals)
   const fcAll    = fcTs || [];
