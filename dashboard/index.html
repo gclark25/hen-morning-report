@@ -578,10 +578,30 @@ function renderAll(d, history, aiData) {
   document.getElementById('fc-source').textContent =
     fc.forecast_date ? 'As of ' + fc.forecast_date + ' · ERCOT Public API' : '';
   const fcDates = d7fc.dates || [];
-  const fcLoad  = d7fc.gross_load_peak || [];
-  const fcWind  = d7fc.wind_avg        || [];
-  const fcSolar = d7fc.solar_peak      || [];
-  const fcNet   = d7fc.net_load_peak   || [];
+  const fcLoad  = (d7fc.gross_load_peak || []).slice();  // copy so we can patch
+  const fcWind  = (d7fc.wind_avg        || []).slice();
+  const fcSolar = (d7fc.solar_peak      || []).slice();
+  const fcNet   = (d7fc.net_load_peak   || []).slice();
+
+  // Patch yesterday's row with actuals from gross_load / wind / solar historical dicts
+  const dataDate = d.data_date || '';  // "YYYY-MM-DD" = yesterday
+  if (dataDate2 && fcDates[0] === dataDate2) {
+    const glActuals   = d.gross_load_hourly  || {};
+    const wndActuals  = d.wind_hourly        || {};
+    const solActuals  = d.solar_hourly       || {};
+    // gross_load dict: {date: peak GW} — use it directly
+    const glPeak = d.gross_load && d.gross_load[dataDate2] ? d.gross_load[dataDate2] : 0;
+    const wndVals = Object.values(wndActuals).map(Number).filter(x => x > 0);
+    const solVals = Object.values(solActuals).map(Number).filter(x => x > 0);
+    const wndAvg  = wndVals.length ? wndVals.reduce((a,b)=>a+b,0)/wndVals.length : 0;
+    const solPeak = solVals.length ? Math.max(...solVals) : 0;
+    if (glPeak > 0) {
+      fcLoad[0]  = glPeak;
+      fcWind[0]  = parseFloat(wndAvg.toFixed(1));
+      fcSolar[0] = parseFloat(solPeak.toFixed(1));
+      fcNet[0]   = parseFloat((glPeak - wndAvg - solPeak).toFixed(1));
+    }
+  }
   if (fcDates.length) {
     document.getElementById('fc-peak-load').textContent  = Math.max(...fcLoad).toFixed(1)  + ' GW';
     document.getElementById('fc-peak-net').textContent   = Math.max(...fcNet).toFixed(1)   + ' GW';
@@ -628,17 +648,35 @@ function renderAll(d, history, aiData) {
   }
   const fcTs = h24.timestamps || [];
   document.getElementById('fc-24hr-meta').textContent = fcTs.length ? fcTs[0] + ' → ' + fcTs[fcTs.length-1] : '';
-  document.getElementById('fc-24hr-body').innerHTML = fcTs.map((ts,i) => {
-    const gl=(h24.gross_load||[])[i]||0, wnd=(h24.wind||[])[i]||0,
-          sol=(h24.solar||[])[i]||0,    net=(h24.net_load||[])[i]||0;
+  // Use blended data (actuals for yesterday + forecast for today+) in hourly table
+  const blendSrc = window._fcChartData || {};
+  const blendLabels = blendSrc.labels || fcTs;
+  const blendGl     = blendSrc.gl     || (h24.gross_load||[]);
+  const blendNet    = blendSrc.net    || (h24.net_load||[]);
+  const blendWind   = blendSrc.wind   || (h24.wind||[]);
+  const blendSol    = blendSrc.sol    || (h24.solar||[]);
+  const splitAt     = blendSrc.splitAt || 0;
+
+  document.getElementById('fc-24hr-body').innerHTML = blendLabels.map((lbl,i) => {
+    const gl  = blendGl[i]   != null ? blendGl[i]   : 0;
+    const wnd = blendWind[i] != null ? blendWind[i] : 0;
+    const sol = blendSol[i]  != null ? blendSol[i]  : 0;
+    const net = blendNet[i]  != null ? blendNet[i]  : 0;
     const ren = gl > 0 ? ((wnd+sol)/gl*100).toFixed(0)+'%' : '—';
-    return `<tr><td style="font-family:monospace">${ts}</td>
-      <td style="font-family:monospace">${gl.toFixed(1)}</td>
+    const isActual = i < splitAt;
+    const rowStyle = isActual ? ' style="background:#f0f7f4"' : '';
+    const glStyle  = isActual
+      ? 'font-family:monospace;color:#1a1a2e;font-weight:600'
+      : 'font-family:monospace';
+    // reconstruct full timestamp from blended label
+    const ts = blendSrc.labels ? fcTs[i - splitAt < 0 ? 0 : i] || lbl : lbl;
+    return `<tr${rowStyle}><td style="font-family:monospace">${lbl}${isActual ? ' <span style="font-size:9px;color:#1a7a3f;font-weight:600">ACT</span>' : ''}</td>
+      <td style="${glStyle}">${gl > 0 ? gl.toFixed(1) : '—'}</td>
       <td style="font-family:monospace;color:#1a7a3f">${wnd.toFixed(1)}</td>
       <td style="font-family:monospace;color:#c87800">${sol.toFixed(1)}</td>
       <td style="font-family:monospace;font-weight:600">${net.toFixed(1)}</td>
       <td>${ren}</td></tr>`;
-  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#aaa">No 24-hr data</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#aaa">No data</td></tr>';
 
   // ── Forecast time-series chart ───────────────────────────────────────────
   // ── Blend yesterday actuals + forecast into one continuous series ──────────
@@ -646,7 +684,7 @@ function renderAll(d, history, aiData) {
   // ercot_forecasts.hourly_24hr has forecast starting from yesterday or today
   // We prefer actuals for yesterday hours, forecast for today+
 
-  const dataDate   = d.data_date || '';   // "YYYY-MM-DD" of yesterday
+  const dataDate2  = d.data_date || '';   // "YYYY-MM-DD" of yesterday (chart blend)
   const glActuals  = d.gross_load_hourly  || {};  // {"1": GW, "2": GW, ...}
   const windActuals= d.wind_hourly        || {};
   const solActuals = d.solar_hourly       || {};
