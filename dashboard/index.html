@@ -632,16 +632,60 @@ function renderAll(d, history, aiData) {
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:#aaa">No 24-hr data</td></tr>';
 
   // ── Forecast time-series chart ───────────────────────────────────────────
-  // Store chart data globally — Chart.js CDN loads after this runs
+  // ── Blend yesterday actuals + forecast into one continuous series ──────────
+  // latest.json has hourly actuals for yesterday in gross_load_hourly etc (keys "1"-"24")
+  // ercot_forecasts.hourly_24hr has forecast starting from yesterday or today
+  // We prefer actuals for yesterday hours, forecast for today+
+
+  const dataDate   = d.data_date || '';   // "YYYY-MM-DD" of yesterday
+  const glActuals  = d.gross_load_hourly  || {};  // {"1": GW, "2": GW, ...}
+  const windActuals= d.wind_hourly        || {};
+  const solActuals = d.solar_hourly       || {};
+
+  // Build 24-label array for yesterday using actuals
+  const yestLabels = Array.from({length:24}, (_,i) => {
+    const hr = i;  // 0-23
+    return hr === 0 ? dataDate.slice(5)+' 00' : String(hr).padStart(2,'0');
+  });
+  // Actuals keys are "1"-"24" (hour-ending), convert to 0-based index
+  const yestGl   = Array.from({length:24}, (_,i) => glActuals[String(i+1)]   || null);
+  const yestWind = Array.from({length:24}, (_,i) => windActuals[String(i+1)] || null);
+  const yestSol  = Array.from({length:24}, (_,i) => solActuals[String(i+1)]  || null);
+  const yestNet  = yestGl.map((g,i) => g !== null ? g - (yestWind[i]||0) - (yestSol[i]||0) : null);
+
+  // Forecast series — skip rows that are for yesterday (already covered by actuals)
+  const fcAll    = fcTs || [];
+  const fcastGl  = h24.gross_load || [];
+  const fcastNet = h24.net_load   || [];
+  const fcastWind= h24.wind       || [];
+  const fcastSol = h24.solar      || [];
+
+  // Filter forecast to only today+  (timestamps starting with today or later)
+  const todayStr = (()=>{ const t=new Date(); return t.toISOString().slice(0,10); })();
+  let fcStartIdx = 0;
+  for (let i=0; i<fcAll.length; i++) {
+    if (fcAll[i] >= todayStr) { fcStartIdx = i; break; }
+  }
+
+  const blendedLabels = [
+    ...yestLabels,
+    ...fcAll.slice(fcStartIdx).map(ts => {
+      const [d2,hr] = ts.split(' ');
+      return parseInt(hr||'0') === 0 ? d2.slice(5)+' 00' : hr;
+    })
+  ];
+  const blendedGl   = [...yestGl,   ...fcastGl.slice(fcStartIdx)];
+  const blendedNet  = [...yestNet,  ...fcastNet.slice(fcStartIdx)];
+  const blendedWind = [...yestWind, ...fcastWind.slice(fcStartIdx)];
+  const blendedSol  = [...yestSol,  ...fcastSol.slice(fcStartIdx)];
+
   window._fcChartData = {
-    labels: fcTs.map(ts => {
-      const [d, hr] = ts.split(' ');
-      return parseInt(hr||'0') === 0 ? d.slice(5)+' 00' : hr;
-    }),
-    gl:   h24.gross_load || [],
-    net:  h24.net_load   || [],
-    wind: h24.wind       || [],
-    sol:  h24.solar      || [],
+    labels: blendedLabels,
+    gl:     blendedGl,
+    net:    blendedNet,
+    wind:   blendedWind,
+    sol:    blendedSol,
+    splitAt: 24,  // index where actuals end and forecast begins
   };
   // If Chart.js already loaded (e.g. tab re-visit), build immediately
   if (typeof Chart !== 'undefined') window._buildFcChart && window._buildFcChart();
@@ -680,8 +724,10 @@ window._buildFcChart = function() {
     data: {
       labels: d.labels,
       datasets: [
-        { label:'Gross Load', data:d.gl,   borderColor:'#e040fb', backgroundColor:'transparent',           borderWidth:2.5, pointRadius:0, tension:0.4 },
-        { label:'Net Load',   data:d.net,  borderColor:'#212121', backgroundColor:'transparent',           borderWidth:2,   pointRadius:0, tension:0.4 },
+        { label:'Gross Load', data:d.gl,   borderColor:'#e040fb', backgroundColor:'transparent',           borderWidth:2.5, pointRadius:0, tension:0.4,
+          segment: { borderDash: ctx => ctx.p0DataIndex >= (d.splitAt||24) ? [5,3] : [] } },
+        { label:'Net Load',   data:d.net,  borderColor:'#212121', backgroundColor:'transparent',           borderWidth:2,   pointRadius:0, tension:0.4,
+          segment: { borderDash: ctx => ctx.p0DataIndex >= (d.splitAt||24) ? [5,3] : [] } },
         { label:'Solar',      data:d.sol,  borderColor:'#ffa000', backgroundColor:'rgba(255,160,0,0.1)',   borderWidth:1.5, pointRadius:0, tension:0.4, fill:true },
         { label:'Wind',       data:d.wind, borderColor:'#7b1fa2', backgroundColor:'rgba(123,31,162,0.08)', borderWidth:1.5, pointRadius:0, tension:0.4, fill:true },
       ]
