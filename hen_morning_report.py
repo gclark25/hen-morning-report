@@ -1046,6 +1046,7 @@ def write_dashboard_json(data):
         "asset_status":       data.get("asset_status", {}),
         # ── ERCOT forward forecasts ──────────────────────────────────────────
         "ercot_forecasts":    data.get("ercot_forecasts", {}),
+        "as_prices":          data.get("as_prices", {}),
     }
     with open("latest.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
