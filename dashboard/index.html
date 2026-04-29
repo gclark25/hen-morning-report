@@ -86,6 +86,8 @@ tr:hover td{background:#fafbfc}
 .ai-text strong{color:#1a1a2e;font-weight:600}
 .ai-text hr{border:none;border-top:1px solid #eee;margin:12px 0}
 .ai-text ul,.ai-text ol{margin:0 0 10px;padding-left:18px}
+.sp-pos{color:#1a7a3f;font-weight:600}
+.sp-neg{color:#b33000;font-weight:600}
 .ai-text li{margin-bottom:3px}
 
 /* Loading */
@@ -128,6 +130,7 @@ tr:hover td{background:#fafbfc}
   <div class="tab" onclick="showTab('weather')">Weather</div>
   <div class="tab" onclick="showTab('fundamentals')">Fundamentals</div>
   <div class="tab" onclick="showTab('forecast')">Forecast</div>
+  <div class="tab" onclick="showTab('as')">AS Prices</div>
   <div class="tab" onclick="showTab('analysis')">AI Analysis</div>
 </div>
 
@@ -309,6 +312,45 @@ tr:hover td{background:#fafbfc}
 </div>
 
 <!-- ── AI ANALYSIS TAB ─────────────────────────────────────────────────── -->
+<div id="tab-as" class="page">
+  <div class="kpi-strip">
+    <div class="kpi"><div class="kpi-label">REGUP Avg Spread</div>
+      <div class="kpi-value" id="as-regup">—</div><div class="kpi-sub">DA−RT $/MW (yesterday)</div></div>
+    <div class="kpi"><div class="kpi-label">REGDN Avg Spread</div>
+      <div class="kpi-value" id="as-regdn">—</div><div class="kpi-sub">DA−RT $/MW (yesterday)</div></div>
+    <div class="kpi"><div class="kpi-label">RRS Avg Spread</div>
+      <div class="kpi-value" id="as-rrs">—</div><div class="kpi-sub">DA−RT $/MW (yesterday)</div></div>
+    <div class="kpi"><div class="kpi-label">NSPIN Avg Spread</div>
+      <div class="kpi-value" id="as-nspin">—</div><div class="kpi-sub">DA−RT $/MW (yesterday)</div></div>
+    <div class="kpi"><div class="kpi-label">ECRS Avg Spread</div>
+      <div class="kpi-value" id="as-ecrs">—</div><div class="kpi-sub">DA−RT $/MW (yesterday)</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">DA − RT Ancillary Service Spread — Hourly 5-Day Lookback</span>
+      <span class="card-meta" id="as-source"></span>
+    </div>
+    <div class="card-body" style="position:relative;height:340px">
+      <canvas id="as-chart"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Hourly DA &amp; RT Prices by AS Type</span>
+    </div>
+    <div class="card-body" style="overflow-x:auto">
+      <table><thead><tr>
+        <th style="text-align:left;min-width:110px">Date HE</th>
+        <th>REGUP DA</th><th>REGUP RT</th><th style="min-width:70px">REGUP Δ</th>
+        <th>REGDN DA</th><th>REGDN RT</th><th style="min-width:70px">REGDN Δ</th>
+        <th>RRS DA</th><th>RRS RT</th><th style="min-width:70px">RRS Δ</th>
+        <th>NSPIN DA</th><th>NSPIN RT</th><th style="min-width:70px">NSPIN Δ</th>
+        <th>ECRS DA</th><th>ECRS RT</th><th style="min-width:70px">ECRS Δ</th>
+      </tr></thead><tbody id="as-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
 <div id="tab-analysis" class="page">
   <div class="card">
     <div class="card-header">
@@ -785,6 +827,57 @@ function renderAll(d, history, aiData) {
   };
   // If Chart.js already loaded (e.g. tab re-visit), build immediately
   if (typeof Chart !== 'undefined') window._buildFcChart && window._buildFcChart();
+  // ── AS Prices tab ─────────────────────────────────────────────────────────
+  const asp = d.as_prices || {};
+  const asTypes = asp.as_types || ["REGUP","REGDN","RRS","NSPIN","ECRS"];
+  const asSeries = asp.series  || {};
+
+  if (asp.error) {
+    document.getElementById('as-source').textContent = 'Data unavailable: ' + asp.error;
+  } else {
+    document.getElementById('as-source').textContent =
+      (asp.start_date||'') + ' → ' + (asp.end_date||'') + ' · ERCOT Public API';
+  }
+
+  // KPI: yesterday avg spread per type
+  const asYest = d.data_date || '';
+  const asColors = {REGUP:'#1a7a3f', REGDN:'#c87800', RRS:'#7b1fa2', NSPIN:'#1565c0', ECRS:'#b33000'};
+  const asKpiIds = {REGUP:'as-regup', REGDN:'as-regdn', RRS:'as-rrs', NSPIN:'as-nspin', ECRS:'as-ecrs'};
+  for (const [at, elId] of Object.entries(asKpiIds)) {
+    const rows = (asSeries[at] || []).filter(r => r.date === asYest && r.spread !== null);
+    if (rows.length) {
+      const avg = rows.reduce((s,r) => s + r.spread, 0) / rows.length;
+      const el = document.getElementById(elId);
+      if (el) {
+        el.textContent = (avg >= 0 ? '+' : '') + avg.toFixed(1) + ' $/MW';
+        el.style.color = avg >= 0 ? '#1a7a3f' : '#b33000';
+      }
+    }
+  }
+
+  // Build hourly table
+  // Collect all unique date+HE combos across all types
+  const asAllRows = (asSeries[asTypes[0]] || []);
+  document.getElementById('as-body').innerHTML = asAllRows.map(row => {
+    const label = row.date + ' HE' + String(row.he).padStart(2,'0');
+    const cells = asTypes.map(at => {
+      const r = (asSeries[at] || []).find(x => x.date===row.date && x.he===row.he) || {};
+      const da  = r.da  != null ? r.da.toFixed(2)  : '—';
+      const rt  = r.rt  != null ? r.rt.toFixed(2)  : '—';
+      const sp  = r.spread != null ? r.spread : null;
+      const cls = sp == null ? '' : sp > 0 ? 'sp-pos' : sp < 0 ? 'sp-neg' : '';
+      const spTxt = sp != null ? (sp >= 0 ? '+' : '') + sp.toFixed(2) : '—';
+      return `<td style="font-family:monospace">${da}</td>` +
+             `<td style="font-family:monospace">${rt}</td>` +
+             `<td style="font-family:monospace" class="${cls}">${spTxt}</td>`;
+    }).join('');
+    return `<tr><td style="font-family:monospace;white-space:nowrap">${label}</td>${cells}</tr>`;
+  }).join('') || '<tr><td colspan="16" style="text-align:center;color:#aaa">No AS price data yet — runs after next workflow</td></tr>';
+
+  // Build Chart.js line chart — one line per AS type, showing spread over time
+  window._asChartData = { asTypes, asSeries, asColors };
+  if (typeof Chart !== 'undefined') window._buildAsChart && window._buildAsChart();
+
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
   document.getElementById('ai-date').textContent = morning.data_date
@@ -806,8 +899,64 @@ function renderAll(d, history, aiData) {
 loadData();
 // Auto-refresh every 5 minutes
 setInterval(loadData, 5 * 60 * 1000);
+
+window._buildAsChart = function() {
+  const canvas = document.getElementById('as-chart');
+  if (!canvas || !window._asChartData) return;
+  const { asTypes, asSeries, asColors } = window._asChartData;
+
+  // Build sorted label list from REGUP series (all types share same dates/HEs)
+  const baseRows = asSeries[asTypes[0]] || [];
+  const labels = baseRows.map(r => {
+    const he = String(r.he).padStart(2,'0');
+    return r.he === 1 ? r.date.slice(5) + ' HE01' : 'HE' + he;
+  });
+
+  const datasets = asTypes.map(at => ({
+    label: at,
+    data: (asSeries[at] || []).map(r => r.spread),
+    borderColor: asColors[at] || '#888',
+    backgroundColor: 'transparent',
+    borderWidth: 1.8,
+    pointRadius: 0,
+    tension: 0.3,
+  }));
+
+  if (window._asChart) { window._asChart.destroy(); window._asChart = null; }
+  window._asChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11 }, usePointStyle: true, pointStyleWidth: 14, padding: 14 } },
+        tooltip: { callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + (ctx.parsed.y >= 0 ? '+' : '') + (ctx.parsed.y||0).toFixed(2) + ' $/MW' } }
+      },
+      scales: {
+        x: {
+          type: 'category',
+          ticks: {
+            font: { size: 10 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20,
+            callback(val, idx) {
+              const l = labels[idx] || '';
+              return l.includes('-') ? l : (parseInt(l.replace('HE','')) % 6 === 0 ? l : '');
+            }
+          },
+          grid: { color: 'rgba(0,0,0,0.05)' }
+        },
+        y: {
+          title: { display: true, text: 'DA − RT ($/MW)', font: { size: 11 } },
+          ticks: { font: { size: 10 }, callback: v => (v >= 0 ? '+' : '') + v.toFixed(0) },
+          grid: { color: 'rgba(0,0,0,0.06)' }
+        }
+      }
+    }
+  });
+};
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" onload="if(window._buildFcChart)window._buildFcChart()"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" onload="if(window._buildFcChart)window._buildFcChart(); if(window._buildAsChart)window._buildAsChart();"></script>
 <script>
 window._buildFcChart = function() {
   const d = window._fcChartData;
