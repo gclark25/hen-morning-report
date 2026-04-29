@@ -1321,6 +1321,35 @@ def _fmt_asset_status(data):
 
 # ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 
+def _fmt_as_prices(data):
+    """Format AS DA-RT spread summary for the AI prompt."""
+    asp = data.get("as_prices", {})
+    if not asp or asp.get("error") or not asp.get("series"):
+        return "  AS price data not yet available."
+    series = asp["series"]
+    as_types = asp.get("as_types", ["REGUP","REGDN","RRS","NSPIN","ECRS"])
+    yesterday = asp.get("end_date", "")
+    lines = []
+    for at in as_types:
+        rows = [r for r in series.get(at, []) if r.get("spread") is not None]
+        if not rows:
+            continue
+        # Yesterday avg
+        yest_rows = [r for r in rows if r["date"] == yesterday]
+        yest_avg = round(sum(r["spread"] for r in yest_rows) / len(yest_rows), 2) if yest_rows else None
+        # 5-day avg
+        all_avg  = round(sum(r["spread"] for r in rows) / len(rows), 2) if rows else None
+        # Yesterday worst hour (most negative = RT spiked above DA)
+        worst = min(yest_rows, key=lambda r: r["spread"]) if yest_rows else None
+        best  = max(yest_rows, key=lambda r: r["spread"]) if yest_rows else None
+        yest_str  = f"${yest_avg:+.2f}/MW" if yest_avg is not None else "N/A"
+        all_str   = f"${all_avg:+.2f}/MW" if all_avg  is not None else "N/A"
+        worst_str = f"HE{worst['he']:02d} ${worst['spread']:+.2f}" if worst else "N/A"
+        best_str  = f"HE{best['he']:02d}  ${best['spread']:+.2f}" if best  else "N/A"
+        lines.append(f"  {at}: yesterday avg {yest_str} | 5-day avg {all_str} | best hour {best_str} | worst hour {worst_str}")
+    return "\n".join(lines) if lines else "  No AS spread data available."
+
+
 def build_ai_prompt_morning(data, history):
     """Build the prompt for the morning AI analysis."""
     tb    = compute_top_bottom(data)
@@ -1391,6 +1420,9 @@ MODO ENERGY CUSTOM INDICES:
 
 ASSET AVAILABILITY & OUTAGES (PowerTools):
 {_fmt_asset_status(data)}
+
+ANCILLARY SERVICES DA−RT SPREADS (ERCOT, 5-day lookback, $/MW):
+{_fmt_as_prices(data)}
 ---
 
 Please provide:
@@ -1398,9 +1430,10 @@ Please provide:
 2. CONSTRAINT ANALYSIS: Which constraints mattered most and their impact on HEN nodes by shift factor
 3. WEATHER & LOAD OUTLOOK: What the 15-day forecast means for ERCOT pricing and HEN dispatch over the next 2 weeks
 4. MODO INDEX CONTEXT: How HEN's custom indices performed relative to prior day; what the market breakdown reveals
-5. ASSET AVAILABILITY: Any outage impacts on the fleet and operational risk flags
-6. FORWARD OPPORTUNITIES: Top 3 specific actionable opportunities in the next 7-14 days based on all available data
-7. RISK FLAGS: Any structural concerns worth escalating to the trading desk
+5. AS MARKET ANALYSIS: Summarize yesterday's DA−RT AS spreads for each service type — which were positive (DA premium captured), which were negative (RT exceeded DA), and what this implies for HEN's DA offer strategy for REGUP, REGDN, RRS, NSPIN, and ECRS
+6. ASSET AVAILABILITY: Any outage impacts on the fleet and operational risk flags
+7. FORWARD OPPORTUNITIES: Top 3 specific actionable opportunities in the next 7-14 days based on all available data
+8. RISK FLAGS: Any structural concerns worth escalating to the trading desk
 
 Be specific, use numbers, and focus on commercially actionable insights. Keep each section to 3-5 sentences.
 """
