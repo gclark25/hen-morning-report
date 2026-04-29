@@ -1102,6 +1102,136 @@ def _node_region(name):
     return _REGION_MAP.get(name, "Other")
 
 
+def collect_as_prices(token, subscription_key, lookback_days=5):
+    """
+    Pull DA and RT Ancillary Service clearing prices for the past N days.
+    DA: np4-188-cd/dam_clear_price_for_cap  (hourly, by AS type)
+    RT: np6-795-er/rtm_clrng_prc_cap_hr     (hourly averaged RT MCPC, weekly file but filterable)
+    Returns dict keyed by AS type with hourly DA, RT, and spread series.
+    """
+    from datetime import date, timedelta
+    import requests
+
+    today = date.today()
+    start = today - timedelta(days=lookback_days + 1)
+    end   = today - timedelta(days=1)
+    start_str = start.isoformat()
+    end_str   = end.isoformat()
+
+    base = "https://api.ercot.com/api/public-reports"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Ocp-Apim-Subscription-Key": subscription_key,
+    }
+
+    def _get(path, params):
+        try:
+            r = requests.get(f"{base}/{path}", headers=headers,
+                             params={**params, "size": 5000}, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            rows = data.get("data", [])
+            fields = data.get("fields", [])
+            if rows and isinstance(rows[0], list):
+                return [dict(zip(fields, row)) for row in rows]
+            return rows
+        except Exception as e:
+            print(f"    WARN [AS prices] {path} — {e}")
+            return []
+
+    # ── DA clearing prices ────────────────────────────────────────────────────
+    print("  Pulling AS DA clearing prices...")
+    da_rows = _get("np4-188-cd/dam_clear_price_for_cap", {
+        "deliveryDateFrom": start_str,
+        "deliveryDateTo":   end_str,
+    })
+
+    # ── RT clearing prices (hourly) ───────────────────────────────────────────
+    print("  Pulling AS RT clearing prices...")
+    rt_rows = _get("np6-795-er/rtm_clrng_prc_cap_hr", {
+        "deliveryDateFrom": start_str,
+        "deliveryDateTo":   end_str,
+    })
+    # Fallback: try 15-min endpoint averaged to hourly
+    if not rt_rows:
+        rt_rows = _get("np6-796-er/rtm_clrng_prc_cap_hsi", {
+            "deliveryDateFrom": start_str,
+            "deliveryDateTo":   end_str,
+        })
+
+    # ── Parse DA: {date: {he: {asType: price}}} ───────────────────────────────
+    as_types = ["REGUP", "REGDN", "RRS", "NSPIN", "ECRS"]
+    da = {}   # da[date][he][asType] = price
+    for row in da_rows:
+        dt  = str(row.get("deliveryDate") or row.get("DeliveryDate") or "")[:10]
+        he  = str(row.get("hourEnding")   or row.get("HourEnding")   or "0")
+        try:
+            he_int = int(str(he).split(":")[0])
+        except:
+            continue
+        if dt not in da:
+            da[dt] = {}
+        if he_int not in da[dt]:
+            da[dt][he_int] = {}
+        for at in as_types:
+            v = row.get(at) or row.get(at.lower())
+            if v is not None:
+                da[dt][he_int][at] = round(float(v), 2)
+
+    # ── Parse RT: {date: {he: {asType: price}}} ──────────────────────────────
+    rt = {}
+    for row in rt_rows:
+        dt  = str(row.get("deliveryDate") or row.get("DeliveryDate") or "")[:10]
+        he  = str(row.get("hourEnding")   or row.get("HourEnding")   or
+                  row.get("settlementInterval") or "0")
+        try:
+            he_int = int(str(he).split(":")[0])
+        except:
+            continue
+        if dt not in rt:
+            rt[dt] = {}
+        if he_int not in rt[dt]:
+            rt[dt][he_int] = {}
+        for at in as_types:
+            v = row.get(at) or row.get(at.lower())
+            if v is not None:
+                rt[dt][he_int][at] = round(float(v), 2)
+
+    # ── Build output: per AS type, list of {date, he, da, rt, spread} ────────
+    dates = sorted(set(list(da.keys()) + list(rt.keys())))
+    # Trim to lookback window
+    dates = [d for d in dates if start_str <= d <= end_str]
+
+    result = {at: [] for at in as_types}
+    for d in dates:
+        for he in range(1, 25):
+            da_price = (da.get(d, {}).get(he, {}) or {})
+            rt_price = (rt.get(d, {}).get(he, {}) or {})
+            for at in as_types:
+                dv = da_price.get(at)
+                rv = rt_price.get(at)
+                result[at].append({
+                    "date": d,
+                    "he":   he,
+                    "da":   dv,
+                    "rt":   rv,
+                    "spread": round(dv - rv, 2) if dv is not None and rv is not None else None,
+                })
+
+    n_da = sum(len(da.get(d, {})) for d in dates)
+    n_rt = sum(len(rt.get(d, {})) for d in dates)
+    print(f"    DA: {n_da} hour-slots · RT: {n_rt} hour-slots · {len(dates)} days")
+
+    return {
+        "generated_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "start_date":   start_str,
+        "end_date":     end_str,
+        "as_types":     as_types,
+        "series":       result,
+        "source":       "ERCOT Public API",
+    }
+
+
 def collect_powertools_assets():
     """
     Pull asset availability and outage schedule from the PowerTools platform.
@@ -1656,6 +1786,15 @@ def collect_all_integrations(token=None, sub_key=None, asset_nodes=None):
         out.update(collect_ercot_forecasts(token, sub_key))
     else:
         out["ercot_forecasts"] = {}
+
+    # ── Integration 6: AS DA vs RT prices ────────────────────────────────────
+    print()
+    print("── Integration 6/6: AS DA vs RT clearing prices ──")
+    try:
+        out["as_prices"] = collect_as_prices(token, sub_key, lookback_days=5)
+    except Exception as e:
+        print(f"  WARN [AS prices] {e}")
+        out["as_prices"] = {"error": str(e)}
 
     return out
 
