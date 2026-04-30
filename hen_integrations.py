@@ -893,13 +893,14 @@ def collect_ercot_forecasts(token, sub_key):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6.  AS PRICES — DA vs RT Ancillary Service clearing prices  ← FIXED v2
+# 6.  AS PRICES — DA vs RT Ancillary Service clearing prices  ← FIXED v3
 #
-#  Bug fixes vs original:
-#   1. AS_ALIASES covers all ERCOT field name variants (regUp, regDn, nonSpin,
-#      rrs, ecrs) — original only tried UPPER/lower, missing camelCase.
-#   2. RT weekly-file endpoint ignores date filter — post-filter after fetch.
-#   3. Added detailed field-name + sample-row logging visible in CI logs.
+#  DA endpoint confirmed working from logs:
+#    np4-188-cd/dam_clear_price_for_cap
+#    Long format: one row per (date, hourEnding, ancillaryType), price in MCPC
+#
+#  RT: all previously tried endpoints 404. Trying additional candidates.
+#  Dashboard shows DA prices while RT endpoint is being located.
 # ══════════════════════════════════════════════════════════════════════════════
 
 def collect_as_prices(token, subscription_key, lookback_days=5):
@@ -916,6 +917,8 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
     }
     AS_TYPES = ["REGUP", "REGDN", "RRS", "NSPIN", "ECRS"]
 
+    # Maps ancillaryType field values to canonical names.
+    # Confirmed from logs: ERCOT returns "RRS", "NSPIN", "REGUP", "REGDN", "ECRS"
     AS_TYPE_MAP = {
         "REGUP": "REGUP", "REG-UP": "REGUP", "REGULATION_UP": "REGUP",
         "REGDN": "REGDN", "REG-DN": "REGDN", "REG-DOWN": "REGDN", "REGULATION_DOWN": "REGDN",
@@ -954,10 +957,11 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
                 print(f"    [{label}] sample: { {k: raw[0][k] for k in list(raw[0].keys())[:8]} }")
             return raw
         except Exception as e:
-            print(f"    WARN [{label}] {path} — {e}")
+            print(f"    WARN [{label}] {path} -- {e}")
             return []
 
     def _parse_date_he(row):
+        # Try standard deliveryDate + hourEnding fields first (DA format)
         dt = str(
             row.get("deliveryDate") or row.get("DeliveryDate") or
             row.get("delivery_date") or row.get("date") or ""
@@ -965,111 +969,144 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
         he_raw = (
             row.get("hourEnding") or row.get("HourEnding") or
             row.get("hour_ending") or row.get("Hour") or
-            row.get("hour") or row.get("settlementInterval") or "0"
+            row.get("hour") or row.get("settlementInterval") or ""
         )
+
+        # SCED format: SCEDTimestamp = "YYYY-MM-DDTHH:MM:SS"
+        # Extract date and derive hour-ending from the timestamp hour
+        if not dt or not he_raw:
+            ts = str(
+                row.get("SCEDTimestamp") or row.get("sced_timestamp") or
+                row.get("timestamp") or row.get("Timestamp") or ""
+            )
+            if "T" in ts:
+                dt     = ts[:10]
+                # SCED timestamps are interval START times; hour-ending = start hour + 1
+                ts_hour = int(ts[11:13])
+                he_raw  = str(ts_hour + 1)  # HE 1-24
+
         try:
             he_int = int(str(he_raw).split(":")[0])
         except (ValueError, TypeError):
             he_int = 0
+
+        # Clamp to valid HE range 1-24
+        if he_int < 1:
+            he_int = 1
+        if he_int > 24:
+            he_int = 24
+
         return dt, he_int
 
-    # ── DA: long format — one row per (date, hour, ancillaryType) ─────────────
-    # Fields confirmed from logs: deliveryDate, hourEnding, ancillaryType, MCPC, DSTFlag
-    print(f"  Pulling AS DA clearing prices ({start_str} → {end_str})...")
+    def _parse_long_format(rows):
+        """Long format: one row per (date, he/interval, ancillaryType) with price in MCPC.
+        Buckets multiple intervals per hour and averages — handles both hourly DA
+        (1 row per slot) and 5-minute SCED RT (12 rows per slot) correctly."""
+        buckets = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        for row in rows:
+            dt, he = _parse_date_he(row)
+            if not dt or not (start_str <= dt <= end_str):
+                continue
+            raw_type = str(
+                row.get("ancillaryType") or row.get("AncillaryType") or
+                row.get("asType") or row.get("type") or ""
+            ).strip().upper()
+            canonical = AS_TYPE_MAP.get(raw_type)
+            if not canonical:
+                continue
+            price = row.get("MCPC") or row.get("mcpc") or row.get("price") or row.get("Price")
+            if price is None:
+                continue
+            try:
+                buckets[dt][he][canonical].append(round(float(price), 2))
+            except (TypeError, ValueError):
+                continue
+        # Average all intervals within each hour
+        return {
+            dt: {
+                he: {at: round(sum(vals) / len(vals), 2) for at, vals in types.items()}
+                for he, types in hours.items()
+            }
+            for dt, hours in buckets.items()
+        }
+
+    def _parse_wide_format(rows):
+        """Wide format: one row per (date, he), AS types as columns."""
+        AS_WIDE = {
+            "REGUP": ["REGUP", "regUp", "regup", "RegUp"],
+            "REGDN": ["REGDN", "regDn", "regdn", "RegDn", "REGDOWN", "regDown"],
+            "RRS":   ["RRS",   "rrs",   "Rrs"],
+            "NSPIN": ["NSPIN", "nonSpin", "nonspin", "NonSpin", "NONSPIN"],
+            "ECRS":  ["ECRS",  "ecrs",   "Ecrs"],
+        }
+        buckets = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        for row in rows:
+            dt, he = _parse_date_he(row)
+            if not dt or not (start_str <= dt <= end_str):
+                continue
+            for at, aliases in AS_WIDE.items():
+                for alias in aliases:
+                    v = row.get(alias)
+                    if v is not None:
+                        try:
+                            buckets[dt][he][at].append(round(float(v), 2))
+                        except (TypeError, ValueError):
+                            pass
+                        break
+        return {
+            dt: {
+                he: {at: round(sum(vals) / len(vals), 2) for at, vals in types.items()}
+                for he, types in hours.items()
+            }
+            for dt, hours in buckets.items()
+        }
+
+    # ── Pull DA (confirmed working: long format, ancillaryType + MCPC) --------
+    print(f"  Pulling AS DA clearing prices ({start_str} -> {end_str})...")
     da_rows = _get("np4-188-cd/dam_clear_price_for_cap",
                    {"deliveryDateFrom": start_str, "deliveryDateTo": end_str},
                    label="DA-AS")
+    da = _parse_long_format(da_rows)
 
-    # Pivot long → wide: da[date][he][AS_TYPE] = price
-    da = {}
-    for row in da_rows:
-        dt, he = _parse_date_he(row)
-        if not dt or not (start_str <= dt <= end_str):
-            continue
-        raw_type  = str(
-            row.get("ancillaryType") or row.get("AncillaryType") or
-            row.get("asType") or row.get("type") or ""
-        ).strip().upper()
-        canonical = AS_TYPE_MAP.get(raw_type)
-        if not canonical:
-            continue
-        price = row.get("MCPC") or row.get("mcpc") or row.get("price") or row.get("Price")
-        if price is None:
-            continue
-        try:
-            price = round(float(price), 2)
-        except (TypeError, ValueError):
-            continue
-        da.setdefault(dt, {}).setdefault(he, {})[canonical] = price
+    # ── Pull RT: try every known ERCOT AS RT endpoint -------------------------
 
-    # ── RT: try multiple endpoints ────────────────────────────────────────────
-    RT_ENDPOINTS = [
-        "np6-787-er/rtm_clrng_prc_mcpc",
-        "np6-788-er/rtm_clrng_prc_mcpc_hsi",
-        "np6-323-cd/rt_hb_lz_clrng_prc",
-    ]
-    rt_rows = []
-    for ep in RT_ENDPOINTS:
-        print(f"  Trying RT endpoint: {ep}...")
-        rt_rows = _get(ep,
-                       {"deliveryDateFrom": start_str, "deliveryDateTo": end_str},
-                       label="RT-AS")
-        if rt_rows:
-            print(f"    RT endpoint found: {ep}")
-            break
-
+    # RT SCED clears every 5 minutes — use SCEDTimestamp params (not deliveryDate)
+    print(f"  Pulling AS RT clearing prices (SCED 5-min, {start_str} -> {end_str})...")
+    rt_rows = _get(
+        "np6-86-cd/rt_clrng_prc_cap_sced",
+        {
+            "SCEDTimestampFrom": start_str + "T00:00:00",
+            "SCEDTimestampTo":   end_str   + "T23:59:59",
+        },
+        label="RT-AS"
+    )
     if not rt_rows:
-        print("  !! WARN: All RT AS endpoints 404 — DA-only data, spreads will be null.")
+        print("  !! RT AS endpoint returned 0 rows -- will show DA-only data.")
 
-    # Parse RT — same long format expected; bucket intervals → hourly avg
-    rt_buckets = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-    for row in rt_rows:
-        dt, he = _parse_date_he(row)
-        if not dt or not (start_str <= dt <= end_str):
-            continue
-        raw_type  = str(
-            row.get("ancillaryType") or row.get("AncillaryType") or
-            row.get("asType") or row.get("type") or ""
-        ).strip().upper()
-        canonical = AS_TYPE_MAP.get(raw_type)
-        if not canonical:
-            # fallback: try wide-format columns
-            for at in AS_TYPES:
-                v = row.get(at) or row.get(at.lower())
-                if v is not None:
-                    try:
-                        rt_buckets[dt][he][at].append(round(float(v), 2))
-                    except (TypeError, ValueError):
-                        pass
-            continue
-        price = row.get("MCPC") or row.get("mcpc") or row.get("price") or row.get("Price")
-        if price is None:
-            continue
-        try:
-            rt_buckets[dt][he][canonical].append(round(float(price), 2))
-        except (TypeError, ValueError):
-            continue
+    # Parse RT: detect long vs wide format
+    if rt_rows:
+        sample = rt_rows[0] if rt_rows else {}
+        if "ancillaryType" in sample or "AncillaryType" in sample:
+            rt = _parse_long_format(rt_rows)
+            print("    RT parsed as long format")
+        else:
+            rt = _parse_wide_format(rt_rows)
+            print("    RT parsed as wide format")
+    else:
+        rt = {}
 
-    rt = {
-        dt: {
-            he: {at: round(sum(vals) / len(vals), 2) for at, vals in types.items()}
-            for he, types in hours.items()
-        }
-        for dt, hours in rt_buckets.items()
-    }
-
-    # ── Diagnostics ───────────────────────────────────────────────────────────
+    # ── Diagnostics -----------------------------------------------------------
     da_dates = sorted(da.keys())
     rt_dates = sorted(rt.keys())
     print(f"    DA parsed: {len(da_dates)} dates, {sum(len(v) for v in da.values())} hour-slots")
     print(f"    RT parsed: {len(rt_dates)} dates, {sum(len(v) for v in rt.values())} hour-slots")
     if da_dates:
-        sample_date = da_dates[-1]
-        sample_he   = next(iter(da[sample_date]), None)
-        if sample_he is not None:
-            print(f"    DA value check ({sample_date} HE{sample_he}): {da[sample_date][sample_he]}")
+        sd = da_dates[-1]
+        sh = next(iter(da[sd]), None)
+        if sh is not None:
+            print(f"    DA value check ({sd} HE{sh}): {da[sd][sh]}")
 
-    # ── Build output series ───────────────────────────────────────────────────
+    # ── Build output series ---------------------------------------------------
     all_dates = sorted(set(list(da.keys()) + list(rt.keys())))
     result    = {at: [] for at in AS_TYPES}
 
@@ -1091,7 +1128,7 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
     for at in AS_TYPES:
         non_null = sum(1 for r in result[at] if r["spread"] is not None)
         da_only  = sum(1 for r in result[at] if r["da"] is not None and r["rt"] is None)
-        print(f"    {at}: {non_null} spreads · {da_only} DA-only (no RT match)")
+        print(f"    {at}: {non_null} spreads · {da_only} DA-only")
 
     return {
         "generated_at": datetime.utcnow().isoformat() + "Z",
@@ -1102,12 +1139,16 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
         "source":       "ERCOT Public API",
     }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CONVENIENCE — collect all integrations in one call
-# ══════════════════════════════════════════════════════════════════════════════
-
 def collect_all_integrations(token=None, sub_key=None, asset_nodes=None):
+    """
+    Calls all active collectors and returns a single merged dict ready
+    to be merged into `data` inside collect_data() in hen_morning_report.py.
+
+    Usage:
+        extras = collect_all_integrations(token=token, sub_key=sub_key,
+                                          asset_nodes=NODES)
+        data.update(extras)
+    """
     out = {}
 
     if token and sub_key:
