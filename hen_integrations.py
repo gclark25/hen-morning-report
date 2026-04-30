@@ -1007,7 +1007,7 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
             dt, he = _parse_date_he(row)
             if not dt or not (start_str <= dt <= end_str):
                 continue
-             raw_type = str(
+            raw_type = str(
                 row.get("ancillaryType") or row.get("AncillaryType") or
                 row.get("ASType") or row.get("asType") or row.get("type") or ""
             ).strip().upper()
@@ -1073,7 +1073,7 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
     # RT SCED clears every 5 minutes — use SCEDTimestamp params (not deliveryDate)
     print(f"  Pulling AS RT clearing prices (SCED 5-min, {start_str} -> {end_str})...")
     rt_rows = _get(
-       "np6-332-cd/rt_clear_price_cap_sced",   # confirmed from ERCOT API Explorer
+        "np6-332-cd/rt_clear_price_cap_sced",
         {
             "SCEDTimestampFrom": start_str + "T00:00:00",
             "SCEDTimestampTo":   end_str   + "T23:59:59",
@@ -1084,7 +1084,7 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
         print("  !! RT AS endpoint returned 0 rows -- will show DA-only data.")
 
     # Parse RT: detect long vs wide format
-     if rt_rows:
+    if rt_rows:
         sample = rt_rows[0] if rt_rows else {}
         if ("ancillaryType" in sample or "AncillaryType" in sample
                 or "ASType" in sample or "asType" in sample):
