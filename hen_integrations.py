@@ -1071,17 +1071,31 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
     # ── Pull RT: try every known ERCOT AS RT endpoint -------------------------
 
     # RT SCED clears every 5 minutes — use SCEDTimestamp params (not deliveryDate)
+    # 5 AS types x ~288 intervals/day x 6 days = ~8,640 rows — paginate to get all
     print(f"  Pulling AS RT clearing prices (SCED 5-min, {start_str} -> {end_str})...")
-    rt_rows = _get(
-        "np6-332-cd/rt_clear_price_cap_sced",
-        {
-            "SCEDTimestampFrom": start_str + "T00:00:00",
-            "SCEDTimestampTo":   end_str   + "T23:59:59",
-        },
-        label="RT-AS"
-    )
+    rt_rows = []
+    page = 1
+    while True:
+        batch = _get(
+            "np6-332-cd/rt_clear_price_cap_sced",
+            {
+                "SCEDTimestampFrom": start_str + "T00:00:00",
+                "SCEDTimestampTo":   end_str   + "T23:59:59",
+                "page": page,
+            },
+            label=f"RT-AS-p{page}"
+        )
+        if not batch:
+            break
+        rt_rows.extend(batch)
+        print(f"    RT page {page}: {len(batch)} rows · running total: {len(rt_rows)}")
+        if len(batch) < 5000:
+            break  # last page
+        page += 1
     if not rt_rows:
         print("  !! RT AS endpoint returned 0 rows -- will show DA-only data.")
+    else:
+        print(f"  RT total rows fetched: {len(rt_rows)}")
 
     # Parse RT: detect long vs wide format
     if rt_rows:
