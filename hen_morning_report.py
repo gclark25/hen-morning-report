@@ -376,9 +376,9 @@ def collect_data(token, sub_key):
         except Exception as e:
             print(f"    WARN: DA {node} — {e}")
 
-    data["rt"]       = rt_summary
+    data["rt"]        = rt_summary
     data["rt_hourly"] = rt_hourly
-    data["da"]       = da_summary
+    data["da"]        = da_summary
     data["da_hourly"] = da_hourly
 
     # DART spreads — daily avg (DA − RT: positive = DA premium over RT)
@@ -420,22 +420,22 @@ def collect_data(token, sub_key):
 def compute_top_bottom(data):
     """
     For each node compute:
-    - DART avg       = avg(DA hourly) − avg(RT hourly)  [positive = DA premium]
-    - Intraday spread = (max RT hour − min RT hour) / 24 [$/MWh normalized]
+    - DART avg        = avg(DA hourly) − avg(RT hourly)  [positive = DA premium]
+    - Intraday spread = (max RT hour − min RT hour) / 24  [$/MWh normalized]
     - Best DART hour  = hour with highest (DA − RT)
     - Worst DART hour = hour with lowest  (DA − RT)
 
     Returns Top 10 and Bottom 10 ranked by DART avg, plus regional summary.
     """
-    dart       = data.get("dart", {})
+    dart        = data.get("dart", {})
     dart_hourly = data.get("dart_hourly", {})
-    rt_hourly  = data.get("rt_hourly", {})
-    da_hourly  = data.get("da_hourly", {})
+    rt_hourly   = data.get("rt_hourly", {})
+    da_hourly   = data.get("da_hourly", {})
 
     node_analysis = {}
     for node in dart:
-        dh = dart_hourly.get(node, {})
-        rh = rt_hourly.get(node, {})
+        dh  = dart_hourly.get(node, {})
+        rh  = rt_hourly.get(node, {})
         dah = da_hourly.get(node, {})
         if not dh or not rh:
             continue
@@ -453,24 +453,24 @@ def compute_top_bottom(data):
         da_values = list(dah.values()) if dah else []
 
         node_analysis[node] = {
-            "dart_avg":       dart[node],
+            "dart_avg":        dart[node],
             "intraday_spread": intraday_spread,
-            "best_hour":      int(best_hr),
-            "best_spread":    dh[best_hr],
-            "worst_hour":     int(worst_hr),
-            "worst_spread":   dh[worst_hr],
-            "rt_max":         round(max(rt_values), 2) if rt_values else 0,
-            "rt_min":         round(min(rt_values), 2) if rt_values else 0,
-            "da_avg":         round(sum(da_values)/len(da_values), 2) if da_values else 0,
-            "neg_hours":      len(neg_hrs),
-            "spike_hours":    len(spike_hrs),
-            "region":         next((r for r, nodes in REGIONS.items()
-                                    if node in nodes), "Other"),
+            "best_hour":       int(best_hr),
+            "best_spread":     dh[best_hr],
+            "worst_hour":      int(worst_hr),
+            "worst_spread":    dh[worst_hr],
+            "rt_max":          round(max(rt_values), 2) if rt_values else 0,
+            "rt_min":          round(min(rt_values), 2) if rt_values else 0,
+            "da_avg":          round(sum(da_values)/len(da_values), 2) if da_values else 0,
+            "neg_hours":       len(neg_hrs),
+            "spike_hours":     len(spike_hrs),
+            "region":          next((r for r, nodes in REGIONS.items()
+                                     if node in nodes), "Other"),
         }
 
-    ranked  = sorted(node_analysis.items(),
-                     key=lambda x: x[1]["dart_avg"], reverse=True)
-    top10   = [{"node": n, **v} for n, v in ranked[:10]]
+    ranked   = sorted(node_analysis.items(),
+                      key=lambda x: x[1]["dart_avg"], reverse=True)
+    top10    = [{"node": n, **v} for n, v in ranked[:10]]
     bottom10 = [{"node": n, **v} for n, v in ranked[-10:]][::-1]
 
     regional = {}
@@ -487,9 +487,7 @@ def compute_top_bottom(data):
 
     return {"top10": top10, "bottom10": bottom10, "regional": regional}
 
-# ── REPORT BUILDER ────────────────────────────────────────────────────────────
-
-# ── NEW SECTION BUILDERS ─────────────────────────────────────────────────────
+# ── REPORT SECTION BUILDERS ───────────────────────────────────────────────────
 
 def _build_modo_html(data):
     """Build Modo Energy section: bar chart + table side by side."""
@@ -498,11 +496,9 @@ def _build_modo_html(data):
     if not indices:
         return ""
 
-    # Find max value for bar scaling
     max_val = max((v.get("revenue_mw_year", 0) for v in indices.values()), default=1) or 1
 
-    # Bar chart rows
-    bars = ""
+    bars       = ""
     table_rows = ""
     for v in indices.values():
         rev   = v.get("revenue_mw_year", 0)
@@ -518,9 +514,8 @@ def _build_modo_html(data):
           <div class="bar-val">${rev:,.0f}</div>
         </div>"""
 
-        # Market breakdown for table
-        bk    = v.get("market_breakdown", {})
-        top3  = sorted(bk.items(), key=lambda x: x[1], reverse=True)[:3]
+        bk     = v.get("market_breakdown", {})
+        top3   = sorted(bk.items(), key=lambda x: x[1], reverse=True)[:3]
         bk_str = " / ".join(f"{m}: ${r:,.0f}" for m, r in top3) if top3 else "—"
         table_rows += f"""
         <tr>
@@ -587,8 +582,8 @@ def _build_weather_html(data):
           {rows}
         </div>"""
 
-    source     = wx.get("source", "AG2 Trader")
-    gen_at     = wx.get("generated_at", "")[:10]
+    source = wx.get("source", "AG2 Trader")
+    gen_at = wx.get("generated_at", "")[:10]
     return f"""
     <div class="section" style="margin-top:20px">
       <div class="section-title">15-Day Weather Forecast — ERCOT Metro Stations
@@ -602,14 +597,12 @@ def _build_weather_html(data):
 
 def _build_ai_html(data):
     """Build AI analysis section from dashboard/ai_analysis.json if available."""
-    import json, os
     try:
         with open("dashboard/ai_analysis.json", "r", encoding="utf-8") as f:
             ai_data = json.load(f)
         text = (ai_data.get("morning") or {}).get("analysis", "").strip()
         if not text:
             return ""
-        # Escape HTML special chars
         text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         return f"""
     <div class="section" style="margin-top:20px">
@@ -639,14 +632,14 @@ def _build_forecast_html(data):
 
     max_load = max(load_peaks) if load_peaks else 1
 
-    rows = ""
+    rows       = ""
     chart_bars = ""
     for i, day in enumerate(dates):
         gl  = load_peaks[i]     if i < len(load_peaks)     else 0
         wnd = wind_avgs[i]      if i < len(wind_avgs)      else 0
         sol = solar_peaks[i]    if i < len(solar_peaks)    else 0
         net = net_load_peaks[i] if i < len(net_load_peaks) else 0
-        pct = round(gl / max_load * 100, 1) if max_load else 0
+        pct     = round(gl  / max_load * 100, 1) if max_load else 0
         net_pct = round(net / max_load * 100, 1) if max_load else 0
         dow = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][
             __import__("datetime").date.fromisoformat(day).weekday()
@@ -671,14 +664,14 @@ def _build_forecast_html(data):
           </div>
         </div>"""
 
-    h24 = fc.get("hourly_24hr", {})
+    h24      = fc.get("hourly_24hr", {})
     h24_note = ""
     if h24.get("timestamps"):
-        n = len(h24["timestamps"])
+        n         = len(h24["timestamps"])
         peak_load = max(h24.get("gross_load", [0]))
         peak_net  = max(h24.get("net_load", [0]))
-        h24_note = (f"  24-hr outlook: peak gross load {peak_load:.1f} GW · "
-                    f"peak net load {peak_net:.1f} GW over {n} hours")
+        h24_note  = (f"  24-hr outlook: peak gross load {peak_load:.1f} GW · "
+                     f"peak net load {peak_net:.1f} GW over {n} hours")
 
     gen_date = fc.get("forecast_date", "")
     return f"""
@@ -712,9 +705,9 @@ def build_report(data):
     solar = data.get("solar", {})
     tb    = compute_top_bottom(data)
 
-    all_rt_avg = [v["avg"] for v in rt.values()] if rt else [0]
-    fleet_avg  = round(sum(all_rt_avg) / len(all_rt_avg), 2) if all_rt_avg else 0
-    fleet_max  = round(max(v["max"] for v in rt.values()), 2) if rt else 0
+    all_rt_avg  = [v["avg"] for v in rt.values()] if rt else [0]
+    fleet_avg   = round(sum(all_rt_avg) / len(all_rt_avg), 2) if all_rt_avg else 0
+    fleet_max   = round(max(v["max"] for v in rt.values()), 2) if rt else 0
     spike_nodes = [n for n, v in rt.items() if v["max"] > 100]
     neg_nodes   = [n for n, v in rt.items() if v["min"] < 0]
     best_dart   = max(dart, key=dart.get) if dart else None
@@ -724,10 +717,10 @@ def build_report(data):
 
     fund_rows = ""
     for d in shared_days:
-        g   = load.get(d, 0)
-        w   = wind.get(d, 0)
-        s   = solar.get(d, 0)
-        net = round(g - w - s, 1)
+        g    = load.get(d, 0)
+        w    = wind.get(d, 0)
+        s    = solar.get(d, 0)
+        net  = round(g - w - s, 1)
         flag = "charging-window" if net < 30 else ""
         fund_rows += f"""
         <tr class="{flag}">
@@ -790,7 +783,6 @@ def build_report(data):
     worst_str = f"{worst_dart} ${dart[worst_dart]:.2f}/MWh" if worst_dart else "N/A"
     dow = date.today().strftime("%A")
 
-    # Build new integration sections
     modo_html     = _build_modo_html(data)
     weather_html  = _build_weather_html(data)
     forecast_html = _build_forecast_html(data)
@@ -1039,12 +1031,10 @@ def write_dashboard_json(data):
         "solar":              data.get("solar", {}),
         "solar_hourly":       data.get("solar_hourly", {}),
         "top_bottom":         tb,
-        # ── New integration data ─────────────────────────────────────────
         "constraints":        data.get("constraints", []),
         "weather":            data.get("weather", {}),
         "modo":               data.get("modo", {}),
         "asset_status":       data.get("asset_status", {}),
-        # ── ERCOT forward forecasts ──────────────────────────────────────────
         "ercot_forecasts":    data.get("ercot_forecasts", {}),
         "as_prices":          data.get("as_prices", {}),
     }
@@ -1150,10 +1140,7 @@ def _calc_daily_ending_soc(rt, data, token=None, sub_key=None, soc_start=50.0):
 
 
 def write_history_json(data, history_path="dashboard/history.json", token=None, sub_key=None):
-    """
-    Maintains a rolling 5-day history file.
-    Each day's entry contains fleet-level and per-node summaries.
-    """
+    """Maintains a rolling 5-day history file."""
     rt    = data.get("rt", {})
     da    = data.get("da", {})
     dart  = data.get("dart", {})
@@ -1169,19 +1156,19 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
 
     nodes_snapshot = {}
     for node in dart:
-        r      = rt.get(node, {})
-        dv     = da.get(node, {})
+        r       = rt.get(node, {})
+        dv      = da.get(node, {})
         tb_node = next((n for n in tb.get("top10", []) + tb.get("bottom10", [])
                         if n["node"] == node), {})
         nodes_snapshot[node] = {
-            "dart":      dart[node],
-            "intraday":  tb_node.get("intraday_spread", 0),
-            "rt_avg":    r.get("avg", 0),
-            "rt_max":    r.get("max", 0),
-            "rt_min":    r.get("min", 0),
-            "da_avg":    dv.get("avg", 0),
-            "region":    next((reg for reg, nodes in REGIONS.items()
-                               if node in nodes), "Other"),
+            "dart":     dart[node],
+            "intraday": tb_node.get("intraday_spread", 0),
+            "rt_avg":   r.get("avg", 0),
+            "rt_max":   r.get("max", 0),
+            "rt_min":   r.get("min", 0),
+            "da_avg":   dv.get("avg", 0),
+            "region":   next((reg for reg, nodes in REGIONS.items()
+                              if node in nodes), "Other"),
         }
 
     regional_snapshot = {}
@@ -1260,7 +1247,6 @@ def _fmt_weather(data):
     if not cities:
         return "  Not available"
     lines = []
-    # Show first 7 days for each city
     for city_name, city_data in cities.items():
         days = city_data.get("days", [])[:7]
         if not days:
@@ -1319,36 +1305,74 @@ def _fmt_asset_status(data):
         )
     return "\n".join(lines)
 
-# ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 
 def _fmt_as_prices(data):
-    """Format AS DA-RT spread summary for the AI prompt."""
+    """
+    Format AS DA-RT spread summary for the AI prompt.
+    Focuses on the last 3 days to surface repeatable patterns and best
+    hour-of-day opportunities for DA offer strategy.
+    """
     asp = data.get("as_prices", {})
     if not asp or asp.get("error") or not asp.get("series"):
         return "  AS price data not yet available."
-    series = asp["series"]
-    as_types = asp.get("as_types", ["REGUP","REGDN","RRS","NSPIN","ECRS"])
+
+    series    = asp["series"]
+    as_types  = asp.get("as_types", ["REGUP", "REGDN", "RRS", "NSPIN", "ECRS"])
     yesterday = asp.get("end_date", "")
-    lines = []
+
+    # Build last 3 dates from the end of the lookback window
+    try:
+        end_dt = date.fromisoformat(yesterday)
+        last3  = [(end_dt - timedelta(days=i)).isoformat() for i in range(3)]
+    except Exception:
+        last3 = [yesterday]
+
+    lines = [f"  3-day window: {last3[-1]} through {last3[0]}"]
+
     for at in as_types:
-        rows = [r for r in series.get(at, []) if r.get("spread") is not None]
-        if not rows:
+        all_rows = [r for r in series.get(at, []) if r.get("spread") is not None]
+        if not all_rows:
             continue
-        # Yesterday avg
-        yest_rows = [r for r in rows if r["date"] == yesterday]
-        yest_avg = round(sum(r["spread"] for r in yest_rows) / len(yest_rows), 2) if yest_rows else None
-        # 5-day avg
-        all_avg  = round(sum(r["spread"] for r in rows) / len(rows), 2) if rows else None
-        # Yesterday worst hour (most negative = RT spiked above DA)
-        worst = min(yest_rows, key=lambda r: r["spread"]) if yest_rows else None
-        best  = max(yest_rows, key=lambda r: r["spread"]) if yest_rows else None
-        yest_str  = f"${yest_avg:+.2f}/MW" if yest_avg is not None else "N/A"
-        all_str   = f"${all_avg:+.2f}/MW" if all_avg  is not None else "N/A"
-        worst_str = f"HE{worst['he']:02d} ${worst['spread']:+.2f}" if worst else "N/A"
-        best_str  = f"HE{best['he']:02d}  ${best['spread']:+.2f}" if best  else "N/A"
-        lines.append(f"  {at}: yesterday avg {yest_str} | 5-day avg {all_str} | best hour {best_str} | worst hour {worst_str}")
+
+        # Restrict to last 3 days only
+        rows3 = [r for r in all_rows if r["date"] in last3]
+        if not rows3:
+            continue
+
+        avg3  = round(sum(r["spread"] for r in rows3) / len(rows3), 2)
+        best  = max(rows3, key=lambda r: r["spread"])
+        worst = min(rows3, key=lambda r: r["spread"])
+
+        # Per-day average trend (oldest to most recent)
+        day_avgs = []
+        for d in sorted(last3):
+            day_rows = [r for r in rows3 if r["date"] == d]
+            if day_rows:
+                avg = round(sum(r["spread"] for r in day_rows) / len(day_rows), 2)
+                day_avgs.append(f"{d[5:]}: ${avg:+.2f}")
+        trend = " → ".join(day_avgs)
+
+        # Top 3 hours by average spread across the 3-day window
+        hour_avgs = {}
+        for r in rows3:
+            hour_avgs.setdefault(r["he"], []).append(r["spread"])
+        top_hours = sorted(
+            [(he, round(sum(v) / len(v), 2)) for he, v in hour_avgs.items()],
+            key=lambda x: x[1], reverse=True
+        )[:3]
+        top_str = " | ".join(f"HE{he:02d} ${avg:+.2f}" for he, avg in top_hours)
+
+        lines.append(
+            f"  {at}: 3-day avg ${avg3:+.2f}/MW | daily trend: {trend}\n"
+            f"    best 3 hours (3-day avg): {top_str}\n"
+            f"    peak spread: HE{best['he']:02d} ${best['spread']:+.2f} ({best['date'][5:]})"
+            f" | worst: HE{worst['he']:02d} ${worst['spread']:+.2f} ({worst['date'][5:]})"
+        )
+
     return "\n".join(lines) if lines else "  No AS spread data available."
 
+
+# ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 
 def build_ai_prompt_morning(data, history):
     """Build the prompt for the morning AI analysis."""
@@ -1421,7 +1445,7 @@ MODO ENERGY CUSTOM INDICES:
 ASSET AVAILABILITY & OUTAGES (PowerTools):
 {_fmt_asset_status(data)}
 
-ANCILLARY SERVICES DA−RT SPREADS (ERCOT, 5-day lookback, $/MW):
+ANCILLARY SERVICES DA-RT SPREADS — LAST 3 DAYS ($/MW):
 {_fmt_as_prices(data)}
 ---
 
@@ -1430,7 +1454,12 @@ Please provide:
 2. CONSTRAINT ANALYSIS: Which constraints mattered most and their impact on HEN nodes by shift factor
 3. WEATHER & LOAD OUTLOOK: What the 15-day forecast means for ERCOT pricing and HEN dispatch over the next 2 weeks
 4. MODO INDEX CONTEXT: How HEN's custom indices performed relative to prior day; what the market breakdown reveals
-5. AS MARKET ANALYSIS: Summarize yesterday's DA−RT AS spreads for each service type — which were positive (DA premium captured), which were negative (RT exceeded DA), and what this implies for HEN's DA offer strategy for REGUP, REGDN, RRS, NSPIN, and ECRS
+5. AS MARKET ANALYSIS (last 3 days only): Based on the 3-day trailing window of DA-RT spreads:
+   - Which AS service types have shown the most consistent DA premium (positive spread) over the last 3 days
+   - Which specific hours of the day have seen the largest and most repeatable spread opportunities
+   - Any service types where RT repeatedly exceeded DA (negative spread) — flag as DA offer risk
+   - The single best AS opportunity for HEN to prioritize in tomorrow's DA offer strategy based on this 3-day pattern
+   Keep this section tight and commercially actionable — 4-5 sentences, specific dollar values and hour-endings where possible.
 6. ASSET AVAILABILITY: Any outage impacts on the fleet and operational risk flags
 7. FORWARD OPPORTUNITIES: Top 3 specific actionable opportunities in the next 7-14 days based on all available data
 8. RISK FLAGS: Any structural concerns worth escalating to the trading desk
