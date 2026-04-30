@@ -1084,9 +1084,10 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
         print("  !! RT AS endpoint returned 0 rows -- will show DA-only data.")
 
     # Parse RT: detect long vs wide format
-    if rt_rows:
+     if rt_rows:
         sample = rt_rows[0] if rt_rows else {}
-        if "ancillaryType" in sample or "AncillaryType" in sample:
+        if ("ancillaryType" in sample or "AncillaryType" in sample
+                or "ASType" in sample or "asType" in sample):
             rt = _parse_long_format(rt_rows)
             print("    RT parsed as long format")
         else:
