@@ -914,29 +914,15 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
         "Authorization":             f"Bearer {token}",
         "Ocp-Apim-Subscription-Key": subscription_key,
     }
-
-    AS_ALIASES = {
-        "REGUP": ["REGUP", "regUp", "regup", "RegUp", "reg_up",
-                  "RegulationUp", "regulationUp", "Reg_Up"],
-        "REGDN": ["REGDN", "regDn", "regdn", "RegDn", "reg_dn",
-                  "RegulationDown", "regulationDown", "REGDOWN", "regDown", "Reg_Down"],
-        "RRS":   ["RRS",   "rrs",   "Rrs",   "responsiveReserve",
-                  "ResponsiveReserve", "responsive_reserve"],
-        "NSPIN": ["NSPIN", "nonSpin", "nonspin", "NonSpin", "non_spin",
-                  "NONSPIN", "nonSpinningReserve", "NonSpinningReserve"],
-        "ECRS":  ["ECRS",  "ecrs",   "Ecrs",  "ERCRS",  "ercrs"],
-    }
     AS_TYPES = ["REGUP", "REGDN", "RRS", "NSPIN", "ECRS"]
 
-    def _as_value(row, canonical):
-        for alias in AS_ALIASES[canonical]:
-            v = row.get(alias)
-            if v is not None:
-                try:
-                    return round(float(v), 2)
-                except (TypeError, ValueError):
-                    pass
-        return None
+    AS_TYPE_MAP = {
+        "REGUP": "REGUP", "REG-UP": "REGUP", "REGULATION_UP": "REGUP",
+        "REGDN": "REGDN", "REG-DN": "REGDN", "REG-DOWN": "REGDN", "REGULATION_DOWN": "REGDN",
+        "RRS":   "RRS",   "RESPONSIVE_RESERVE": "RRS",
+        "NSPIN": "NSPIN", "NON-SPIN": "NSPIN", "NONSPIN": "NSPIN", "NON_SPIN": "NSPIN",
+        "ECRS":  "ECRS",  "ERCRS": "ECRS",
+    }
 
     def _normalize_field(name):
         if isinstance(name, dict):
@@ -955,18 +941,17 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
                 fields_raw = raw.get("fields") or fields_raw
                 raw        = raw.get("rows") or raw.get("data") or []
             if not raw:
-                print(f"    [{label}] 0 rows — top-level keys: {list(body.keys())}")
+                print(f"    [{label}] 0 rows — keys: {list(body.keys())}")
                 return []
             fields = [_normalize_field(f) for f in fields_raw]
-            print(f"    [{label}] {len(raw)} rows · fields ({len(fields)}): {fields[:20]}")
+            print(f"    [{label}] {len(raw)} rows · fields: {fields[:20]}")
             if raw and isinstance(raw[0], list):
                 if not fields:
-                    print(f"    [{label}] WARN: list-of-lists but no fields array")
+                    print(f"    [{label}] WARN: list-of-lists but no fields")
                     return []
                 raw = [dict(zip(fields, row)) for row in raw]
             if raw:
-                sample = raw[0]
-                print(f"    [{label}] sample row: { {k: sample[k] for k in list(sample.keys())[:10]} }")
+                print(f"    [{label}] sample: { {k: raw[0][k] for k in list(raw[0].keys())[:8]} }")
             return raw
         except Exception as e:
             print(f"    WARN [{label}] {path} — {e}")
@@ -978,9 +963,9 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
             row.get("delivery_date") or row.get("date") or ""
         )[:10]
         he_raw = (
-            row.get("hourEnding")  or row.get("HourEnding")  or
-            row.get("hour_ending") or row.get("Hour")        or
-            row.get("hour")        or row.get("settlementInterval") or "0"
+            row.get("hourEnding") or row.get("HourEnding") or
+            row.get("hour_ending") or row.get("Hour") or
+            row.get("hour") or row.get("settlementInterval") or "0"
         )
         try:
             he_int = int(str(he_raw).split(":")[0])
@@ -988,42 +973,82 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
             he_int = 0
         return dt, he_int
 
+    # ── DA: long format — one row per (date, hour, ancillaryType) ─────────────
+    # Fields confirmed from logs: deliveryDate, hourEnding, ancillaryType, MCPC, DSTFlag
     print(f"  Pulling AS DA clearing prices ({start_str} → {end_str})...")
     da_rows = _get("np4-188-cd/dam_clear_price_for_cap",
                    {"deliveryDateFrom": start_str, "deliveryDateTo": end_str},
                    label="DA-AS")
 
-    print("  Pulling AS RT clearing prices (weekly file — will post-filter)...")
-    rt_rows = _get("np6-795-er/rtm_clrng_prc_cap_hr",
-                   {"deliveryDateFrom": start_str, "deliveryDateTo": end_str},
-                   label="RT-AS-hourly")
-
-    if not rt_rows:
-        print("  Fallback → np6-796-er/rtm_clrng_prc_cap_hsi (15-min)...")
-        rt_rows = _get("np6-796-er/rtm_clrng_prc_cap_hsi",
-                       {"deliveryDateFrom": start_str, "deliveryDateTo": end_str},
-                       label="RT-AS-15min")
-
+    # Pivot long → wide: da[date][he][AS_TYPE] = price
     da = {}
     for row in da_rows:
         dt, he = _parse_date_he(row)
         if not dt or not (start_str <= dt <= end_str):
             continue
-        da.setdefault(dt, {}).setdefault(he, {})
-        for at in AS_TYPES:
-            v = _as_value(row, at)
-            if v is not None:
-                da[dt][he][at] = v
+        raw_type  = str(
+            row.get("ancillaryType") or row.get("AncillaryType") or
+            row.get("asType") or row.get("type") or ""
+        ).strip().upper()
+        canonical = AS_TYPE_MAP.get(raw_type)
+        if not canonical:
+            continue
+        price = row.get("MCPC") or row.get("mcpc") or row.get("price") or row.get("Price")
+        if price is None:
+            continue
+        try:
+            price = round(float(price), 2)
+        except (TypeError, ValueError):
+            continue
+        da.setdefault(dt, {}).setdefault(he, {})[canonical] = price
 
+    # ── RT: try multiple endpoints ────────────────────────────────────────────
+    RT_ENDPOINTS = [
+        "np6-787-er/rtm_clrng_prc_mcpc",
+        "np6-788-er/rtm_clrng_prc_mcpc_hsi",
+        "np6-323-cd/rt_hb_lz_clrng_prc",
+    ]
+    rt_rows = []
+    for ep in RT_ENDPOINTS:
+        print(f"  Trying RT endpoint: {ep}...")
+        rt_rows = _get(ep,
+                       {"deliveryDateFrom": start_str, "deliveryDateTo": end_str},
+                       label="RT-AS")
+        if rt_rows:
+            print(f"    RT endpoint found: {ep}")
+            break
+
+    if not rt_rows:
+        print("  !! WARN: All RT AS endpoints 404 — DA-only data, spreads will be null.")
+
+    # Parse RT — same long format expected; bucket intervals → hourly avg
     rt_buckets = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for row in rt_rows:
         dt, he = _parse_date_he(row)
         if not dt or not (start_str <= dt <= end_str):
             continue
-        for at in AS_TYPES:
-            v = _as_value(row, at)
-            if v is not None:
-                rt_buckets[dt][he][at].append(v)
+        raw_type  = str(
+            row.get("ancillaryType") or row.get("AncillaryType") or
+            row.get("asType") or row.get("type") or ""
+        ).strip().upper()
+        canonical = AS_TYPE_MAP.get(raw_type)
+        if not canonical:
+            # fallback: try wide-format columns
+            for at in AS_TYPES:
+                v = row.get(at) or row.get(at.lower())
+                if v is not None:
+                    try:
+                        rt_buckets[dt][he][at].append(round(float(v), 2))
+                    except (TypeError, ValueError):
+                        pass
+            continue
+        price = row.get("MCPC") or row.get("mcpc") or row.get("price") or row.get("Price")
+        if price is None:
+            continue
+        try:
+            rt_buckets[dt][he][canonical].append(round(float(price), 2))
+        except (TypeError, ValueError):
+            continue
 
     rt = {
         dt: {
@@ -1033,26 +1058,18 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
         for dt, hours in rt_buckets.items()
     }
 
+    # ── Diagnostics ───────────────────────────────────────────────────────────
     da_dates = sorted(da.keys())
     rt_dates = sorted(rt.keys())
     print(f"    DA parsed: {len(da_dates)} dates, {sum(len(v) for v in da.values())} hour-slots")
     print(f"    RT parsed: {len(rt_dates)} dates, {sum(len(v) for v in rt.values())} hour-slots")
-
     if da_dates:
         sample_date = da_dates[-1]
         sample_he   = next(iter(da[sample_date]), None)
         if sample_he is not None:
-            sample_vals = da[sample_date][sample_he]
-            print(f"    DA value check ({sample_date} HE{sample_he}): {sample_vals}")
-            if not sample_vals:
-                print("    !! WARN: DA rows parsed but no AS values extracted.")
-                print("    !! Check the 'sample row' log above for actual field names.")
-    else:
-        print("    !! WARN: No DA rows matched the date filter.")
+            print(f"    DA value check ({sample_date} HE{sample_he}): {da[sample_date][sample_he]}")
 
-    if not rt_dates:
-        print("    !! WARN: No RT rows parsed — spreads will be null (DA-only).")
-
+    # ── Build output series ───────────────────────────────────────────────────
     all_dates = sorted(set(list(da.keys()) + list(rt.keys())))
     result    = {at: [] for at in AS_TYPES}
 
