@@ -1073,7 +1073,7 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
     # RT SCED clears every 5 minutes — use SCEDTimestamp params (not deliveryDate)
     print(f"  Pulling AS RT clearing prices (SCED 5-min, {start_str} -> {end_str})...")
     rt_rows = _get(
-        "np6-86-cd/rt_clrng_prc_cap_sced",
+       "np6-332-cd/rt_clear_price_cap_sced",   # confirmed from ERCOT API Explorer
         {
             "SCEDTimestampFrom": start_str + "T00:00:00",
             "SCEDTimestampTo":   end_str   + "T23:59:59",
