@@ -1007,9 +1007,9 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
             dt, he = _parse_date_he(row)
             if not dt or not (start_str <= dt <= end_str):
                 continue
-            raw_type = str(
+             raw_type = str(
                 row.get("ancillaryType") or row.get("AncillaryType") or
-                row.get("asType") or row.get("type") or ""
+                row.get("ASType") or row.get("asType") or row.get("type") or ""
             ).strip().upper()
             canonical = AS_TYPE_MAP.get(raw_type)
             if not canonical:
