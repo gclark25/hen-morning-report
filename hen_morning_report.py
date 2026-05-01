@@ -152,16 +152,26 @@ def ercot_get(path, token, sub_key, params=None):
     p = {"size": 1000}
     if params:
         p.update(params)
-    r = requests.get(f"{BASE_URL}/{path}", headers=headers, params=p, timeout=20)
-    r.raise_for_status()
-    body = r.json()
-    if isinstance(body, list):
-        return body
-    if "data" in body:
-        return body["data"]
-    for v in body.values():
-        if isinstance(v, list):
-            return v
+    # Retry once on transient errors (timeout, 500/502/503)
+    for attempt in range(2):
+        try:
+            r = requests.get(f"{BASE_URL}/{path}", headers=headers, params=p, timeout=45)
+            r.raise_for_status()
+            body = r.json()
+            if isinstance(body, list):
+                return body
+            if "data" in body:
+                return body["data"]
+            for v in body.values():
+                if isinstance(v, list):
+                    return v
+            return []
+        except Exception as e:
+            if attempt == 0:
+                print(f"    WARN: {path} attempt 1 failed ({e}) — retrying in 10s...")
+                time.sleep(10)
+            else:
+                raise
     return []
 
 def safe_float(val):
@@ -713,7 +723,9 @@ def build_report(data):
     best_dart   = max(dart, key=dart.get) if dart else None
     worst_dart  = min(dart, key=dart.get) if dart else None
 
-    shared_days = sorted(set(load) & set(wind) & set(solar))[-7:]
+    # Use gross_load as base — fill wind/solar with 0 if missing for that date
+    all_fund_days = sorted(set(load.keys()))[-7:]
+    shared_days   = all_fund_days
 
     fund_rows = ""
     for d in shared_days:
