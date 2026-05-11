@@ -1033,13 +1033,103 @@
         "da_avg": 14.19,
         "region": "Premium"
       },
-      "JDKNS_RN": {
-        "dart": 10.85,
-        "intraday": 0,
-        "rt_avg": 7.84,
+      "GOMZ_RN": {
+        "dart": 12.63,
+        "intraday": 1.67,
+        "rt_avg": 5.99,
         "rt_max": 35.86,
-        "rt_min": -1.32,
-        "da_avg": 18.69,
+        "rt_min": -6.36,
+        "da_avg": 18.62,
+        "region": "West Texas"
+      },
+      "POTEETS_RN": {
+        "dart": 6.46,
+        "intraday": 0,
+        "rt_avg": 25.53,
+        "rt_max": 40.93,
+        "rt_min": 15.98,
+        "da_avg": 31.99,
+        "region": "Coastal"
+      },
+      "TYNAN_RN": {
+        "dart": 7.87,
+        "intraday": 0,
+        "rt_avg": 24.16,
+        "rt_max": 40.17,
+        "rt_min": 14.53,
+        "da_avg": 32.03,
+        "region": "Coastal"
+      },
+      "FAULKNER_RN": {
+        "dart": 11.74,
+        "intraday": 1.49,
+        "rt_avg": 7.09,
+        "rt_max": 35.86,
+        "rt_min": -2.56,
+        "da_avg": 18.83,
+        "region": "West Texas"
+      },
+      "CISC_RN": {
+        "dart": 3.44,
+        "intraday": 1.27,
+        "rt_avg": 12.65,
+        "rt_max": 35.86,
+        "rt_min": 2.83,
+        "da_avg": 16.09,
+        "region": "North Texas"
+      },
+      "RUSSEKST_RN": {
+        "dart": -5.16,
+        "intraday": 5.39,
+        "rt_avg": 28.64,
+        "rt_max": 185.39,
+        "rt_min": -9.45,
+        "da_avg": 23.48,
+        "region": "Premium"
+      },
+      "COYOTSPR_RN": {
+        "dart": 11.74,
+        "intraday": 1.49,
+        "rt_avg": 7.09,
+        "rt_max": 35.86,
+        "rt_min": -2.56,
+        "da_avg": 18.83,
+        "region": "West Texas"
+      },
+      "FALFUR_RN": {
+        "dart": 8.15,
+        "intraday": 0,
+        "rt_avg": 24.06,
+        "rt_max": 40.45,
+        "rt_min": 13.51,
+        "da_avg": 32.21,
+        "region": "Coastal"
+      },
+      "MAINLAND_RN": {
+        "dart": 0.46,
+        "intraday": 1.17,
+        "rt_avg": 26.31,
+        "rt_max": 50.09,
+        "rt_min": 15.74,
+        "da_avg": 26.77,
+        "region": "Coastal"
+      },
+      "WLTC_ESR_RN": {
+        "dart": 8.92,
+        "intraday": 0,
+        "rt_avg": 22.67,
+        "rt_max": 39.68,
+        "rt_min": 12.34,
+        "da_avg": 31.59,
+        "region": "Coastal"
+      },
+      "TOYAH_RN": {
+        "dart": 12.54,
+        "intraday": 1.56,
+        "rt_avg": 6.37,
+        "rt_max": 35.86,
+        "rt_min": -4.46,
+        "da_avg": 18.91,
         "region": "West Texas"
       },
       "HOLCOMB_RN1": {
@@ -1060,6 +1150,60 @@
         "da_avg": 9.68,
         "region": "Premium"
       },
+      "CEDRVALE_RN": {
+        "dart": 11.7,
+        "intraday": 1.48,
+        "rt_avg": 7.14,
+        "rt_max": 35.86,
+        "rt_min": -2.47,
+        "da_avg": 18.84,
+        "region": "West Texas"
+      },
+      "LFSTH_RN": {
+        "dart": 1.81,
+        "intraday": 0.91,
+        "rt_avg": 19.94,
+        "rt_max": 35.86,
+        "rt_min": 9.97,
+        "da_avg": 21.75,
+        "region": "North Texas"
+      },
+      "SBEAN_BESS": {
+        "dart": 11.45,
+        "intraday": 0,
+        "rt_avg": 7.35,
+        "rt_max": 35.86,
+        "rt_min": -1.91,
+        "da_avg": 18.8,
+        "region": "West Texas"
+      },
+      "RTLSNAKE_BT": {
+        "dart": 11.47,
+        "intraday": 0,
+        "rt_avg": 7.31,
+        "rt_max": 35.86,
+        "rt_min": -2.02,
+        "da_avg": 18.78,
+        "region": "West Texas"
+      },
+      "GRDNE_ESR_RN": {
+        "dart": 8.59,
+        "intraday": 0,
+        "rt_avg": 8.54,
+        "rt_max": 35.86,
+        "rt_min": -1.31,
+        "da_avg": 17.13,
+        "region": "West Texas"
+      },
+      "LONESTAR_RN": {
+        "dart": 11.39,
+        "intraday": 0,
+        "rt_avg": 7.36,
+        "rt_max": 35.86,
+        "rt_min": -1.93,
+        "da_avg": 18.75,
+        "region": "West Texas"
+      },
       "SANDLAKE_RN": {
         "dart": 11.69,
         "intraday": 1.48,
@@ -1069,6 +1213,60 @@
         "da_avg": 18.84,
         "region": "West Texas"
       },
+      "PAULN_RN": {
+        "dart": 1.7,
+        "intraday": 0.91,
+        "rt_avg": 19.96,
+        "rt_max": 35.86,
+        "rt_min": 9.99,
+        "da_avg": 21.66,
+        "region": "North Texas"
+      },
+      "PAVLOV_BT_RN": {
+        "dart": 11.55,
+        "intraday": 0.97,
+        "rt_avg": 23.88,
+        "rt_max": 38.24,
+        "rt_min": 11.55,
+        "da_avg": 35.43,
+        "region": "Coastal"
+      },
+      "OLNEYTN_RN": {
+        "dart": 6.09,
+        "intraday": 3.39,
+        "rt_avg": 17.86,
+        "rt_max": 95.27,
+        "rt_min": 2.02,
+        "da_avg": 23.95,
+        "region": "North Texas"
+      },
+      "DIBOL_RN": {
+        "dart": 1.81,
+        "intraday": 0.91,
+        "rt_avg": 19.94,
+        "rt_max": 35.86,
+        "rt_min": 9.97,
+        "da_avg": 21.75,
+        "region": "North Texas"
+      },
+      "JDKNS_RN": {
+        "dart": 10.85,
+        "intraday": 0,
+        "rt_avg": 7.84,
+        "rt_max": 35.86,
+        "rt_min": -1.32,
+        "da_avg": 18.69,
+        "region": "West Texas"
+      },
+      "MNWL_BESS_RN": {
+        "dart": 2.8,
+        "intraday": 1.04,
+        "rt_avg": 16.73,
+        "rt_max": 35.86,
+        "rt_min": 8.75,
+        "da_avg": 19.53,
+        "region": "North Texas"
+      },
       "MV_VALV4_RN": {
         "dart": 8.37,
         "intraday": 0,
@@ -1077,6 +1275,24 @@
         "rt_min": 11.38,
         "da_avg": 32.16,
         "region": "Coastal"
+      },
+      "SADLBACK_RN": {
+        "dart": 11.88,
+        "intraday": 1.5,
+        "rt_avg": 6.96,
+        "rt_max": 35.86,
+        "rt_min": -2.86,
+        "da_avg": 18.84,
+        "region": "West Texas"
+      },
+      "FRMRSVLW_RN": {
+        "dart": 2.26,
+        "intraday": 1.15,
+        "rt_avg": 18.09,
+        "rt_max": 35.86,
+        "rt_min": 3.06,
+        "da_avg": 20.35,
+        "region": "North Texas"
       },
       "CATARINA_B1": {
         "dart": 6.51,
@@ -1095,222 +1311,6 @@
         "rt_min": 13.8,
         "da_avg": 33.63,
         "region": "Premium"
-      },
-      "COYOTSPR_RN": {
-        "dart": 11.74,
-        "intraday": 1.49,
-        "rt_avg": 7.09,
-        "rt_max": 35.86,
-        "rt_min": -2.56,
-        "da_avg": 18.83,
-        "region": "West Texas"
-      },
-      "FAULKNER_RN": {
-        "dart": 11.74,
-        "intraday": 1.49,
-        "rt_avg": 7.09,
-        "rt_max": 35.86,
-        "rt_min": -2.56,
-        "da_avg": 18.83,
-        "region": "West Texas"
-      },
-      "CEDRVALE_RN": {
-        "dart": 11.7,
-        "intraday": 1.48,
-        "rt_avg": 7.14,
-        "rt_max": 35.86,
-        "rt_min": -2.47,
-        "da_avg": 18.84,
-        "region": "West Texas"
-      },
-      "GOMZ_RN": {
-        "dart": 12.63,
-        "intraday": 1.67,
-        "rt_avg": 5.99,
-        "rt_max": 35.86,
-        "rt_min": -6.36,
-        "da_avg": 18.62,
-        "region": "West Texas"
-      },
-      "FALFUR_RN": {
-        "dart": 8.15,
-        "intraday": 0,
-        "rt_avg": 24.06,
-        "rt_max": 40.45,
-        "rt_min": 13.51,
-        "da_avg": 32.21,
-        "region": "Coastal"
-      },
-      "DIBOL_RN": {
-        "dart": 1.81,
-        "intraday": 0.91,
-        "rt_avg": 19.94,
-        "rt_max": 35.86,
-        "rt_min": 9.97,
-        "da_avg": 21.75,
-        "region": "North Texas"
-      },
-      "MAINLAND_RN": {
-        "dart": 0.46,
-        "intraday": 1.17,
-        "rt_avg": 26.31,
-        "rt_max": 50.09,
-        "rt_min": 15.74,
-        "da_avg": 26.77,
-        "region": "Coastal"
-      },
-      "WLTC_ESR_RN": {
-        "dart": 8.92,
-        "intraday": 0,
-        "rt_avg": 22.67,
-        "rt_max": 39.68,
-        "rt_min": 12.34,
-        "da_avg": 31.59,
-        "region": "Coastal"
-      },
-      "RTLSNAKE_BT": {
-        "dart": 11.47,
-        "intraday": 0,
-        "rt_avg": 7.31,
-        "rt_max": 35.86,
-        "rt_min": -2.02,
-        "da_avg": 18.78,
-        "region": "West Texas"
-      },
-      "TYNAN_RN": {
-        "dart": 7.87,
-        "intraday": 0,
-        "rt_avg": 24.16,
-        "rt_max": 40.17,
-        "rt_min": 14.53,
-        "da_avg": 32.03,
-        "region": "Coastal"
-      },
-      "PAVLOV_BT_RN": {
-        "dart": 11.55,
-        "intraday": 0.97,
-        "rt_avg": 23.88,
-        "rt_max": 38.24,
-        "rt_min": 11.55,
-        "da_avg": 35.43,
-        "region": "Coastal"
-      },
-      "CISC_RN": {
-        "dart": 3.44,
-        "intraday": 1.27,
-        "rt_avg": 12.65,
-        "rt_max": 35.86,
-        "rt_min": 2.83,
-        "da_avg": 16.09,
-        "region": "North Texas"
-      },
-      "RUSSEKST_RN": {
-        "dart": -5.16,
-        "intraday": 5.39,
-        "rt_avg": 28.64,
-        "rt_max": 185.39,
-        "rt_min": -9.45,
-        "da_avg": 23.48,
-        "region": "Premium"
-      },
-      "LONESTAR_RN": {
-        "dart": 11.39,
-        "intraday": 0,
-        "rt_avg": 7.36,
-        "rt_max": 35.86,
-        "rt_min": -1.93,
-        "da_avg": 18.75,
-        "region": "West Texas"
-      },
-      "SBEAN_BESS": {
-        "dart": 11.45,
-        "intraday": 0,
-        "rt_avg": 7.35,
-        "rt_max": 35.86,
-        "rt_min": -1.91,
-        "da_avg": 18.8,
-        "region": "West Texas"
-      },
-      "SADLBACK_RN": {
-        "dart": 11.88,
-        "intraday": 1.5,
-        "rt_avg": 6.96,
-        "rt_max": 35.86,
-        "rt_min": -2.86,
-        "da_avg": 18.84,
-        "region": "West Texas"
-      },
-      "LFSTH_RN": {
-        "dart": 1.81,
-        "intraday": 0.91,
-        "rt_avg": 19.94,
-        "rt_max": 35.86,
-        "rt_min": 9.97,
-        "da_avg": 21.75,
-        "region": "North Texas"
-      },
-      "FRMRSVLW_RN": {
-        "dart": 2.26,
-        "intraday": 1.15,
-        "rt_avg": 18.09,
-        "rt_max": 35.86,
-        "rt_min": 3.06,
-        "da_avg": 20.35,
-        "region": "North Texas"
-      },
-      "MNWL_BESS_RN": {
-        "dart": 2.8,
-        "intraday": 1.04,
-        "rt_avg": 16.73,
-        "rt_max": 35.86,
-        "rt_min": 8.75,
-        "da_avg": 19.53,
-        "region": "North Texas"
-      },
-      "TOYAH_RN": {
-        "dart": 12.54,
-        "intraday": 1.56,
-        "rt_avg": 6.37,
-        "rt_max": 35.86,
-        "rt_min": -4.46,
-        "da_avg": 18.91,
-        "region": "West Texas"
-      },
-      "OLNEYTN_RN": {
-        "dart": 6.09,
-        "intraday": 3.39,
-        "rt_avg": 17.86,
-        "rt_max": 95.27,
-        "rt_min": 2.02,
-        "da_avg": 23.95,
-        "region": "North Texas"
-      },
-      "GRDNE_ESR_RN": {
-        "dart": 8.59,
-        "intraday": 0,
-        "rt_avg": 8.54,
-        "rt_max": 35.86,
-        "rt_min": -1.31,
-        "da_avg": 17.13,
-        "region": "West Texas"
-      },
-      "POTEETS_RN": {
-        "dart": 6.46,
-        "intraday": 0,
-        "rt_avg": 25.53,
-        "rt_max": 40.93,
-        "rt_min": 15.98,
-        "da_avg": 31.99,
-        "region": "Coastal"
-      },
-      "PAULN_RN": {
-        "dart": 1.7,
-        "intraday": 0.91,
-        "rt_avg": 19.96,
-        "rt_max": 35.86,
-        "rt_min": 9.99,
-        "da_avg": 21.66,
-        "region": "North Texas"
       }
     },
     "regional": {
