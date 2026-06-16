@@ -136,8 +136,7 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
         page += 1
 
     print(f"    {len(sced_rows)} SCED constraint rows fetched")
-    if sced_rows:
-        print(f"    DEBUG constraint sample row: {sced_rows[0]}")
+
 
     # ── Parse rows into per-constraint, per-hour buckets ─────────────────────
     # Each row: SCEDTimestamp, constraintName, contingencyName,
@@ -169,16 +168,21 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
             from_kv  = safe_float(row.get("fromStationkVFrom", 0) or row.get("fromStationkV", 0))
             to_kv    = safe_float(row.get("toStationkVFrom",   0) or row.get("toStationkV",   0))
             viol_mw  = safe_float(row.get("violatedMW",        0))
-        elif isinstance(row, list) and len(row) >= 4:
-            ts       = str(row[0]) if row else ""
-            c_name   = str(row[1]).strip() if len(row) > 1 else ""
-            cont     = str(row[2]).strip() if len(row) > 2 else ""
-            shadow   = safe_float(row[3])  if len(row) > 3 else 0
-            from_st  = str(row[8]).strip() if len(row) > 8 else ""
-            to_st    = str(row[9]).strip() if len(row) > 9 else ""
-            from_kv  = safe_float(row[10]) if len(row) > 10 else 0
-            to_kv    = safe_float(row[11]) if len(row) > 11 else 0
-            viol_mw  = safe_float(row[7])  if len(row) > 7 else 0
+        elif isinstance(row, list) and len(row) >= 6:
+            # Positional format confirmed from API response:
+            # [0] SCEDTimestamp, [1] repeatedHourFlag, [2] constraintID,
+            # [3] constraintName, [4] contingencyName, [5] shadowPrice,
+            # [6] maxShadowPrice, [7] limit, [8] value, [9] violatedMW,
+            # [10] fromStation, [11] toStation, [12] fromStationkV, [13] toStationkV
+            ts       = str(row[0])
+            c_name   = str(row[3]).strip()
+            cont     = str(row[4]).strip() if len(row) > 4 else ""
+            shadow   = safe_float(row[5])  if len(row) > 5 else 0
+            from_st  = str(row[10]).strip() if len(row) > 10 else ""
+            to_st    = str(row[11]).strip() if len(row) > 11 else ""
+            from_kv  = safe_float(row[12]) if len(row) > 12 else 0
+            to_kv    = safe_float(row[13]) if len(row) > 13 else 0
+            viol_mw  = safe_float(row[9])  if len(row) > 9  else 0
         else:
             continue
 
