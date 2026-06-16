@@ -1049,6 +1049,7 @@ def write_dashboard_json(data):
         "asset_status":       data.get("asset_status", {}),
         "ercot_forecasts":    data.get("ercot_forecasts", {}),
         "as_prices":          data.get("as_prices", {}),
+        "drew_curve":         data.get("drew_curve", {}),
     }
     with open("latest.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -1237,20 +1238,36 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
 # ── AI PROMPT HELPERS ─────────────────────────────────────────────────────────
 
 def _fmt_constraints(data):
+    """Format SCED shadow prices and binding constraints for the AI prompt."""
     constraints = data.get("constraints", [])
     if not constraints:
-        return "  Not available"
+        return "  Not available (SCED constraint data not yet pulled)"
     lines = []
-    for c in constraints:
-        sf_str = ", ".join(
-            f"{n}:{v:+.2f}" for n, v in list(c.get("shift_factors", {}).items())[:5]
-        )
+    for c in constraints[:5]:  # top 5 by impact score
+        # Hourly peak — find worst hour
+        hourly = c.get("hourly", {})
+        if hourly:
+            peak_he  = max(hourly, key=lambda h: hourly[h]["avg_shadow"])
+            peak_val = hourly[peak_he]["avg_shadow"]
+            peak_str = f"peak HE{peak_he:02d} ${peak_val:.2f}/MWh"
+        else:
+            peak_str = "no hourly data"
+
+        # Node exposure summary
+        exposure = c.get("node_exposure", {})
+        exposed_nodes = [n for n, s in exposure.items() if s > 0]
+        exp_str = ", ".join(exposed_nodes[:4]) if exposed_nodes else "none identified"
+
         lines.append(
-            f"  {c['name']}: ${c['avg_shadow']:.2f}/MWh shadow · "
-            f"{c['hours_binding']}h binding · {c['flow_direction']} · "
-            f"shift factors: {sf_str}"
+            f"  {c['name']} ({c.get('flow_direction','—')}) · "
+            f"avg shadow ${c['avg_shadow']:.2f}/MWh · "
+            f"peak ${c['peak_shadow']:.2f}/MWh · "
+            f"{c['hours_binding']}h binding · {peak_str}\n"
+            f"    from: {c.get('from_station','?')} → to: {c.get('to_station','?')} · "
+            f"avg violated {c.get('avg_violated_mw',0):.0f} MW · "
+            f"HEN nodes exposed: {exp_str}"
         )
-    return "\n".join(lines)
+    return "\n".join(lines) if lines else "  No binding constraints found yesterday"
 
 
 def _fmt_weather(data):
@@ -1386,6 +1403,21 @@ def _fmt_as_prices(data):
 
 # ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 
+def _fmt_drew_curve(data):
+    """Format Drew's forward curve commentary for the AI prompt."""
+    dc = data.get("drew_curve", {})
+    if not dc or not dc.get("available"):
+        err = dc.get("error", "File not committed yet") if dc else "Not available"
+        return f"  Not available ({err})"
+    lines = []
+    if dc.get("as_of"):
+        lines.append(f"  As of: {dc['as_of']}")
+    if dc.get("commentary"):
+        lines.append(f"  Commentary: {dc['commentary']}")
+    return "\n".join(lines) if lines else "  No commentary extracted"
+
+
+
 def build_ai_prompt_morning(data, history):
     """Build the prompt for the morning AI analysis."""
     tb    = compute_top_bottom(data)
@@ -1459,11 +1491,14 @@ ASSET AVAILABILITY & OUTAGES (PowerTools):
 
 ANCILLARY SERVICES DA-RT SPREADS — LAST 3 DAYS ($/MW):
 {_fmt_as_prices(data)}
+
+DREW PEINE FORWARD CURVE COMMENTARY (today):
+{_fmt_drew_curve(data)}
 ---
 
 Please provide:
 1. PERFORMANCE SUMMARY: Key highlights from yesterday — what drove outperformance or underperformance across the fleet
-2. CONSTRAINT ANALYSIS: Which constraints mattered most and their impact on HEN nodes by shift factor
+2. CONSTRAINT ANALYSIS: Which constraints bound the most hours yesterday and at what shadow price — identify the peak binding hour (HE), the from/to transmission line, flow direction, and which HEN nodes had material exposure. Flag any constraints where the shadow price exceeded $50/MWh and note the revenue implication for exposed nodes (positive or negative based on flow direction).
 3. WEATHER & LOAD OUTLOOK: What the 15-day forecast means for ERCOT pricing and HEN dispatch over the next 2 weeks
 4. MODO INDEX CONTEXT: How HEN's custom indices performed relative to prior day; what the market breakdown reveals
 5. AS MARKET ANALYSIS (last 3 days only): Based on the 3-day trailing window of DA-RT spreads:
@@ -1475,6 +1510,7 @@ Please provide:
 6. ASSET AVAILABILITY: Any outage impacts on the fleet and operational risk flags
 7. FORWARD OPPORTUNITIES: Top 3 specific actionable opportunities in the next 7-14 days based on all available data
 8. RISK FLAGS: Any structural concerns worth escalating to the trading desk
+9. FORWARD CURVE (Drew's analysis, last 1-3 months focus): Based on the daily commentary below, summarize the most commercially relevant near-term moves — which hubs moved most, where summer scarcity pricing stands, gas basis context, and one specific implication for HEN's DA bidding or storage optimization over the next 30 days. If the forward curve file is not available, skip this section. Keep to 3-4 sentences.
 
 Be specific, use numbers, and focus on commercially actionable insights. Keep each section to 3-5 sentences.
 """
