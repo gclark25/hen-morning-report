@@ -1278,60 +1278,6 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
     }
 
 
-# ── DREW FORWARD CURVE ────────────────────────────────────────────────────────
-
-def collect_drew_curve(curve_path="dashboard/drew_curve.html"):
-    """
-    Read Drew Peine's daily ERCOT forward curve HTML file and extract
-    commentary text and metadata for the AI prompt and dashboard.
-
-    The HTML file should be committed to dashboard/drew_curve.html each
-    morning before the workflow runs.
-    """
-    import re
-    import os
-
-    result = {
-        "available":  False,
-        "as_of":      "",
-        "commentary": "",
-        "file_path":  curve_path,
-        "error":      None,
-    }
-
-    if not os.path.exists(curve_path):
-        result["error"] = "File not found: " + curve_path
-        print("  SKIP [Drew Curve] " + result["error"])
-        return result
-
-    try:
-        with open(curve_path, "r", encoding="utf-8", errors="replace") as fh:
-            html = fh.read()
-
-        # Extract as-of date from header span
-        m1 = re.search(r"hdr-asof[^>]*>([^<]+)<", html)
-        if m1:
-            result["as_of"] = m1.group(1).strip()
-
-        # Extract commentary text — find div.commentary and strip tags
-        m2 = re.search(r'class="commentary"[^>]*>(.*?)</div>', html, re.DOTALL | re.IGNORECASE)
-        if not m2:
-            m2 = re.search(r"class='commentary'[^>]*>(.*?)</div>", html, re.DOTALL | re.IGNORECASE)
-        if m2:
-            raw   = m2.group(1)
-            clean = re.sub(r"<[^>]+>", " ", raw)
-            clean = re.sub(r"\s+", " ", clean).strip()
-            result["commentary"] = clean
-
-        result["available"] = True
-        print("  Drew Curve loaded: " + curve_path + " · as-of: " + result["as_of"])
-
-    except Exception as exc:
-        result["error"] = str(exc)
-        print("  WARN [Drew Curve] failed to read: " + str(exc))
-
-    return result
-
 
 def collect_all_integrations(token=None, sub_key=None, asset_nodes=None):
     """
@@ -1373,9 +1319,6 @@ def collect_all_integrations(token=None, sub_key=None, asset_nodes=None):
     except Exception as e:
         print(f"  WARN [AS prices] {e}")
         out["as_prices"] = {"error": str(e)}
-
-    print("\n── Integration 7/7: Drew Forward Curve ──")
-    out["drew_curve"] = collect_drew_curve()
 
     return out
 
