@@ -1049,7 +1049,6 @@ def write_dashboard_json(data):
         "asset_status":       data.get("asset_status", {}),
         "ercot_forecasts":    data.get("ercot_forecasts", {}),
         "as_prices":          data.get("as_prices", {}),
-        "drew_curve":         data.get("drew_curve", {}),
     }
     with open("latest.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -1403,20 +1402,6 @@ def _fmt_as_prices(data):
 
 # ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 
-def _fmt_drew_curve(data):
-    """Format Drew's forward curve commentary for the AI prompt."""
-    dc = data.get("drew_curve", {})
-    if not dc or not dc.get("available"):
-        err = dc.get("error", "File not committed yet") if dc else "Not available"
-        return f"  Not available ({err})"
-    lines = []
-    if dc.get("as_of"):
-        lines.append(f"  As of: {dc['as_of']}")
-    if dc.get("commentary"):
-        lines.append(f"  Commentary: {dc['commentary']}")
-    return "\n".join(lines) if lines else "  No commentary extracted"
-
-
 
 def build_ai_prompt_morning(data, history):
     """Build the prompt for the morning AI analysis."""
@@ -1492,8 +1477,6 @@ ASSET AVAILABILITY & OUTAGES (PowerTools):
 ANCILLARY SERVICES DA-RT SPREADS — LAST 3 DAYS ($/MW):
 {_fmt_as_prices(data)}
 
-DREW PEINE FORWARD CURVE COMMENTARY (today):
-{_fmt_drew_curve(data)}
 ---
 
 Please provide:
@@ -1510,8 +1493,6 @@ Please provide:
 6. ASSET AVAILABILITY: Any outage impacts on the fleet and operational risk flags
 7. FORWARD OPPORTUNITIES: Top 3 specific actionable opportunities in the next 7-14 days based on all available data
 8. RISK FLAGS: Any structural concerns worth escalating to the trading desk
-9. FORWARD CURVE (Drew's analysis, last 1-3 months focus): Based on the daily commentary below, summarize the most commercially relevant near-term moves — which hubs moved most, where summer scarcity pricing stands, gas basis context, and one specific implication for HEN's DA bidding or storage optimization over the next 30 days. If the forward curve file is not available, skip this section. Keep to 3-4 sentences.
-
 Be specific, use numbers, and focus on commercially actionable insights. Keep each section to 3-5 sentences.
 """
     return prompt
