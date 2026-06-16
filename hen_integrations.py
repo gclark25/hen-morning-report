@@ -236,49 +236,182 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
     # or if the node is in a region that commonly correlates with that line.
     # Exposure is flagged as positive/negative based on flow direction inference.
 
+    # ── Real shift factor lookup tables (from Congestion_Proj_4_27_25-5_05_26.xlsx) ──
+    # Exact match by full reported constraint name
+    CONSTRAINT_SF = {
+        'ABNTHWST 138KV ABNTHW_SERDEV1_1': {'CISC_RN': 0.13947},
+        'ARGYL-LWSVH 138KV 587__A': {'DIBOL_RN': 0.01469},
+        'ASHERTON-CATARINA 138KV ASHERT_CATARI1_1': {'CATARINA_B1': 0.76982, 'HOLCOMB_RN1': 0.17245, 'HAMI_BESS_RN': -0.09, 'FTDUNCAN_RN': -0.116},
+        'BCESW-SNDSW 345KV 421__A': {'CATARINA_B1': 0.1, 'HOLCOMB_RN1': 0.11, 'HAMI_BESS_RN': 0.07, 'FTDUNCAN_RN': 0.09, 'JDKNS_RN': -0.04, 'SADLBACK_RN': -0.04, 'MV_VALV4_RN': 0.11, 'CISC_RN': -0.06, 'DIBOL_RN': -0.074, 'OLNEYTN_RN': -0.065},
+        'BIG_FOOT-PLEASANT 138KV BIG_FO_PLEASA1_1': {'CATARINA_B1': -0.092, 'HOLCOMB_RN1': -0.0534, 'HAMI_BESS_RN': -0.088, 'FTDUNCAN_RN': -0.098},
+        'BLESSING 345KV BLESSING_1382': {'HOLCOMB_RN1': 0.041, 'MV_VALV4_RN': 0.063},
+        'BOW 69KV BOW_FMR1': {'OLNEYTN_RN': -0.05},
+        'BR-HOC 138KV BR_HOC09_A': {'MAINLAND_RN': 0.09515},
+        'BRACKETT-ESCONDID 138KV BRACKE_ESCOND1_1': {'RUSSEKST_RN': -0.04194, 'CATARINA_B1': 0.10133, 'HOLCOMB_RN1': 0.04094, 'HAMI_BESS_RN': -0.32295},
+        'BRUNI 138KV BRUNI_69_1': {'CATARINA_B1': 0.01044, 'FTDUNCAN_RN': 0.01044},
+        'CARVER-TINSLEY 138KV CARVER_TINSLE1_1': {'RUSSEKST_RN': -0.07, 'CATARINA_B1': 0.09, 'HAMI_BESS_RN': 0.32323, 'FTDUNCAN_RN': 0.21},
+        'CATARINA-ASHERTON 138KV ASHERT_CATARI1_1': {'CATARINA_B1': -0.732, 'HOLCOMB_RN1': -0.09013, 'HAMI_BESS_RN': 0.0722, 'MV_VALV4_RN': -0.0514},
+        'CMNSW-CMNTP 138KV 651__B': {'CISC_RN': 0.05},
+        'CNRSW 345KV CNRSW_MR2H': {'DIBOL_RN': -0.14082},
+        'COLETO-VICTORIA 138KV COLETO_VICTOR2_1': {'MV_VALV4_RN': -0.0917},
+        'CPSES-MBDSW 345KV 6033__A': {'RUSSEKST_RN': -0.06, 'JUNCTION_RN': -0.045, 'JDKNS_RN': -0.059, 'SADLBACK_RN': -0.058},
+        'CRD 345KV CRD_CRD2': {'CISC_RN': 0.06},
+        'CRDSW-OLNEY 69KV 6830__B': {'OLNEYTN_RN': 0.78682},
+        'CRTRVLLE-HILGR 138KV 16050__B': {'JDKNS_RN': 0.04, 'SADLBACK_RN': 0.04},
+        'DOW-OAS 345KV DOWOAS18_A': {'CATARINA_B1': -0.0722, 'HOLCOMB_RN1': -0.0768, 'HAMI_BESS_RN': -0.048, 'FTDUNCAN_RN': -0.0599, 'JUNCTION_RN': -0.034, 'MV_VALV4_RN': -0.0823, 'MAINLAND_RN': 0.1758},
+        'DOWNIES-MOORE 138KV 2585_1': {'CATARINA_B1': -0.06, 'HAMI_BESS_RN': -0.15515, 'FTDUNCAN_RN': -0.18205},
+        'EINSTEIN-CRTRVLLE 138KV CRTVLE_EINSTEN_1': {'JDKNS_RN': 0.04849, 'SADLBACK_RN': 0.03842},
+        'ELGISW-BUTLER 138KV 203T260_1': {'RUSSEKST_RN': -0.02, 'CATARINA_B1': 0.04196, 'HOLCOMB_RN1': 0.04516, 'JDKNS_RN': -0.02, 'SADLBACK_RN': -0.02, 'MV_VALV4_RN': 0.046, 'CISC_RN': -0.027, 'DIBOL_RN': -0.026, 'OLNEYTN_RN': -0.027},
+        'ESCONDID-GANSO 138KV ESCOND_GANSO1_1': {'RUSSEKST_RN': 0.05, 'CATARINA_B1': -0.094, 'HOLCOMB_RN1': -0.044, 'HAMI_BESS_RN': 0.4035, 'FTDUNCAN_RN': -0.2614},
+        'ESTLD-MRVLY 69KV 6635__G': {'CISC_RN': -0.045, 'OLNEYTN_RN': 0.053},
+        'EXCSW-RNKSW 345KV 109__A': {'RUSSEKST_RN': -0.0582, 'HAMI_BESS_RN': -0.039, 'FTDUNCAN_RN': -0.032, 'JUNCTION_RN': -0.0429, 'JDKNS_RN': -0.064, 'SADLBACK_RN': -0.062, 'CISC_RN': -0.066, 'DIBOL_RN': 0.04448, 'OLNEYTN_RN': -0.068},
+        'E_PASP': {'CATARINA_B1': -0.08556, 'HOLCOMB_RN1': -0.13778, 'JUNCTION_RN': 0.04, 'MV_VALV4_RN': -0.19625},
+        'FMRVL-RYSSW 345KV 400__A': {'DIBOL_RN': 0.05227, 'OLNEYTN_RN': -0.03425},
+        'FORTMA-YELWJCKT 138KV FORTMA_YELWJC1_1': {'RUSSEKST_RN': 0.032, 'JUNCTION_RN': 0.5, 'JDKNS_RN': 0.02, 'SADLBACK_RN': 0.02},
+        'FTSSW-VENSW 345KV 35050__B': {'CATARINA_B1': -0.0569, 'HOLCOMB_RN1': -0.06, 'HAMI_BESS_RN': -0.037, 'FTDUNCAN_RN': -0.047, 'JUNCTION_RN': -0.041, 'MV_VALV4_RN': -0.06},
+        'GANSO-MAVERICK 138KV GANSO_MAVERI1_1': {'CATARINA_B1': -0.09232, 'HOLCOMB_RN1': -0.04424, 'HAMI_BESS_RN': 0.40193},
+        'GN-PZ 138KV GN_PZ_08_A': {'MAINLAND_RN': 0.18322},
+        'GT-BG 138KV BG_GT_37_A': {'MAINLAND_RN': 0.14257},
+        'HAMILTON-MAVERICK 138KV HAMILT_MAVERI1_1': {'CATARINA_B1': 0.072, 'HAMI_BESS_RN': -0.56, 'FTDUNCAN_RN': 0.19612},
+        'HCKSW 1KV HCKSW_MR2L': {'RUSSEKST_RN': -0.035, 'JDKNS_RN': -0.04, 'SADLBACK_RN': -0.04, 'OLNEYTN_RN': -0.03},
+        'HOLMAN-CISTERN 345KV CKT_3136_1': {'CATARINA_B1': 0.05598, 'HOLCOMB_RN1': 0.05233, 'HAMI_BESS_RN': 0.05428, 'FTDUNCAN_RN': 0.0563, 'JUNCTION_RN': 0.0649, 'MAINLAND_RN': -0.07052},
+        'HONDOCK-DEVINESW 69KV HON_DEVI_1': {'CATARINA_B1': -0.05, 'HAMI_BESS_RN': -0.06, 'FTDUNCAN_RN': -0.064},
+        'I_FW_N': {'RUSSEKST_RN': 0.09, 'JDKNS_RN': 0.1566, 'SADLBACK_RN': 0.1374, 'DIBOL_RN': -0.04, 'OLNEYTN_RN': -0.06},
+        'I_KALO': {'HOLCOMB_RN1': 0.065, 'MV_VALV4_RN': 0.25691},
+        'JEWET-BBSES 345KV 50__A': {'RUSSEKST_RN': 0.04, 'CATARINA_B1': -0.04, 'HOLCOMB_RN1': -0.05, 'JDKNS_RN': 0.04, 'SADLBACK_RN': 0.04, 'MV_VALV4_RN': -0.05, 'MAINLAND_RN': -0.1, 'CISC_RN': 0.068, 'DIBOL_RN': 0.12874, 'OLNEYTN_RN': 0.0833},
+        'KENDAL-BERGHE 345KV 656T656_1': {'RUSSEKST_RN': -0.13825, 'CATARINA_B1': 0.07977, 'HOLCOMB_RN1': 0.09654, 'JUNCTION_RN': -0.15722, 'JDKNS_RN': -0.13169, 'SADLBACK_RN': -0.14458, 'MV_VALV4_RN': 0.10349},
+        'KLNSW-HHSTH 138KV 630__B': {'RUSSEKST_RN': -0.05, 'JDKNS_RN': -0.048, 'SADLBACK_RN': -0.048, 'CISC_RN': -0.04},
+        'KLNSW-STAGE 138KV 641__A': {'RUSSEKST_RN': -0.04, 'JDKNS_RN': -0.04, 'SADLBACK_RN': -0.04, 'MV_VALV4_RN': 0.021, 'CISC_RN': -0.03},
+        'LAKENASW-SAMATHIS 69KV LAKENA_SAMATH1_1': {'RUSSEKST_RN': 0.07252},
+        'LARDVNTH-LASCRUCE 138KV LARDVN_LASCRU1_1': {'RUSSEKST_RN': 0.01, 'CATARINA_B1': 0.17885, 'HOLCOMB_RN1': 0.29736, 'HAMI_BESS_RN': 0.06158, 'MV_VALV4_RN': -0.079},
+        'LAREDO-DEL_MAR 138KV DEL_MA_LAREDO1_1': {'HOLCOMB_RN1': 0.06},
+        'LASCRUCE-MILO 138KV LASCRU_MILO1_1': {'CATARINA_B1': 0.17261, 'HOLCOMB_RN1': 0.28025, 'HAMI_BESS_RN': 0.07, 'FTDUNCAN_RN': 0.09648, 'MV_VALV4_RN': -0.08},
+        'LA_PALMA-HAINE_DR 138KV HAINE__LA_PAL1_1': {'HOLCOMB_RN1': 0.01138, 'MV_VALV4_RN': 0.01856},
+        'LHSES-PRCSW 138KV 3660__A': {'DIBOL_RN': -0.05},
+        'LNGSW-CONSW 345KV 6056__A': {'RUSSEKST_RN': 0.08, 'JDKNS_RN': 0.213, 'SADLBACK_RN': 0.2},
+        'LNGSW-CONSW 345KV 6056__Z': {'RUSSEKST_RN': 0.08513, 'HOLCOMB_RN1': -0.02, 'JUNCTION_RN': -0.02, 'JDKNS_RN': 0.21466, 'SADLBACK_RN': 0.20517, 'MV_VALV4_RN': -0.02, 'MAINLAND_RN': -0.02, 'CISC_RN': -0.02, 'DIBOL_RN': -0.02, 'OLNEYTN_RN': -0.02},
+        'LNGSW-PRLSW 345KV 6965__A': {'RUSSEKST_RN': 0.07, 'CATARINA_B1': -0.02, 'HOLCOMB_RN1': -0.02, 'HAMI_BESS_RN': 0.02, 'FTDUNCAN_RN': 0.02, 'JUNCTION_RN': -0.02, 'JDKNS_RN': 0.21329, 'SADLBACK_RN': 0.20412, 'MV_VALV4_RN': -0.02, 'MAINLAND_RN': -0.02, 'CISC_RN': -0.02, 'DIBOL_RN': -0.02, 'OLNEYTN_RN': -0.02},
+        'LOBO-LARDVNTH 138KV LARDVN_LOBO2_1': {'CATARINA_B1': 0.21816, 'HOLCOMB_RN1': 0.32386, 'HAMI_BESS_RN': 0.07, 'FTDUNCAN_RN': 0.07, 'MV_VALV4_RN': -0.07},
+        'LPLMK-LPLNE 115KV LPLMK_LPLNE_1': {'RUSSEKST_RN': 0.01044, 'HAMI_BESS_RN': 0.00574, 'JDKNS_RN': 0.01594, 'SADLBACK_RN': 0.01487},
+        'MADDUX-SAPOWER 138KV MADDUX_SAPOWE1_1': {'RUSSEKST_RN': -0.0695, 'HAMI_BESS_RN': -0.11666, 'FTDUNCAN_RN': -0.07369, 'JUNCTION_RN': -0.33601},
+        'MADDUX-TREADWEL 138KV MADDUX_TREADW1_1': {'JUNCTION_RN': 0.39252},
+        'MASN-KATEMCY 69KV KATEMC_MASN1_1': {'JUNCTION_RN': 0.251},
+        'MAVERICK-HAMILTON 138KV HAMILT_MAVERI1_1': {'RUSSEKST_RN': 0.05256, 'CATARINA_B1': -0.08936, 'HAMI_BESS_RN': 0.40605, 'FTDUNCAN_RN': -0.25822},
+        'MAXWELL-HAMILTON 138KV HAMILT_MAXWEL1_1': {'RUSSEKST_RN': -0.05, 'CATARINA_B1': 0.05, 'HAMI_BESS_RN': 0.22977, 'FTDUNCAN_RN': 0.1432},
+        'MCCAMY': {'RUSSEKST_RN': -0.24657, 'HAMI_BESS_RN': -0.11282, 'FTDUNCAN_RN': -0.06874},
+        'MDO-PHR 345KV MDOPHR99_A': {'CATARINA_B1': -0.091, 'HOLCOMB_RN1': -0.096, 'HAMI_BESS_RN': -0.06, 'FTDUNCAN_RN': -0.077, 'MV_VALV4_RN': -0.1},
+        'MGSES-CATSW 345KV 6945__A': {'RUSSEKST_RN': 0.1, 'JDKNS_RN': 0.3, 'SADLBACK_RN': 0.27037, 'MAINLAND_RN': -0.05, 'CISC_RN': -0.08, 'DIBOL_RN': -0.06, 'OLNEYTN_RN': -0.07},
+        'MILLER-HENLY 138KV 415T415_1': {'JUNCTION_RN': -0.11},
+        'MRVLY-ESTLD 69KV 6635__G': {'CISC_RN': 0.17348},
+        'MV_BURNS-MV_HBRG4 138KV BURNS_HEIDLBRG_1': {'MV_VALV4_RN': 0.15343},
+        'NLARSW-PILONCIL 138KV NLARSW_PILONC1_1': {'CATARINA_B1': 0.26, 'HOLCOMB_RN1': -0.09, 'HAMI_BESS_RN': 0.08633, 'FTDUNCAN_RN': 0.12, 'MV_VALV4_RN': -0.06},
+        'NORTMC-CROSSOVE 138KV CROSSO_NORTMC1_1': {'RUSSEKST_RN': 0.34171, 'HAMI_BESS_RN': 0.09187, 'FTDUNCAN_RN': 0.057, 'JDKNS_RN': -0.028, 'SADLBACK_RN': -0.0235},
+        'NVKSW-ANARN 69KV 6840__B': {'OLNEYTN_RN': 0.476},
+        'ODESA-ODNTH 138KV 6513__A': {'SADLBACK_RN': 0.08},
+        'OZONA-MIDW 69KV MIDW_OZONA1_1': {'RUSSEKST_RN': 0.06},
+        'PALOUSE-WOLFCAMP 138KV PALOUS_WOLFCA1_1': {'RUSSEKST_RN': 0.30569},
+        'PILONCIL-CATARINA 138KV CATARI_PILONC1_1': {'CATARINA_B1': 0.337, 'HOLCOMB_RN1': -0.098},
+        'PILONCIL-NLARSW 138KV NLARSW_PILONC1_1': {'CATARINA_B1': -0.26481, 'HOLCOMB_RN1': 0.23807, 'HAMI_BESS_RN': -0.09445, 'FTDUNCAN_RN': -0.12963, 'MV_VALV4_RN': 0.076},
+        'PRLSW-CONSW 345KV 6960__A': {'RUSSEKST_RN': 0.11076, 'HAMI_BESS_RN': 0.0458, 'JDKNS_RN': 0.29043, 'SADLBACK_RN': 0.2337, 'CISC_RN': -0.0525, 'DIBOL_RN': -0.041, 'OLNEYTN_RN': -0.05},
+        'RIOHONDO-MV_BURNS 138KV BURNS_RIOHONDO_1': {'MV_VALV4_RN': 0.1976},
+        'SAMSW-FVLSW 345KV 35045__A': {'CATARINA_B1': -0.05577, 'HOLCOMB_RN1': -0.05843, 'HAMI_BESS_RN': -0.04, 'FTDUNCAN_RN': -0.04823, 'MV_VALV4_RN': -0.05925, 'CISC_RN': 0.0357, 'DIBOL_RN': 0.04524, 'OLNEYTN_RN': 0.05485},
+        'SAMSW-VENSW 345KV 35055__A': {'CATARINA_B1': -0.053, 'HOLCOMB_RN1': -0.056, 'FTDUNCAN_RN': -0.044, 'MV_VALV4_RN': -0.056, 'MAINLAND_RN': -0.04, 'DIBOL_RN': 0.053, 'OLNEYTN_RN': 0.05},
+        'SANA 138KV SANA_FMR1': {'CISC_RN': 0.04},
+        'SMITHERS-BI 345KV BI_SMR98_A': {'CATARINA_B1': -0.03961, 'HOLCOMB_RN1': -0.04352, 'FTDUNCAN_RN': -0.326, 'MV_VALV4_RN': -0.049},
+        'SNDHT-WLFSW 138KV 6345__L': {'JDKNS_RN': -0.44871, 'SADLBACK_RN': 0.07},
+        'SNDSW-AUSTRO 345KV 450__A': {'RUSSEKST_RN': -0.06348, 'CATARINA_B1': 0.14059, 'HOLCOMB_RN1': 0.15042, 'HAMI_BESS_RN': 0.088, 'FTDUNCAN_RN': 0.11442, 'JDKNS_RN': -0.07518, 'SADLBACK_RN': -0.07016, 'MV_VALV4_RN': 0.14762, 'CISC_RN': -0.09626, 'DIBOL_RN': -0.09504, 'OLNEYTN_RN': -0.099},
+        'SONR-ATSO 69KV ATSO_SONR1_1': {'RUSSEKST_RN': 0.05, 'HAMI_BESS_RN': 0.014},
+        'STP-ELMCREEK 345KV STPELM27_1': {'RUSSEKST_RN': 0.042, 'CATARINA_B1': 0.08, 'HOLCOMB_RN1': 0.079, 'HAMI_BESS_RN': 0.067, 'FTDUNCAN_RN': 0.075, 'JUNCTION_RN': 0.058, 'JDKNS_RN': 0.037, 'SADLBACK_RN': 0.039, 'MV_VALV4_RN': 0.052, 'MAINLAND_RN': -0.09, 'CISC_RN': 0.023, 'OLNEYTN_RN': 0.02},
+        'STP-WAP 345KV STPWAP39_1': {'CATARINA_B1': -0.085, 'HOLCOMB_RN1': -0.09462, 'HAMI_BESS_RN': -0.05, 'FTDUNCAN_RN': -0.07, 'MV_VALV4_RN': -0.11296, 'MAINLAND_RN': 0.0957},
+        'TMPSW-TMPCR 345KV 315__A': {'CATARINA_B1': -0.0932, 'HOLCOMB_RN1': -0.0997, 'HAMI_BESS_RN': -0.05, 'FTDUNCAN_RN': -0.0737, 'JUNCTION_RN': -0.061, 'MV_VALV4_RN': -0.0991, 'MAINLAND_RN': -0.045, 'CISC_RN': 0.071, 'DIBOL_RN': 0.082, 'OLNEYTN_RN': 0.081},
+        'TNFXTAIL-FLAT_TOP 138KV 138_FLT_FXT_1': {'JDKNS_RN': 0.016, 'SADLBACK_RN': 0.31332},
+        'TNP_ONE-TOKSW 345KV 262_A_1': {'CATARINA_B1': -0.06355, 'HOLCOMB_RN1': -0.06213, 'HAMI_BESS_RN': -0.05766, 'FTDUNCAN_RN': -0.0614, 'JUNCTION_RN': -0.07546, 'MV_VALV4_RN': -0.0542, 'MAINLAND_RN': 0.06594, 'DIBOL_RN': 0.06361},
+        'TREADWEL-YELWJCKT 138KV TREADW_YELWJC1_1': {'CATARINA_B1': 0.015, 'HOLCOMB_RN1': 0.015, 'JUNCTION_RN': 0.46755, 'MV_VALV4_RN': 0.015},
+        'TWINBU-HARGROVE 138KV HARGRO_TWINBU1_1': {'RUSSEKST_RN': 0.31665, 'HAMI_BESS_RN': 0.0679, 'FTDUNCAN_RN': 0.04386, 'JDKNS_RN': 0.01781, 'SADLBACK_RN': 0.02485},
+        'UVALDE-READING 138KV READIN_UVALDE1_1': {'CATARINA_B1': -0.08093, 'HAMI_BESS_RN': -0.20464, 'FTDUNCAN_RN': -0.08935},
+        'VALEXP': {'MV_VALV4_RN': -0.98239},
+        'VEALMOOR-KOCHTAP 138KV 15060__B': {'RUSSEKST_RN': 0.02331, 'HAMI_BESS_RN': 0.01012, 'JDKNS_RN': 0.0524, 'SADLBACK_RN': 0.0447},
+        'WCRYSTS-CARIZOS 69KV WCR_CARI_1': {'CATARINA_B1': -0.05, 'HAMI_BESS_RN': 0.126, 'FTDUNCAN_RN': 0.19},
+        'WESTEX': {'RUSSEKST_RN': -0.66, 'CATARINA_B1': 0.07514, 'HOLCOMB_RN1': 0.13067, 'HAMI_BESS_RN': -0.23, 'FTDUNCAN_RN': -0.07, 'JUNCTION_RN': -0.3, 'JDKNS_RN': -0.718, 'SADLBACK_RN': -0.716, 'MV_VALV4_RN': 0.15332, 'MAINLAND_RN': 0.17937, 'CISC_RN': -0.513, 'DIBOL_RN': 0.19396, 'OLNEYTN_RN': -0.558},
+        'WOLFCAMP-SANTARIT 138KV SANTAR_WOLFCA1_1': {'RUSSEKST_RN': 0.31739},
+        'W_BATESV-UVALDE 138KV UVALDE_W_BATE1_1': {'CATARINA_B1': -0.14975, 'HOLCOMB_RN1': -0.06, 'HAMI_BESS_RN': 0.27526, 'FTDUNCAN_RN': 0.29993},
+        'YELWJCKT-FORTMA 138KV FORTMA_YELWJC1_1': {'JUNCTION_RN': -0.5},
+        'YELWJCKT-HEXT 69KV HEXT_YELWJC1_1': {'JUNCTION_RN': 0.059},
+        'ZEN-THW 345KV THWZEN71_A': {'RUSSEKST_RN': -0.072, 'JUNCTION_RN': -0.053, 'JDKNS_RN': -0.077, 'SADLBACK_RN': -0.075, 'MAINLAND_RN': 0.12782, 'CISC_RN': -0.84, 'DIBOL_RN': -0.1, 'OLNEYTN_RN': -0.08},
+        'ZEN-THW 345KV THWZEN98_A': {'RUSSEKST_RN': -0.072, 'JUNCTION_RN': -0.046, 'JDKNS_RN': -0.077, 'SADLBACK_RN': -0.075, 'MAINLAND_RN': 0.11115, 'CISC_RN': -0.08559, 'DIBOL_RN': -0.107, 'OLNEYTN_RN': -0.0898},
+    }
+
+    # Station token -> {node: sf} for fuzzy matching when exact name not found
+    STATION_SF = {
+        'HARGROVE': {'RUSSEKST_RN': 0.31665, 'HAMI_BESS_RN': 0.0679, 'FTDUNCAN_RN': 0.04386, 'JDKNS_RN': 0.01781, 'SADLBACK_RN': 0.02485},
+        'HARGRO': {'RUSSEKST_RN': 0.31665, 'HAMI_BESS_RN': 0.0679, 'FTDUNCAN_RN': 0.04386, 'JDKNS_RN': 0.01781, 'SADLBACK_RN': 0.02485},
+        'TWINBU': {'RUSSEKST_RN': 0.31665, 'HAMI_BESS_RN': 0.0679, 'FTDUNCAN_RN': 0.04386, 'JDKNS_RN': 0.01781, 'SADLBACK_RN': 0.02485},
+        'LAKENA': {'RUSSEKST_RN': 0.07252},
+        'LAKENASW': {'RUSSEKST_RN': 0.07252},
+        'SAMATH1': {'RUSSEKST_RN': 0.07252},
+        'SAMATHIS': {'RUSSEKST_RN': 0.07252},
+        'GREENL': {'JDKNS_RN': 0.04, 'SADLBACK_RN': 0.04},
+        'WEAVER': {'JDKNS_RN': 0.04, 'SADLBACK_RN': 0.04},
+        'FRONTERA': {'CATARINA_B1': 0.01044, 'FTDUNCAN_RN': 0.01044},
+        'LARDVN': {'RUSSEKST_RN': 0.01, 'CATARINA_B1': 0.21816, 'HOLCOMB_RN1': 0.32386, 'HAMI_BESS_RN': 0.07, 'MV_VALV4_RN': -0.079, 'FTDUNCAN_RN': 0.07},
+        'LARDVNTH': {'RUSSEKST_RN': 0.01, 'CATARINA_B1': 0.21816, 'HOLCOMB_RN1': 0.32386, 'HAMI_BESS_RN': 0.07, 'MV_VALV4_RN': -0.079, 'FTDUNCAN_RN': 0.07},
+        'LASCRU': {'CATARINA_B1': 0.17261, 'HOLCOMB_RN1': 0.28025, 'HAMI_BESS_RN': 0.07, 'FTDUNCAN_RN': 0.09648, 'MV_VALV4_RN': -0.08},
+        'LASCRUCE': {'RUSSEKST_RN': 0.01, 'CATARINA_B1': 0.17885, 'HOLCOMB_RN1': 0.29736, 'HAMI_BESS_RN': 0.07, 'MV_VALV4_RN': -0.08, 'FTDUNCAN_RN': 0.09648},
+        'CATARINA': {'CATARINA_B1': 0.76982, 'HOLCOMB_RN1': 0.17245, 'HAMI_BESS_RN': -0.09, 'FTDUNCAN_RN': -0.116},
+        'CATARI': {'CATARINA_B1': 0.337, 'HOLCOMB_RN1': -0.098},
+        'ASHERTON': {'CATARINA_B1': 0.76982, 'HOLCOMB_RN1': 0.17245, 'HAMI_BESS_RN': -0.09, 'FTDUNCAN_RN': -0.116},
+        'MAVERICK': {'CATARINA_B1': -0.09232, 'HAMI_BESS_RN': -0.56, 'FTDUNCAN_RN': -0.25822, 'HOLCOMB_RN1': -0.04424, 'RUSSEKST_RN': 0.05256},
+        'HAMILTON': {'CATARINA_B1': -0.08936, 'HAMI_BESS_RN': -0.56, 'FTDUNCAN_RN': -0.25822, 'RUSSEKST_RN': 0.05256},
+        'YELWJCKT': {'RUSSEKST_RN': 0.032, 'JUNCTION_RN': 0.5, 'JDKNS_RN': 0.02, 'SADLBACK_RN': 0.02},
+        'YELWJC1': {'RUSSEKST_RN': 0.032, 'JUNCTION_RN': 0.5, 'JDKNS_RN': 0.02, 'SADLBACK_RN': 0.02},
+        'FORTMA': {'RUSSEKST_RN': 0.032, 'JUNCTION_RN': 0.5, 'JDKNS_RN': 0.02, 'SADLBACK_RN': 0.02},
+        'TREADWEL': {'CATARINA_B1': 0.015, 'HOLCOMB_RN1': 0.015, 'JUNCTION_RN': 0.46755, 'MV_VALV4_RN': 0.015},
+        'TREADW': {'CATARINA_B1': 0.015, 'HOLCOMB_RN1': 0.015, 'JUNCTION_RN': 0.46755, 'MV_VALV4_RN': 0.015},
+        'MADDUX': {'JUNCTION_RN': 0.39252, 'RUSSEKST_RN': -0.0695, 'HAMI_BESS_RN': -0.11666, 'FTDUNCAN_RN': -0.07369},
+        'WESTEX': {'RUSSEKST_RN': -0.66, 'CATARINA_B1': 0.07514, 'HOLCOMB_RN1': 0.13067, 'HAMI_BESS_RN': -0.23, 'FTDUNCAN_RN': -0.07, 'JUNCTION_RN': -0.3, 'JDKNS_RN': -0.718, 'SADLBACK_RN': -0.716, 'MV_VALV4_RN': 0.15332, 'MAINLAND_RN': 0.17937, 'CISC_RN': -0.513, 'DIBOL_RN': 0.19396, 'OLNEYTN_RN': -0.558},
+        'MGSES': {'RUSSEKST_RN': 0.1, 'JDKNS_RN': 0.3, 'SADLBACK_RN': 0.27037, 'MAINLAND_RN': -0.05, 'CISC_RN': -0.08, 'DIBOL_RN': -0.06, 'OLNEYTN_RN': -0.07},
+        'CATSW': {'RUSSEKST_RN': 0.1, 'JDKNS_RN': 0.3, 'SADLBACK_RN': 0.27037, 'MAINLAND_RN': -0.05, 'CISC_RN': -0.08, 'DIBOL_RN': -0.06, 'OLNEYTN_RN': -0.07},
+        'OLNEY': {'OLNEYTN_RN': 0.78682},
+        'CRDSW': {'OLNEYTN_RN': 0.78682},
+        'PALOUSE': {'RUSSEKST_RN': 0.30569},
+        'PALOUS': {'RUSSEKST_RN': 0.30569},
+        'WOLFCAMP': {'RUSSEKST_RN': 0.31739},
+        'WOLFCA1': {'RUSSEKST_RN': 0.31739},
+        'LNGSW': {'RUSSEKST_RN': 0.08513, 'JDKNS_RN': 0.21466, 'SADLBACK_RN': 0.20517},
+        'PRLSW': {'RUSSEKST_RN': 0.11076, 'JDKNS_RN': 0.29043, 'SADLBACK_RN': 0.2337},
+        'SNDHT': {'JDKNS_RN': -0.44871, 'SADLBACK_RN': 0.07},
+        'WLFSW': {'JDKNS_RN': -0.44871, 'SADLBACK_RN': 0.07},
+        'NORTMC': {'RUSSEKST_RN': 0.34171, 'HAMI_BESS_RN': 0.09187, 'FTDUNCAN_RN': 0.057, 'JDKNS_RN': -0.028, 'SADLBACK_RN': -0.0235},
+        'CROSSOVE': {'RUSSEKST_RN': 0.34171, 'HAMI_BESS_RN': 0.09187, 'FTDUNCAN_RN': 0.057, 'JDKNS_RN': -0.028, 'SADLBACK_RN': -0.0235},
+        'ESCONDID': {'RUSSEKST_RN': 0.05, 'CATARINA_B1': 0.10133, 'HOLCOMB_RN1': -0.044, 'HAMI_BESS_RN': 0.4035, 'FTDUNCAN_RN': -0.2614},
+        'GANSO': {'RUSSEKST_RN': 0.05, 'CATARINA_B1': -0.094, 'HAMI_BESS_RN': 0.4035, 'FTDUNCAN_RN': -0.2614},
+        'LOBO': {'CATARINA_B1': 0.21816, 'HOLCOMB_RN1': 0.32386, 'HAMI_BESS_RN': 0.07, 'FTDUNCAN_RN': 0.07, 'MV_VALV4_RN': -0.07},
+    }
+
+    import re as _re
+
     def _node_exposure(c_name, from_st, to_st, nodes):
-        """
-        Return dict of {node: exposure_flag} for nodes near this constraint.
-        exposure_flag: +1 = benefits from constraint binding (sell-side),
-                       -1 = hurt by constraint binding (congestion penalty),
-                        0 = negligible exposure
-        """
-        exposure = {}
-        from_upper = from_st.upper()
-        to_upper   = to_st.upper()
-        c_upper    = c_name.upper()
+        """Look up real shift factors from spreadsheet data.
+        Returns {node: shift_factor} for nodes with material exposure."""
+        # 1. Try exact match on full constraint name
+        if c_name in CONSTRAINT_SF:
+            return {n: sf for n, sf in CONSTRAINT_SF[c_name].items() if n in nodes}
 
-        # West Texas constraints — nodes in West Texas region are most exposed
-        west_keywords = ["TOYAH","ODESSA","MIDLAND","PEC","PERMIAN","ECTOR",
-                         "NOTREES","WCTE","WEST","STANTON"]
-        north_keywords = ["NORTH","ONCOR","BRAZOS","ERCOT_N","TXU"]
-        coast_keywords = ["COAST","HOUSTON","HB_H","SOUTHEAST","ENTEX"]
-
-        for node in nodes:
-            n_upper = node.upper()
-            score   = 0
-
-            # Direct station match (strongest signal)
-            if any(kw in n_upper for kw in from_upper.split("_")[:2] if len(kw) > 3):
-                score += 2
-            if any(kw in n_upper for kw in to_upper.split("_")[:2] if len(kw) > 3):
-                score -= 1
-
-            # Regional correlation
-            if any(kw in c_upper for kw in west_keywords):
-                if any(kw in n_upper for kw in ["TOYAH","SADL","FAUL","COYOT","LONE",
-                                                  "RTLS","CEDR","SBEAN","GOMZ","GRDNE",
-                                                  "JDKNS","SANDL"]):
-                    score += 1
-            if any(kw in c_upper for kw in north_keywords):
-                if any(kw in n_upper for kw in ["OLNEY","DIBOL","FRMR","MNWL",
-                                                  "LFST","PAUL","CISC"]):
-                    score += 1
-
-            if score != 0:
-                exposure[node] = score
-
-        return exposure
+        # 2. Try fuzzy match on station tokens from constraint name + from/to stations
+        combined = c_name + " " + from_st + " " + to_st
+        tokens   = _re.split(r"[\s_\-]+", combined.upper())
+        merged   = {}
+        for token in tokens:
+            token = token.strip()
+            if len(token) <= 3:
+                continue
+            if token in STATION_SF:
+                for node, sf in STATION_SF[token].items():
+                    if node in nodes:
+                        # Keep highest abs value if token conflicts
+                        if node not in merged or abs(sf) > abs(merged[node]):
+                            merged[node] = sf
+        return merged
 
     # ── Build hourly summary per constraint ───────────────────────────────────
     # hourly_summary[constraint_name][he] = {avg_shadow, max_shadow, intervals}
