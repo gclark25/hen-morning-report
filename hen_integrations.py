@@ -136,6 +136,8 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
         page += 1
 
     print(f"    {len(sced_rows)} SCED constraint rows fetched")
+    if sced_rows:
+        print(f"    DEBUG constraint sample row: {sced_rows[0]}")
 
     # ── Parse rows into per-constraint, per-hour buckets ─────────────────────
     # Each row: SCEDTimestamp, constraintName, contingencyName,
