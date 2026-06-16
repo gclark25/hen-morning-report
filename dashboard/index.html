@@ -413,7 +413,9 @@ tr:hover td{background:#fafbfc}
     <div class="kpi"><div class="kpi-label">Peak Shadow Price</div>
       <div class="kpi-value" id="c-peak-shadow">—</div><div class="kpi-sub">$/MWh max single interval</div></div>
     <div class="kpi"><div class="kpi-label">Highest Shadow Price</div>
-      <div class="kpi-value" id="c-most-binding">—</div><div class="kpi-sub">daily sum $/MWh</div></div>
+      <div class="kpi-value" id="c-most-binding">—</div>
+      <div class="kpi-sub" id="c-most-binding-name" style="font-family:monospace;font-size:10px;color:#555;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+      <div class="kpi-sub">daily sum $/MWh</div></div>
     <div class="kpi"><div class="kpi-label">HEN Nodes Exposed</div>
       <div class="kpi-value" id="c-exposed-nodes">—</div><div class="kpi-sub">across all constraints</div></div>
   </div>
@@ -1053,6 +1055,10 @@ function renderConstraints(constraintsData) {
     ? ((highestShadow.avg_shadow||0) * (highestShadow.hours_binding||0)).toFixed(0) : null;
   document.getElementById('c-most-binding').textContent =
     dailySum ? '$' + dailySum : '—';
+  const mostBindingSubEl = document.getElementById('c-most-binding-name');
+  if (mostBindingSubEl && highestShadow) {
+    mostBindingSubEl.textContent = highestShadow.name;
+  }
 
   // HEN Nodes Exposed — count nodes with real shift factors (not just proximity flags)
   const allExposed = [...new Set(
@@ -1068,22 +1074,27 @@ function renderConstraints(constraintsData) {
   if (cards) {
     cards.innerHTML = constraints.slice(0,6).map(c => {
       const shadowClass = c.avg_shadow > 50 ? '' : c.avg_shadow > 20 ? ' low' : ' minimal';
-      const exposed = Object.keys(c.node_exposure || {}).filter(n => c.node_exposure[n] > 0);
+      const nodeExp  = c.node_exposure || {};
+      const expNodes = Object.entries(nodeExp)
+        .filter(([,sf]) => Math.abs(sf) > 0.01)
+        .sort((a,b) => Math.abs(b[1]) - Math.abs(a[1]));
       const hourly  = c.hourly || {};
       const peakHe  = Object.keys(hourly).length
         ? Object.keys(hourly).reduce((a,b) => (hourly[b]?.avg_shadow||0) > (hourly[a]?.avg_shadow||0) ? b : a)
         : null;
+      const expStr = expNodes.length
+        ? expNodes.slice(0,3).map(([n,sf]) => {
+            const short = n.replace('_RN','').replace('_B1','').replace('_BESS','');
+            return short + ' (' + (sf > 0 ? '+' : '') + sf.toFixed(3) + ')';
+          }).join(', ')
+        : 'none in dataset';
       return `<div class="c-card${shadowClass}">
         <div class="c-name">${c.name}</div>
         <div class="c-shadow">$${(c.avg_shadow||0).toFixed(2)}<span style="font-size:11px;font-weight:400;color:#888">/MWh avg</span></div>
         <div class="c-line">Peak: $${(c.peak_shadow||0).toFixed(2)} · ${c.hours_binding||0}h binding</div>
         <div class="c-line">${c.from_station||'?'} → ${c.to_station||'?'} (${c.flow_direction||'—'})</div>
         ${peakHe ? `<div class="c-line">Worst hour: HE${String(peakHe).padStart(2,'0')} · $${(hourly[peakHe]?.avg_shadow||0).toFixed(2)}/MWh</div>` : ''}
-        <div class="c-exposed">HEN nodes: ${exposed.length ? exposed.slice(0,3).map(n => {
-          const sf = exposure[n];
-          const short = n.replace('_RN','').replace('_B1','').replace('_BESS','');
-          return short + ' (' + (sf > 0 ? '+' : '') + sf.toFixed(3) + ')';
-        }).join(', ') : 'none in dataset'}</div>
+        <div class="c-exposed">HEN nodes: ${expStr}</div>
       </div>`;
     }).join('');
   }
