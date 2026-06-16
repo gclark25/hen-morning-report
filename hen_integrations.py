@@ -109,106 +109,229 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
             print(f"  WARN [ERCOT constraints] {path} — {e}")
         return []
 
-    print("  Pulling ERCOT SCED binding constraints...")
-    sced_rows = _ercot_get(
-        "np6-86-cd/co_hsl_lapf",
-        {"deliveryDateFrom": YESTERDAY, "deliveryDateTo": YESTERDAY}
-    )
+    # ── Pull SCED shadow prices and binding transmission constraints ────────
+    # Endpoint: np6-86-cd/shdw_prices_bnd_trns_const
+    # Uses SCEDTimestamp range for yesterday (CT = UTC-5)
+    print("  Pulling ERCOT SCED shadow prices and binding constraints...")
 
-    constraint_agg = defaultdict(lambda: {
-        "shadow_prices": [], "hours": set(), "element": "", "contingency": "",
+    YESTERDAY_FROM = YESTERDAY + "T00:00:00"
+    YESTERDAY_TO   = YESTERDAY + "T23:59:59"
+
+    sced_rows = []
+    page = 1
+    while True:
+        batch = _ercot_get(
+            "np6-86-cd/shdw_prices_bnd_trns_const",
+            {
+                "SCEDTimestampFrom": YESTERDAY_FROM,
+                "SCEDTimestampTo":   YESTERDAY_TO,
+                "page":              page,
+            },
+        )
+        if not batch:
+            break
+        sced_rows.extend(batch)
+        if len(batch) < 5000:
+            break
+        page += 1
+
+    print(f"    {len(sced_rows)} SCED constraint rows fetched")
+
+    # ── Parse rows into per-constraint, per-hour buckets ─────────────────────
+    # Each row: SCEDTimestamp, constraintName, contingencyName,
+    #           shadowPrice, maxShadowPrice, limit, value, violatedMW,
+    #           fromStation, toStation, fromStationkV, toStationkV
+
+    from collections import defaultdict
+
+    # Structure: constraint_data[name][he] = list of shadow prices
+    constraint_data = defaultdict(lambda: {
+        "by_hour":        defaultdict(list),  # he -> [shadowPrice, ...]
+        "contingency":    "",
+        "from_station":   "",
+        "to_station":     "",
+        "from_kv":        0,
+        "to_kv":          0,
+        "violated_mw":    [],
+        "shadow_prices":  [],
     })
 
     for row in sced_rows:
-        if isinstance(row, list) and len(row) >= 5:
-            d_date  = str(row[0])[:10]
-            d_hour  = row[1]
-            c_name  = str(row[2]).strip()
-            cont    = str(row[3]).strip() if len(row) > 3 else ""
-            shadow  = safe_float(row[4])
-            element = str(row[6]).strip() if len(row) > 6 else ""
-        elif isinstance(row, dict):
-            d_date  = str(row.get("deliveryDate",    ""))[:10]
-            d_hour  = row.get("deliveryHour", 0)
-            c_name  = str(row.get("constraintName",  "")).strip()
-            cont    = str(row.get("contingencyName", "")).strip()
-            shadow  = safe_float(row.get("shadowPrice", 0))
-            element = str(row.get("overloadedElement", "")).strip()
+        if isinstance(row, dict):
+            ts       = str(row.get("SCEDTimestamp",    ""))
+            c_name   = str(row.get("constraintName",   "")).strip()
+            cont     = str(row.get("contingencyName",  "")).strip()
+            shadow   = safe_float(row.get("shadowPrice",    0))
+            from_st  = str(row.get("fromStation",      "")).strip()
+            to_st    = str(row.get("toStation",        "")).strip()
+            from_kv  = safe_float(row.get("fromStationkVFrom", 0) or row.get("fromStationkV", 0))
+            to_kv    = safe_float(row.get("toStationkVFrom",   0) or row.get("toStationkV",   0))
+            viol_mw  = safe_float(row.get("violatedMW",        0))
+        elif isinstance(row, list) and len(row) >= 4:
+            ts       = str(row[0]) if row else ""
+            c_name   = str(row[1]).strip() if len(row) > 1 else ""
+            cont     = str(row[2]).strip() if len(row) > 2 else ""
+            shadow   = safe_float(row[3])  if len(row) > 3 else 0
+            from_st  = str(row[8]).strip() if len(row) > 8 else ""
+            to_st    = str(row[9]).strip() if len(row) > 9 else ""
+            from_kv  = safe_float(row[10]) if len(row) > 10 else 0
+            to_kv    = safe_float(row[11]) if len(row) > 11 else 0
+            viol_mw  = safe_float(row[7])  if len(row) > 7 else 0
         else:
             continue
 
-        if d_date != YESTERDAY or not c_name or shadow <= 0:
+        if not c_name or shadow <= 0:
             continue
 
-        constraint_agg[c_name]["shadow_prices"].append(shadow)
-        constraint_agg[c_name]["hours"].add(d_hour)
-        if element and not constraint_agg[c_name]["element"]:
-            constraint_agg[c_name]["element"] = element
-        if cont and not constraint_agg[c_name]["contingency"]:
-            constraint_agg[c_name]["contingency"] = cont
+        # Derive hour-ending from SCEDTimestamp
+        try:
+            he = int(ts[11:13]) + 1 if "T" in ts else 0
+            if he > 24:
+                he = 24
+        except Exception:
+            he = 0
 
-    ranked = sorted(
-        constraint_agg.items(),
-        key=lambda x: (
-            sum(x[1]["shadow_prices"]) / max(len(x[1]["shadow_prices"]), 1)
-        ) * len(x[1]["hours"]),
-        reverse=True,
-    )
-    top5_names = [name for name, _ in ranked[:5]]
-    print(f"    {len(constraint_agg)} binding constraints found. Top 5: {', '.join(top5_names)}")
+        cd = constraint_data[c_name]
+        cd["by_hour"][he].append(shadow)
+        cd["shadow_prices"].append(shadow)
+        if viol_mw > 0:
+            cd["violated_mw"].append(viol_mw)
+        if not cd["contingency"]  and cont:
+            cd["contingency"]  = cont
+        if not cd["from_station"] and from_st:
+            cd["from_station"] = from_st
+        if not cd["to_station"]   and to_st:
+            cd["to_station"]   = to_st
+        if not cd["from_kv"]      and from_kv:
+            cd["from_kv"]      = from_kv
+        if not cd["to_kv"]        and to_kv:
+            cd["to_kv"]        = to_kv
 
-    print(f"  Pulling PTDF shift factors ({len(top5_names)} constraints × {len(asset_nodes)} assets)...")
-    shift_factors = defaultdict(dict)
+    # ── Rank constraints by total impact (avg shadow × hours binding) ─────────
+    def _constraint_score(cd):
+        prices = cd["shadow_prices"]
+        if not prices:
+            return 0
+        avg = sum(prices) / len(prices)
+        hrs = len(cd["by_hour"])
+        return avg * hrs
 
-    for c_name in top5_names:
-        time.sleep(1)
-        ptdf_rows = _ercot_get(
-            "np6-787-cd/ptdf_sf",
-            {"constraintName": c_name, "deliveryDateFrom": YESTERDAY, "deliveryDateTo": YESTERDAY},
-        )
-        for row in ptdf_rows:
-            if isinstance(row, list) and len(row) >= 4:
-                sp = str(row[2]).strip()
-                sf = safe_float(row[3])
-            elif isinstance(row, dict):
-                sp = str(row.get("settlementPoint", "")).strip()
-                sf = safe_float(row.get("shiftFactor", 0))
-            else:
-                continue
-            if sp in asset_nodes:
-                shift_factors[c_name][sp] = round(sf, 4)
-        print(f"    {c_name}: {len(shift_factors[c_name])} asset shift factors")
+    ranked_names = sorted(
+        constraint_data.keys(),
+        key=lambda n: _constraint_score(constraint_data[n]),
+        reverse=True
+    )[:10]  # keep top 10
 
+    print(f"    {len(constraint_data)} unique constraints · top: {ranked_names[:3]}")
+
+    # ── Build node exposure map ───────────────────────────────────────────────
+    # Without a PTDF API we match nodes to constraints by electrical proximity:
+    # check if the node name contains the fromStation or toStation substring,
+    # or if the node is in a region that commonly correlates with that line.
+    # Exposure is flagged as positive/negative based on flow direction inference.
+
+    def _node_exposure(c_name, from_st, to_st, nodes):
+        """
+        Return dict of {node: exposure_flag} for nodes near this constraint.
+        exposure_flag: +1 = benefits from constraint binding (sell-side),
+                       -1 = hurt by constraint binding (congestion penalty),
+                        0 = negligible exposure
+        """
+        exposure = {}
+        from_upper = from_st.upper()
+        to_upper   = to_st.upper()
+        c_upper    = c_name.upper()
+
+        # West Texas constraints — nodes in West Texas region are most exposed
+        west_keywords = ["TOYAH","ODESSA","MIDLAND","PEC","PERMIAN","ECTOR",
+                         "NOTREES","WCTE","WEST","STANTON"]
+        north_keywords = ["NORTH","ONCOR","BRAZOS","ERCOT_N","TXU"]
+        coast_keywords = ["COAST","HOUSTON","HB_H","SOUTHEAST","ENTEX"]
+
+        for node in nodes:
+            n_upper = node.upper()
+            score   = 0
+
+            # Direct station match (strongest signal)
+            if any(kw in n_upper for kw in from_upper.split("_")[:2] if len(kw) > 3):
+                score += 2
+            if any(kw in n_upper for kw in to_upper.split("_")[:2] if len(kw) > 3):
+                score -= 1
+
+            # Regional correlation
+            if any(kw in c_upper for kw in west_keywords):
+                if any(kw in n_upper for kw in ["TOYAH","SADL","FAUL","COYOT","LONE",
+                                                  "RTLS","CEDR","SBEAN","GOMZ","GRDNE",
+                                                  "JDKNS","SANDL"]):
+                    score += 1
+            if any(kw in c_upper for kw in north_keywords):
+                if any(kw in n_upper for kw in ["OLNEY","DIBOL","FRMR","MNWL",
+                                                  "LFST","PAUL","CISC"]):
+                    score += 1
+
+            if score != 0:
+                exposure[node] = score
+
+        return exposure
+
+    # ── Build hourly summary per constraint ───────────────────────────────────
+    # hourly_summary[constraint_name][he] = {avg_shadow, max_shadow, intervals}
     constraints = []
-    for c_name in top5_names:
-        agg    = constraint_agg[c_name]
-        prices = agg["shadow_prices"]
-        hrs    = agg["hours"]
+    for c_name in ranked_names:
+        cd     = constraint_data[c_name]
+        prices = cd["shadow_prices"]
+        if not prices:
+            continue
 
-        avg_shadow  = round(sum(prices) / len(prices), 2) if prices else 0.0
-        peak_shadow = round(max(prices), 2)               if prices else 0.0
-        hours_bind  = round(len(hrs) * 0.25, 1)
+        avg_shadow  = round(sum(prices) / len(prices), 2)
+        peak_shadow = round(max(prices), 2)
+        hours_bind  = len(cd["by_hour"])
+        avg_viol    = round(sum(cd["violated_mw"]) / len(cd["violated_mw"]), 1) if cd["violated_mw"] else 0
 
-        el = agg["element"].upper()
-        nm = c_name.upper()
-        if "SOUTH" in el or nm.startswith("S_") or "SOUTH" in nm:
-            direction = "S->N"
-        elif "NORTH" in el or nm.startswith("N_") or "NORTH" in nm:
-            direction = "N->S"
-        elif "WEST" in el or nm.startswith("W_") or "PAN" in nm or "PANHANDLE" in nm:
-            direction = "W->E"
+        # Per-hour summary: HE01–HE24
+        hourly = {}
+        for he in range(1, 25):
+            he_prices = cd["by_hour"].get(he, [])
+            if he_prices:
+                hourly[he] = {
+                    "avg_shadow":  round(sum(he_prices) / len(he_prices), 2),
+                    "max_shadow":  round(max(he_prices), 2),
+                    "intervals":   len(he_prices),
+                }
+
+        # Flow direction
+        from_st = cd["from_station"]
+        to_st   = cd["to_station"]
+        c_upper = c_name.upper()
+        if any(kw in c_upper for kw in ["SOUTH","S_","_S_","WST","WEST"]):
+            direction = "S→N"
+        elif any(kw in c_upper for kw in ["NORTH","N_","_N_"]):
+            direction = "N→S"
+        elif any(kw in c_upper for kw in ["WEST","PAN","W_"]):
+            direction = "W→E"
+        elif any(kw in c_upper for kw in ["EAST","E_"]):
+            direction = "E→W"
         else:
-            direction = "N/A"
+            direction = "—"
+
+        # Node exposure
+        node_exposure = _node_exposure(c_name, from_st, to_st, asset_nodes)
 
         constraints.append({
             "name":           c_name,
-            "element":        agg["element"] or c_name,
-            "contingency":    agg["contingency"],
+            "contingency":    cd["contingency"],
+            "from_station":   from_st,
+            "to_station":     to_st,
+            "from_kv":        cd["from_kv"],
+            "to_kv":          cd["to_kv"],
             "avg_shadow":     avg_shadow,
             "peak_shadow":    peak_shadow,
             "hours_binding":  hours_bind,
+            "avg_violated_mw": avg_viol,
             "flow_direction": direction,
-            "shift_factors":  dict(shift_factors.get(c_name, {})),
+            "hourly":         hourly,        # keyed by int HE
+            "node_exposure":  node_exposure, # {node: score}
+            "shift_factors":  {},            # placeholder for future PTDF API
         })
 
     return {"constraints": constraints, "data_date": YESTERDAY, "source": "ERCOT"}
@@ -1154,6 +1277,62 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
         "source":       "ERCOT Public API",
     }
 
+
+# ── DREW FORWARD CURVE ────────────────────────────────────────────────────────
+
+def collect_drew_curve(curve_path="dashboard/drew_curve.html"):
+    """
+    Read Drew Peine's daily ERCOT forward curve HTML file and extract
+    commentary text and metadata for the AI prompt and dashboard.
+
+    The HTML file should be committed to dashboard/drew_curve.html each
+    morning before the workflow runs.
+    """
+    import re
+    import os
+
+    result = {
+        "available":  False,
+        "as_of":      "",
+        "commentary": "",
+        "file_path":  curve_path,
+        "error":      None,
+    }
+
+    if not os.path.exists(curve_path):
+        result["error"] = "File not found: " + curve_path
+        print("  SKIP [Drew Curve] " + result["error"])
+        return result
+
+    try:
+        with open(curve_path, "r", encoding="utf-8", errors="replace") as fh:
+            html = fh.read()
+
+        # Extract as-of date from header span
+        m1 = re.search(r"hdr-asof[^>]*>([^<]+)<", html)
+        if m1:
+            result["as_of"] = m1.group(1).strip()
+
+        # Extract commentary text — find div.commentary and strip tags
+        m2 = re.search(r'class="commentary"[^>]*>(.*?)</div>', html, re.DOTALL | re.IGNORECASE)
+        if not m2:
+            m2 = re.search(r"class='commentary'[^>]*>(.*?)</div>", html, re.DOTALL | re.IGNORECASE)
+        if m2:
+            raw   = m2.group(1)
+            clean = re.sub(r"<[^>]+>", " ", raw)
+            clean = re.sub(r"\s+", " ", clean).strip()
+            result["commentary"] = clean
+
+        result["available"] = True
+        print("  Drew Curve loaded: " + curve_path + " · as-of: " + result["as_of"])
+
+    except Exception as exc:
+        result["error"] = str(exc)
+        print("  WARN [Drew Curve] failed to read: " + str(exc))
+
+    return result
+
+
 def collect_all_integrations(token=None, sub_key=None, asset_nodes=None):
     """
     Calls all active collectors and returns a single merged dict ready
@@ -1194,6 +1373,9 @@ def collect_all_integrations(token=None, sub_key=None, asset_nodes=None):
     except Exception as e:
         print(f"  WARN [AS prices] {e}")
         out["as_prices"] = {"error": str(e)}
+
+    print("\n── Integration 7/7: Drew Forward Curve ──")
+    out["drew_curve"] = collect_drew_curve()
 
     return out
 
