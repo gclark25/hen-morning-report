@@ -412,8 +412,8 @@ tr:hover td{background:#fafbfc}
       <div class="kpi-value" id="c-count">—</div><div class="kpi-sub">yesterday</div></div>
     <div class="kpi"><div class="kpi-label">Peak Shadow Price</div>
       <div class="kpi-value" id="c-peak-shadow">—</div><div class="kpi-sub">$/MWh max single interval</div></div>
-    <div class="kpi"><div class="kpi-label">Most Binding</div>
-      <div class="kpi-value" id="c-most-binding">—</div><div class="kpi-sub">constraint name</div></div>
+    <div class="kpi"><div class="kpi-label">Highest Shadow Price</div>
+      <div class="kpi-value" id="c-most-binding">—</div><div class="kpi-sub">daily sum $/MWh</div></div>
     <div class="kpi"><div class="kpi-label">HEN Nodes Exposed</div>
       <div class="kpi-value" id="c-exposed-nodes">—</div><div class="kpi-sub">across all constraints</div></div>
   </div>
@@ -1045,10 +1045,16 @@ function renderConstraints(constraintsData) {
     ? Math.max(...constraints.map(c => c.peak_shadow || 0)) : 0;
   document.getElementById('c-peak-shadow').textContent =
     peakShadow ? '$' + peakShadow.toFixed(2) : '—';
-  const mostBinding = constraints.length
-    ? constraints.reduce((a,b) => (b.hours_binding||0) > (a.hours_binding||0) ? b : a) : null;
+
+  // Highest Shadow Price = top constraint by daily sum of shadow prices
+  const highestShadow = constraints.length
+    ? constraints.reduce((a,b) => (b.avg_shadow||0) * (b.hours_binding||0) > (a.avg_shadow||0) * (a.hours_binding||0) ? b : a) : null;
+  const dailySum = highestShadow
+    ? ((highestShadow.avg_shadow||0) * (highestShadow.hours_binding||0)).toFixed(0) : null;
   document.getElementById('c-most-binding').textContent =
-    mostBinding ? mostBinding.name.slice(0,18) : '—';
+    dailySum ? '$' + dailySum : '—';
+
+  // HEN Nodes Exposed — count nodes with real shift factors (not just proximity flags)
   const allExposed = [...new Set(
     constraints.flatMap(c => Object.keys(c.node_exposure || {}))
   )];
@@ -1073,7 +1079,11 @@ function renderConstraints(constraintsData) {
         <div class="c-line">Peak: $${(c.peak_shadow||0).toFixed(2)} · ${c.hours_binding||0}h binding</div>
         <div class="c-line">${c.from_station||'?'} → ${c.to_station||'?'} (${c.flow_direction||'—'})</div>
         ${peakHe ? `<div class="c-line">Worst hour: HE${String(peakHe).padStart(2,'0')} · $${(hourly[peakHe]?.avg_shadow||0).toFixed(2)}/MWh</div>` : ''}
-        <div class="c-exposed">HEN exposed: ${exposed.slice(0,3).join(', ') || 'none'}</div>
+        <div class="c-exposed">HEN nodes: ${exposed.length ? exposed.slice(0,3).map(n => {
+          const sf = exposure[n];
+          const short = n.replace('_RN','').replace('_B1','').replace('_BESS','');
+          return short + ' (' + (sf > 0 ? '+' : '') + sf.toFixed(3) + ')';
+        }).join(', ') : 'none in dataset'}</div>
       </div>`;
     }).join('');
   }
@@ -1137,8 +1147,15 @@ function renderConstraints(constraintsData) {
   const expBody = document.getElementById('c-exposure-body');
   if (expBody) {
     expBody.innerHTML = constraints.map(c => {
-      const exposed = Object.entries(c.node_exposure || {})
-        .filter(([,s]) => s > 0).map(([n]) => n).join(', ') || '—';
+      const expEntries = Object.entries(c.node_exposure || {})
+          .filter(([,sf]) => Math.abs(sf) > 0.01)
+          .sort((a,b) => Math.abs(b[1]) - Math.abs(a[1]));
+        const exposed = expEntries.length
+          ? expEntries.map(([n,sf]) => {
+              const short = n.replace('_RN','').replace('_B1','').replace('_BESS','');
+              return short + ' (' + (sf > 0 ? '+' : '') + sf.toFixed(3) + ')';
+            }).join(', ')
+          : '—';
       return `<tr>
         <td class="node-name">${c.name}</td>
         <td style="font-size:11px">${c.from_station||'—'}</td>
