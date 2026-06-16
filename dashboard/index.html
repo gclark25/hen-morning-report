@@ -134,6 +134,28 @@ tr:hover td{background:#fafbfc}
 .heatmap-date-btn.active{background:#0a3d2e;color:#fff;border-color:#0a3d2e}
 .heatmap-date-btn:hover:not(.active){background:#f0f7f4;border-color:#1a7a3f;color:#1a7a3f}
 
+/* ── Constraints heatmap ────────────────────────────────────────────────── */
+.c-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px}
+.c-card{background:#f8f9fa;border-radius:6px;padding:12px 14px;border-left:3px solid #b33000}
+.c-card.low{border-left-color:#c87800}
+.c-card.minimal{border-left-color:#1a7a3f}
+.c-name{font-size:11px;font-weight:700;color:#1a1a2e;margin-bottom:4px;font-family:monospace}
+.c-line{font-size:10px;color:#666;margin-bottom:2px}
+.c-shadow{font-size:18px;font-weight:700;color:#b33000;font-family:monospace}
+.c-exposed{font-size:10px;color:#555;margin-top:4px;padding-top:4px;border-top:1px solid #eee}
+
+/* Hourly constraint heatmap */
+.ch-table{border-collapse:separate;border-spacing:2px;width:100%;font-size:11px}
+.ch-table th{background:#f8f9fa;padding:5px 6px;text-align:center;font-size:10px;
+             font-weight:700;color:#555;letter-spacing:.04em;text-transform:uppercase;
+             border:none;white-space:nowrap}
+.ch-table th.row-head{text-align:left;min-width:130px;position:sticky;left:0;
+                       background:#f8f9fa;z-index:2}
+.ch-cell{padding:5px 3px;text-align:center;border-radius:3px;font-family:monospace;
+         font-size:10px;font-weight:600;cursor:default;min-width:48px;white-space:nowrap}
+.ch-row-label{font-family:monospace;font-size:10px;color:#555;padding:3px 8px 3px 2px;
+              white-space:nowrap;position:sticky;left:0;background:#fff;z-index:1}
+
 @media(max-width:640px){
   .kpi-strip{grid-template-columns:1fr 1fr}
   .callout-grid{grid-template-columns:1fr}
@@ -161,11 +183,13 @@ tr:hover td{background:#fafbfc}
   <div class="tab" onclick="showTab('forecast')">Forecast</div>
   <div class="tab" onclick="showTab('as')">AS Prices</div>
   <div class="tab" onclick="showTab('analysis')">AI Analysis</div>
+  <div class="tab" onclick="showTab('forward-curve')">Forward Curve</div>
+  <div class="tab" onclick="showTab('constraints')">Constraints</div>
 </div>
 
 <!-- ── OVERVIEW ────────────────────────────────────────────────────────────── -->
 <div id="tab-overview" class="page active">
-  <div class="kpi-strip" id="kpi-strip">
+  <div class="kpi-strip">
     <div class="kpi"><div class="kpi-label">Fleet avg RT</div>
       <div class="kpi-value" id="kpi-rt-avg">—</div><div class="kpi-sub">$/MWh</div></div>
     <div class="kpi"><div class="kpi-label">Fleet peak RT</div>
@@ -377,6 +401,94 @@ tr:hover td{background:#fafbfc}
       <div id="heatmap-empty" style="text-align:center;color:#aaa;padding:32px;font-size:13px;display:none">
         No AS price data available
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── CONSTRAINTS ───────────────────────────────────────────────────────── -->
+<div id="tab-constraints" class="page">
+  <div class="kpi-strip">
+    <div class="kpi"><div class="kpi-label">Constraints Found</div>
+      <div class="kpi-value" id="c-count">—</div><div class="kpi-sub">yesterday</div></div>
+    <div class="kpi"><div class="kpi-label">Peak Shadow Price</div>
+      <div class="kpi-value" id="c-peak-shadow">—</div><div class="kpi-sub">$/MWh max single interval</div></div>
+    <div class="kpi"><div class="kpi-label">Most Binding</div>
+      <div class="kpi-value" id="c-most-binding">—</div><div class="kpi-sub">constraint name</div></div>
+    <div class="kpi"><div class="kpi-label">HEN Nodes Exposed</div>
+      <div class="kpi-value" id="c-exposed-nodes">—</div><div class="kpi-sub">across all constraints</div></div>
+  </div>
+
+  <!-- Top constraint summary cards -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Top Binding Constraints — Yesterday</span>
+      <span class="card-meta" id="c-source"></span>
+    </div>
+    <div class="card-body">
+      <div class="c-grid" id="c-cards"></div>
+    </div>
+  </div>
+
+  <!-- Hourly shadow price heatmap -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Hourly Shadow Price by Constraint — HE01–HE24</span>
+      <span class="card-meta">Avg $/MWh per interval · Red = high shadow price · Green = low/zero</span>
+    </div>
+    <div class="card-body" style="overflow-x:auto">
+      <table class="ch-table" id="c-hourly-table">
+        <thead id="c-hourly-thead"></thead>
+        <tbody id="c-hourly-tbody"></tbody>
+      </table>
+      <div id="c-hourly-empty" style="text-align:center;color:#aaa;padding:32px;display:none">
+        No constraint data available for yesterday
+      </div>
+    </div>
+  </div>
+
+  <!-- Node exposure table -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">HEN Node Exposure by Constraint</span>
+      <span class="card-meta">Based on electrical proximity to binding transmission lines</span>
+    </div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th style="text-align:left">Constraint</th>
+        <th style="text-align:left">From Station</th>
+        <th style="text-align:left">To Station</th>
+        <th>Avg Shadow</th>
+        <th>Peak Shadow</th>
+        <th>Hours Binding</th>
+        <th>Avg Violated MW</th>
+        <th style="text-align:left">Exposed HEN Nodes</th>
+      </tr></thead><tbody id="c-exposure-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── FORWARD CURVE ─────────────────────────────────────────────────────── -->
+<div id="tab-forward-curve" class="page">
+  <div id="fc-curve-unavailable" class="card" style="display:none">
+    <div class="card-body" style="text-align:center;padding:40px;color:#aaa">
+      <div style="font-size:32px;margin-bottom:12px">📈</div>
+      <div style="font-size:14px;font-weight:600;color:#555;margin-bottom:8px">Forward Curve Not Yet Available</div>
+      <div style="font-size:12px">Drew's forward curve file (drew_curve.html) has not been committed for today.<br>
+      It will appear here automatically once the file is in the dashboard/ folder.</div>
+    </div>
+  </div>
+  <div id="fc-curve-wrap" class="card" style="display:none">
+    <div class="card-header">
+      <span class="card-title">ERCOT Forward Curve Dashboard</span>
+      <span class="card-meta" id="fc-curve-asof"></span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <iframe
+        id="fc-curve-iframe"
+        src=""
+        style="width:100%;height:calc(100vh - 160px);min-height:700px;border:none;border-radius:0 0 8px 8px"
+        title="ERCOT Forward Curve Dashboard">
+      </iframe>
     </div>
   </div>
 </div>
@@ -925,6 +1037,13 @@ function renderAll(d, history, aiData) {
   window._asChartData = { asTypes, asSeries, asColors: {REGUP:'#1a7a3f', REGDN:'#c87800', RRS:'#7b1fa2', NSPIN:'#1565c0', ECRS:'#b33000'} };
   if (typeof Chart !== 'undefined') window._buildAsChart && window._buildAsChart();
 
+  // ── Constraints tab ──────────────────────────────────────────────────────────
+  window._dataDate = d.data_date || '';
+  renderConstraints((d.constraints || {}).constraints || d.constraints || []);
+
+  // ── Forward Curve tab ───────────────────────────────────────────────────────
+  loadForwardCurve(d.drew_curve || null);
+
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
   document.getElementById('ai-date').textContent = morning.data_date ? 'Data date: ' + morning.data_date : '';
@@ -944,6 +1063,147 @@ function renderAll(d, history, aiData) {
 
 loadData();
 setInterval(loadData, 5 * 60 * 1000);
+
+// ── Constraints tab renderer ─────────────────────────────────────────────────
+function renderConstraints(constraintsData) {
+  const constraints = constraintsData || [];
+
+  // KPIs
+  document.getElementById('c-count').textContent = constraints.length || '0';
+  const peakShadow = constraints.length
+    ? Math.max(...constraints.map(c => c.peak_shadow || 0)) : 0;
+  document.getElementById('c-peak-shadow').textContent =
+    peakShadow ? '$' + peakShadow.toFixed(2) : '—';
+  const mostBinding = constraints.length
+    ? constraints.reduce((a,b) => (b.hours_binding||0) > (a.hours_binding||0) ? b : a) : null;
+  document.getElementById('c-most-binding').textContent =
+    mostBinding ? mostBinding.name.slice(0,18) : '—';
+  const allExposed = [...new Set(
+    constraints.flatMap(c => Object.keys(c.node_exposure || {}))
+  )];
+  document.getElementById('c-exposed-nodes').textContent = allExposed.length || '—';
+
+  const sourceEl = document.getElementById('c-source');
+  if (sourceEl) sourceEl.textContent = 'ERCOT SCED · ' + (window._dataDate || '');
+
+  // Summary cards
+  const cards = document.getElementById('c-cards');
+  if (cards) {
+    cards.innerHTML = constraints.slice(0,6).map(c => {
+      const shadowClass = c.avg_shadow > 50 ? '' : c.avg_shadow > 20 ? ' low' : ' minimal';
+      const exposed = Object.keys(c.node_exposure || {}).filter(n => c.node_exposure[n] > 0);
+      const hourly  = c.hourly || {};
+      const peakHe  = Object.keys(hourly).length
+        ? Object.keys(hourly).reduce((a,b) => (hourly[b]?.avg_shadow||0) > (hourly[a]?.avg_shadow||0) ? b : a)
+        : null;
+      return `<div class="c-card${shadowClass}">
+        <div class="c-name">${c.name}</div>
+        <div class="c-shadow">$${(c.avg_shadow||0).toFixed(2)}<span style="font-size:11px;font-weight:400;color:#888">/MWh avg</span></div>
+        <div class="c-line">Peak: $${(c.peak_shadow||0).toFixed(2)} · ${c.hours_binding||0}h binding</div>
+        <div class="c-line">${c.from_station||'?'} → ${c.to_station||'?'} (${c.flow_direction||'—'})</div>
+        ${peakHe ? `<div class="c-line">Worst hour: HE${String(peakHe).padStart(2,'0')} · $${(hourly[peakHe]?.avg_shadow||0).toFixed(2)}/MWh</div>` : ''}
+        <div class="c-exposed">HEN exposed: ${exposed.slice(0,3).join(', ') || 'none'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Hourly heatmap
+  const thead = document.getElementById('c-hourly-thead');
+  const tbody = document.getElementById('c-hourly-tbody');
+  const empty = document.getElementById('c-hourly-empty');
+  const table = document.getElementById('c-hourly-table');
+
+  if (!constraints.length) {
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  table.style.display = '';
+  empty.style.display = 'none';
+
+  // Max shadow price across all constraints and hours for color scaling
+  let maxShadow = 1;
+  for (const c of constraints) {
+    for (const he of Object.values(c.hourly || {})) {
+      if (he.avg_shadow > maxShadow) maxShadow = he.avg_shadow;
+    }
+  }
+  maxShadow = Math.min(maxShadow, 200); // cap for color scale
+
+  // Header: HE01–HE24
+  const hours = Array.from({length:24}, (_,i) => i+1);
+  thead.innerHTML = `<tr>
+    <th class="row-head">Constraint</th>
+    ${hours.map(h => `<th>HE${String(h).padStart(2,'0')}</th>`).join('')}
+  </tr>`;
+
+  // Rows: one per constraint
+  tbody.innerHTML = constraints.map(c => {
+    const hourly = c.hourly || {};
+    const cells  = hours.map(he => {
+      const h = hourly[he];
+      if (!h) return `<td style="padding:2px"><div class="ch-cell" style="background:#f4f5f7;color:#ccc">—</div></td>`;
+      const intensity = Math.min(h.avg_shadow / maxShadow, 1);
+      const r = Math.round(255);
+      const g = Math.round(255 - intensity * 200);
+      const b = Math.round(255 - intensity * 220);
+      const fg = intensity > 0.5 ? '#fff' : '#7a1a00';
+      const bg = `rgb(${r},${g},${b})`;
+      return `<td style="padding:2px"><div class="ch-cell"
+        style="background:${bg};color:${fg}"
+        title="${c.name} HE${String(he).padStart(2,'0')}: avg $${h.avg_shadow.toFixed(2)} · max $${h.max_shadow.toFixed(2)} · ${h.intervals} intervals"
+        >$${h.avg_shadow.toFixed(0)}</div></td>`;
+    }).join('');
+
+    const shortName = c.name.length > 22 ? c.name.slice(0,20) + '…' : c.name;
+    return `<tr>
+      <td class="ch-row-label" title="${c.name}">${shortName}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  // Node exposure table
+  const expBody = document.getElementById('c-exposure-body');
+  if (expBody) {
+    expBody.innerHTML = constraints.map(c => {
+      const exposed = Object.entries(c.node_exposure || {})
+        .filter(([,s]) => s > 0).map(([n]) => n).join(', ') || '—';
+      return `<tr>
+        <td class="node-name">${c.name}</td>
+        <td style="font-size:11px">${c.from_station||'—'}</td>
+        <td style="font-size:11px">${c.to_station||'—'}</td>
+        <td>$${(c.avg_shadow||0).toFixed(2)}</td>
+        <td class="spike">$${(c.peak_shadow||0).toFixed(2)}</td>
+        <td>${c.hours_binding||0}</td>
+        <td>${(c.avg_violated_mw||0).toFixed(0)} MW</td>
+        <td style="font-size:10px;font-family:monospace">${exposed}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:16px">No data</td></tr>';
+  }
+}
+
+// ── Forward Curve tab loader ──────────────────────────────────────────────────
+function loadForwardCurve(drewCurve) {
+  const wrap  = document.getElementById('fc-curve-wrap');
+  const empty = document.getElementById('fc-curve-unavailable');
+  const iframe = document.getElementById('fc-curve-iframe');
+  const asof   = document.getElementById('fc-curve-asof');
+
+  if (drewCurve && drewCurve.available) {
+    wrap.style.display  = '';
+    empty.style.display = 'none';
+    // Only set src once to avoid reload on every data refresh
+    if (!iframe.src || iframe.src === window.location.href) {
+      iframe.src = 'drew_curve.html';
+    }
+    if (asof && drewCurve.as_of) {
+      asof.textContent = drewCurve.as_of;
+    }
+  } else {
+    wrap.style.display  = 'none';
+    empty.style.display = '';
+  }
+}
 
 // ── AS line chart ─────────────────────────────────────────────────────────────
 window._buildAsChart = function() {
