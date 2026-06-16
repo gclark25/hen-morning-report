@@ -183,7 +183,7 @@ tr:hover td{background:#fafbfc}
   <div class="tab" onclick="showTab('forecast')">Forecast</div>
   <div class="tab" onclick="showTab('as')">AS Prices</div>
   <div class="tab" onclick="showTab('analysis')">AI Analysis</div>
-  <div class="tab" onclick="showTab('forward-curve')">Forward Curve</div>
+
   <div class="tab" onclick="showTab('constraints')">Constraints</div>
 </div>
 
@@ -463,32 +463,6 @@ tr:hover td{background:#fafbfc}
         <th>Avg Violated MW</th>
         <th style="text-align:left">Exposed HEN Nodes</th>
       </tr></thead><tbody id="c-exposure-body"></tbody></table>
-    </div>
-  </div>
-</div>
-
-<!-- ── FORWARD CURVE ─────────────────────────────────────────────────────── -->
-<div id="tab-forward-curve" class="page">
-  <div id="fc-curve-unavailable" class="card" style="display:none">
-    <div class="card-body" style="text-align:center;padding:40px;color:#aaa">
-      <div style="font-size:32px;margin-bottom:12px">📈</div>
-      <div style="font-size:14px;font-weight:600;color:#555;margin-bottom:8px">Forward Curve Not Yet Available</div>
-      <div style="font-size:12px">Drew's forward curve file (drew_curve.html) has not been committed for today.<br>
-      It will appear here automatically once the file is in the dashboard/ folder.</div>
-    </div>
-  </div>
-  <div id="fc-curve-wrap" class="card" style="display:none">
-    <div class="card-header">
-      <span class="card-title">ERCOT Forward Curve Dashboard</span>
-      <span class="card-meta" id="fc-curve-asof"></span>
-    </div>
-    <div class="card-body" style="padding:0">
-      <iframe
-        id="fc-curve-iframe"
-        src=""
-        style="width:100%;height:calc(100vh - 160px);min-height:700px;border:none;border-radius:0 0 8px 8px"
-        title="ERCOT Forward Curve Dashboard">
-      </iframe>
     </div>
   </div>
 </div>
@@ -1041,9 +1015,6 @@ function renderAll(d, history, aiData) {
   window._dataDate = d.data_date || '';
   renderConstraints((d.constraints || {}).constraints || d.constraints || []);
 
-  // ── Forward Curve tab ───────────────────────────────────────────────────────
-  loadForwardCurve(d.drew_curve || null);
-
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
   document.getElementById('ai-date').textContent = morning.data_date ? 'Data date: ' + morning.data_date : '';
@@ -1182,28 +1153,7 @@ function renderConstraints(constraintsData) {
   }
 }
 
-// ── Forward Curve tab loader ──────────────────────────────────────────────────
-function loadForwardCurve(drewCurve) {
-  const wrap  = document.getElementById('fc-curve-wrap');
-  const empty = document.getElementById('fc-curve-unavailable');
-  const iframe = document.getElementById('fc-curve-iframe');
-  const asof   = document.getElementById('fc-curve-asof');
 
-  if (drewCurve && drewCurve.available) {
-    wrap.style.display  = '';
-    empty.style.display = 'none';
-    // Only set src once to avoid reload on every data refresh
-    if (!iframe.src || iframe.src === window.location.href) {
-      iframe.src = 'drew_curve.html';
-    }
-    if (asof && drewCurve.as_of) {
-      asof.textContent = drewCurve.as_of;
-    }
-  } else {
-    wrap.style.display  = 'none';
-    empty.style.display = '';
-  }
-}
 
 // ── AS line chart ─────────────────────────────────────────────────────────────
 window._buildAsChart = function() {
