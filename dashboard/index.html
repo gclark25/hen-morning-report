@@ -1072,7 +1072,7 @@ function renderConstraints(constraintsData) {
   // Summary cards
   const cards = document.getElementById('c-cards');
   if (cards) {
-    cards.innerHTML = constraints.slice(0,6).map(c => {
+    cards.innerHTML = constraints.slice(0,10).map(c => {
       const shadowClass = c.avg_shadow > 50 ? '' : c.avg_shadow > 20 ? ' low' : ' minimal';
       const nodeExp  = c.node_exposure || {};
       const expNodes = Object.entries(nodeExp)
