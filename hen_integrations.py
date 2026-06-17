@@ -226,7 +226,7 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
         constraint_data.keys(),
         key=lambda n: _constraint_score(constraint_data[n]),
         reverse=True
-    )[:10]  # keep top 10
+    )[:20]  # keep top 20 — portfolio has 32 nodes across ERCOT
 
     print(f"    {len(constraint_data)} unique constraints · top: {ranked_names[:3]}")
 
