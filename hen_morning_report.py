@@ -1439,6 +1439,13 @@ def build_ai_prompt_morning(data, history):
 
     prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN), operator of 32 BESS sites across ERCOT. Generate a concise but comprehensive morning analysis for {YESTERDAY}.
 
+CRITICAL FRAMING — READ BEFORE ANALYZING:
+- DART spread = DA price − RT price
+- NEGATIVE DART (DA < RT): RT prices exceeded DA prices. For a BESS that discharged in RT, this is FAVORABLE — the asset captured higher RT prices than the DA commitment. This represents RT outperformance.
+- POSITIVE DART (DA > RT): DA prices exceeded RT prices. For a BESS that committed in DA, this is FAVORABLE — the asset locked in higher DA prices. This represents DA premium capture.
+- Never describe a negative DART as "underperformance" or "missed opportunity" without knowing the dispatch strategy. A node with negative DART may have been the best performer if it dispatched in RT.
+- When referencing DART spreads, always specify the direction: "RT exceeded DA by $X" or "DA premium of $X over RT."
+
 ERCOT PRICE SUMMARY:
 - Fleet avg RT: ${fleet_avg}/MWh across {len(rt)} nodes
 - Fleet peak RT: ${fleet_max}/MWh
@@ -1447,10 +1454,10 @@ ERCOT PRICE SUMMARY:
 - Best DART: {best_dart} at ${dart.get(best_dart, 0):.2f}/MWh if best_dart else 'N/A'
 - Largest DA premium: {worst_dart} at ${dart.get(worst_dart, 0):.2f}/MWh if worst_dart else 'N/A'
 
-TOP 5 DART PERFORMERS:
+TOP 5 DART PERFORMERS (highest DA premium over RT — positive = DA > RT):
 {chr(10).join(f"  {n}: ${v:.2f}/MWh" for n, v in top5_dart)}
 
-BOTTOM 5 DART PERFORMERS:
+BOTTOM 5 DART PERFORMERS (most negative DART — RT exceeded DA, may indicate RT outperformance):
 {chr(10).join(f"  {n}: ${v:.2f}/MWh" for n, v in bot5_dart)}
 
 ERCOT FUNDAMENTALS ({YESTERDAY}):
