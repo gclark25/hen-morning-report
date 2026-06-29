@@ -232,16 +232,31 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
     # Second pass: re-rank candidates by HEN impact
     # (shadow price × hours binding × max shift factor across HEN nodes)
     def _hen_impact(c_name):
-        """Rank by MCC = avg_shadow_price × max_shift_factor across HEN nodes."""
+        """Rank by MCC = avg_shadow_price × max_shift_factor across HEN nodes.
+        Uses CONSTRAINT_SF / STATION_SF directly to avoid scope issues with
+        _node_exposure which is defined later in the function."""
+        import re as _re2
         cd     = constraint_data[c_name]
         prices = cd["shadow_prices"]
         if not prices:
             return 0
-        avg      = sum(prices) / len(prices)
-        from_st  = cd["from_station"]
-        to_st    = cd["to_station"]
-        exposure = _node_exposure(c_name, from_st, to_st, asset_nodes)
-        max_sf   = max((abs(v) for v in exposure.values()), default=0.001)
+        avg     = sum(prices) / len(prices)
+        # Direct lookup — mirrors _node_exposure logic
+        if c_name in CONSTRAINT_SF:
+            sfs = {n: sf for n, sf in CONSTRAINT_SF[c_name].items() if n in asset_nodes}
+        else:
+            sfs = {}
+            combined = c_name + " " + cd.get("from_station","") + " " + cd.get("to_station","")
+            for token in _re2.split(r"[\s_\-]+", combined.upper()):
+                token = token.strip()
+                if len(token) <= 3:
+                    continue
+                if token in STATION_SF:
+                    for node, sf in STATION_SF[token].items():
+                        if node in asset_nodes:
+                            if node not in sfs or abs(sf) > abs(sfs[node]):
+                                sfs[node] = sf
+        max_sf = max((abs(v) for v in sfs.values()), default=0.001)
         return avg * max_sf  # MCC = shadow price × shift factor
 
     ranked_names = sorted(candidates, key=_hen_impact, reverse=True)[:20]
