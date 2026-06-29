@@ -1548,7 +1548,7 @@ def run_ai_analysis(data, history, api_key):
                 "max_tokens": 4000,
                 "messages":   [{"role": "user", "content": prompt}],
             },
-            timeout=60,
+            timeout=120,
         )
         r.raise_for_status()
         text = r.json()["content"][0]["text"].strip()
