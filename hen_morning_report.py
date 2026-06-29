@@ -1043,7 +1043,7 @@ def write_dashboard_json(data):
         "solar":              data.get("solar", {}),
         "solar_hourly":       data.get("solar_hourly", {}),
         "top_bottom":         tb,
-        "constraints":        data.get("constraints", []),
+        "constraints":        data.get("constraints", {}),
         "weather":            data.get("weather", {}),
         "modo":               data.get("modo", {}),
         "asset_status":       data.get("asset_status", {}),
@@ -1235,6 +1235,29 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
     print(f"  History updated — {len(history)} days stored in {history_path}")
 
 # ── AI PROMPT HELPERS ─────────────────────────────────────────────────────────
+
+def _fmt_node_mcc(data):
+    """Format per-node MCC summary for the AI prompt."""
+    constraints = data.get("constraints", {})
+    if isinstance(constraints, dict):
+        summary = constraints.get("node_mcc_summary", {})
+    else:
+        # Build from constraint list if summary not available
+        summary = {}
+        for c in (constraints or []):
+            for node, mcc in c.get("node_mcc", {}).items():
+                summary[node] = round(summary.get(node, 0) + mcc, 4)
+
+    if not summary:
+        return "  Not available"
+
+    sorted_nodes = sorted(summary.items(), key=lambda x: abs(x[1]), reverse=True)
+    lines = []
+    for node, mcc in sorted_nodes[:15]:  # top 15 by magnitude
+        direction = "benefit" if mcc > 0 else "cost"
+        lines.append(f"  {node}: {'+' if mcc >= 0 else ''}${mcc:.4f}/MWh ({direction})")
+    return "\n".join(lines)
+
 
 def _fmt_constraints(data):
     """Format SCED shadow prices and binding constraints for the AI prompt."""
@@ -1469,8 +1492,11 @@ RECENT HISTORY (last 3 days):
 {hist_summary or '  No history available'}
 
 ---
-TOP-5 BINDING CONSTRAINTS (ERCOT):
+TOP-5 BINDING CONSTRAINTS (ERCOT — ranked by MCC):
 {_fmt_constraints(data)}
+
+HEN NODE MCC SUMMARY (daily congestion cost/benefit $/MWh across all binding constraints):
+{_fmt_node_mcc(data)}
 
 15-DAY WEATHER OUTLOOK (AG2 Trader):
 {_fmt_weather(data)}
