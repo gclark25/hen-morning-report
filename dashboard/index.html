@@ -134,6 +134,15 @@ tr:hover td{background:#fafbfc}
 .heatmap-date-btn.active{background:#0a3d2e;color:#fff;border-color:#0a3d2e}
 .heatmap-date-btn:hover:not(.active){background:#f0f7f4;border-color:#1a7a3f;color:#1a7a3f}
 
+/* ── Node exposure pills ────────────────────────────────────────────────── */
+.node-pills{display:flex;flex-wrap:wrap;gap:4px;max-width:480px}
+.node-pill{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;
+           border-radius:3px;font-size:10px;font-family:monospace;font-weight:600;
+           white-space:nowrap}
+.node-pill.pos{background:#e8f5e9;color:#1a5c2a;border:1px solid #b8dfc8}
+.node-pill.neg{background:#fce4ec;color:#880e4f;border:1px solid #f8bbd0}
+.node-pill.sml{background:#f4f5f7;color:#666;border:1px solid #e0e0e0;font-weight:400}
+
 /* ── Constraints heatmap ────────────────────────────────────────────────── */
 .c-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px}
 .c-card{background:#f8f9fa;border-radius:6px;padding:12px 14px;border-left:3px solid #b33000}
@@ -1162,10 +1171,12 @@ function renderConstraints(constraintsData) {
           .filter(([,sf]) => Math.abs(sf) > 0.01)
           .sort((a,b) => Math.abs(b[1]) - Math.abs(a[1]));
         const exposed = expEntries.length
-          ? expEntries.map(([n,sf]) => {
+          ? '<div class="node-pills">' + expEntries.map(([n,sf]) => {
               const short = n.replace('_RN','').replace('_B1','').replace('_BESS','');
-              return short + ' (' + (sf > 0 ? '+' : '') + sf.toFixed(3) + ')';
-            }).join(', ')
+              const cls   = Math.abs(sf) >= 0.05 ? (sf > 0 ? 'pos' : 'neg') : 'sml';
+              const sign  = sf > 0 ? '+' : '';
+              return '<span class="node-pill ' + cls + '">' + short + ' ' + sign + sf.toFixed(3) + '</span>';
+            }).join('') + '</div>'
           : '—';
       return `<tr>
         <td class="node-name">${c.name}</td>
@@ -1175,7 +1186,7 @@ function renderConstraints(constraintsData) {
         <td class="spike">$${(c.peak_shadow||0).toFixed(2)}</td>
         <td>${c.hours_binding||0}</td>
         <td>${(c.avg_violated_mw||0).toFixed(0)} MW</td>
-        <td style="font-size:10px;font-family:monospace">${exposed}</td>
+        <td>${exposed}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:16px">No data</td></tr>';
   }
