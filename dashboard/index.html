@@ -541,6 +541,25 @@ tr:hover td{background:#fafbfc}
       </tr></thead><tbody id="c-exposure-body"></tbody></table>
     </div>
   </div>
+  <!-- Node MCC Summary -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Daily MCC Summary — By HEN Node</span>
+      <span class="card-meta">Sum of avg shadow price × shift factor across all binding constraints · $/MWh</span>
+    </div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th style="text-align:left">Node</th>
+        <th style="text-align:left">Region</th>
+        <th>Total MCC $/MWh</th>
+        <th>Direction</th>
+        <th>Constraints Contributing</th>
+      </tr></thead><tbody id="node-mcc-body"></tbody></table>
+      <div id="node-mcc-empty" style="display:none;text-align:center;color:#aaa;padding:24px">
+        No MCC data available — no binding constraints with HEN node exposure
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ── AI ANALYSIS ────────────────────────────────────────────────────────── -->
@@ -1251,6 +1270,10 @@ function renderAll(d, history, aiData) {
       ? rawConstraints.constraints
       : [];
   renderConstraints(constraintsList);
+  const rawNodeMCC = Array.isArray(d.constraints)
+    ? null
+    : (d.constraints && d.constraints.node_mcc_summary) || null;
+  renderNodeMCC(constraintsList, rawNodeMCC || {});
 
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
@@ -1267,6 +1290,70 @@ function renderAll(d, history, aiData) {
   } catch(e) {
     document.getElementById('ai-text').textContent = rawMd;
   }
+}
+
+// ── Node MCC summary renderer ────────────────────────────────────────────────
+function renderNodeMCC(constraints, nodeMCCSummary) {
+  const tbody = document.getElementById('node-mcc-body');
+  const empty = document.getElementById('node-mcc-empty');
+  if (!tbody) return;
+
+  const NODE_REGIONS = {
+    'TOYAH_RN':'West TX','SADLBACK_RN':'West TX','FAULKNER_RN':'West TX',
+    'COYOTSPR_RN':'West TX','LONESTAR_RN':'West TX','RTLSNAKE_BT':'West TX',
+    'CEDRVALE_RN':'West TX','SBEAN_BESS':'West TX','GOMZ_RN':'West TX',
+    'GRDNE_ESR_RN':'West TX','JDKNS_RN':'West TX','SANDLAKE_RN':'West TX',
+    'OLNEYTN_RN':'North TX','DIBOL_RN':'North TX','FRMRSVLW_RN':'North TX',
+    'MNWL_BESS_RN':'North TX','LFSTH_RN':'North TX','PAULN_RN':'North TX','CISC_RN':'North TX',
+    'MV_VALV4_RN':'Coastal','WLTC_ESR_RN':'Coastal','MAINLAND_RN':'Coastal',
+    'FALFUR_RN':'Coastal','PAVLOV_BT_RN':'Coastal','POTEETS_RN':'Coastal','TYNAN_RN':'Coastal',
+    'CATARINA_B1':'Premium','HOLCOMB_RN1':'Premium','HAMI_BESS_RN':'Premium',
+    'JUNCTION_RN':'Premium','RUSSEKST_RN':'Premium','FTDUNCAN_RN':'Premium',
+  };
+  const REGION_COLORS = {
+    'West TX':'#e8f5e9','North TX':'#e3f2fd','Coastal':'#fff3e0','Premium':'#fce4ec'
+  };
+
+  if (!nodeMCCSummary || !Object.keys(nodeMCCSummary).length) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  const nodeContribs = {};
+  for (const c of (constraints || [])) {
+    for (const node of Object.keys(c.node_mcc || {})) {
+      nodeContribs[node] = (nodeContribs[node] || 0) + 1;
+    }
+  }
+
+  const sorted = Object.entries(nodeMCCSummary)
+    .sort((a,b) => Math.abs(b[1]) - Math.abs(a[1]));
+
+  tbody.innerHTML = sorted.map(([node, mcc]) => {
+    const region   = NODE_REGIONS[node] || '—';
+    const bgColor  = REGION_COLORS[region] || '#f8f9fa';
+    const mccColor = mcc > 0 ? '#1a5c2a' : mcc < 0 ? '#880e4f' : '#555';
+    const sign     = mcc > 0 ? '+' : '';
+    const dir      = mcc > 5  ? '↑ Congestion benefit' :
+                     mcc < -5 ? '↓ Congestion cost'    :
+                     mcc > 0  ? '↑ Slight benefit'     :
+                     mcc < 0  ? '↓ Slight cost'        : '→ Neutral';
+    const dirColor  = mcc > 0 ? '#1a7a3f' : mcc < 0 ? '#b33000' : '#888';
+    const contribs  = nodeContribs[node] || 0;
+    const shortNode = node.replace('_RN','').replace('_B1','').replace('_BESS','').replace('_BT','');
+    return '<tr>' +
+      '<td class="node-name">' + shortNode + '</td>' +
+      '<td><span style="background:' + bgColor + ';padding:2px 8px;border-radius:3px;' +
+          'font-size:11px;font-weight:600">' + region + '</span></td>' +
+      '<td style="font-family:monospace;font-weight:700;color:' + mccColor + ';text-align:center">' +
+          sign + '$' + Math.abs(mcc).toFixed(4) + '</td>' +
+      '<td style="font-size:11px;color:' + dirColor + ';font-weight:600">' + dir + '</td>' +
+      '<td style="font-size:11px;color:#888;text-align:center">' + contribs +
+          ' constraint' + (contribs !== 1 ? 's' : '') + '</td>' +
+      '</tr>';
+  }).join('');
 }
 
 loadData();
