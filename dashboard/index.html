@@ -885,6 +885,15 @@ function renderAll(d, history, aiData) {
   const fc   = d.ercot_forecasts || {};
   const d7fc = fc.daily_7day     || {};
   const h24  = fc.hourly_24hr    || {};
+  document.getElementById('fc-source').textContent =
+    fc.forecast_date ? 'As of ' + fc.forecast_date + ' · ERCOT Public API' : '';
+  const fcDates = d7fc.dates || [];
+  const fcLoad  = (d7fc.gross_load_peak || []).slice();
+  const fcWind  = (d7fc.wind_avg        || []).slice();
+  const fcSolar = (d7fc.solar_peak      || []).slice();
+  const fcNet   = (d7fc.net_load_peak   || []).slice();
+
+
   // ── Net load spike risk alert ────────────────────────────────────────────
   const spikeAlert  = document.getElementById('fc-spike-alert');
   const spikeDetail = document.getElementById('fc-spike-detail');
@@ -916,14 +925,6 @@ function renderAll(d, history, aiData) {
       spikeAlert.style.display = 'none';
     }
   }
-
-  document.getElementById('fc-source').textContent =
-    fc.forecast_date ? 'As of ' + fc.forecast_date + ' · ERCOT Public API' : '';
-  const fcDates = d7fc.dates || [];
-  const fcLoad  = (d7fc.gross_load_peak || []).slice();
-  const fcWind  = (d7fc.wind_avg        || []).slice();
-  const fcSolar = (d7fc.solar_peak      || []).slice();
-  const fcNet   = (d7fc.net_load_peak   || []).slice();
 
   const dataDate = d.data_date || '';
   if (dataDate && fcDates[0] === dataDate) {
@@ -1242,7 +1243,14 @@ function renderAll(d, history, aiData) {
 
   // ── Constraints tab ──────────────────────────────────────────────────────────
   window._dataDate = d.data_date || '';
-  renderConstraints((d.constraints || {}).constraints || d.constraints || []);
+  // constraints in latest.json is a plain list (from out.update())
+  const rawConstraints = d.constraints;
+  const constraintsList = Array.isArray(rawConstraints)
+    ? rawConstraints
+    : (rawConstraints && Array.isArray(rawConstraints.constraints))
+      ? rawConstraints.constraints
+      : [];
+  renderConstraints(constraintsList);
 
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
