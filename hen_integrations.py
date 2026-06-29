@@ -222,11 +222,29 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
         hrs = len(cd["by_hour"])
         return avg * hrs
 
-    ranked_names = sorted(
+    # First pass: rank by generic score to get top 40 candidates
+    candidates = sorted(
         constraint_data.keys(),
         key=lambda n: _constraint_score(constraint_data[n]),
         reverse=True
-    )[:20]  # keep top 20 — portfolio has 32 nodes across ERCOT
+    )[:40]
+
+    # Second pass: re-rank candidates by HEN impact
+    # (shadow price × hours binding × max shift factor across HEN nodes)
+    def _hen_impact(c_name):
+        """Rank by MCC = avg_shadow_price × max_shift_factor across HEN nodes."""
+        cd     = constraint_data[c_name]
+        prices = cd["shadow_prices"]
+        if not prices:
+            return 0
+        avg      = sum(prices) / len(prices)
+        from_st  = cd["from_station"]
+        to_st    = cd["to_station"]
+        exposure = _node_exposure(c_name, from_st, to_st, asset_nodes)
+        max_sf   = max((abs(v) for v in exposure.values()), default=0.001)
+        return avg * max_sf  # MCC = shadow price × shift factor
+
+    ranked_names = sorted(candidates, key=_hen_impact, reverse=True)[:20]
 
     print(f"    {len(constraint_data)} unique constraints · top: {ranked_names[:3]}")
 
@@ -621,21 +639,33 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
         # Node exposure
         node_exposure = _node_exposure(c_name, from_st, to_st, asset_nodes)
 
+        # MCC (Marginal Cost of Congestion) = avg_shadow_price × shift_factor per node
+        # Represents the actual congestion cost/benefit at each HEN node
+        # Store per-node MCC and the max for ranking
+        node_mcc = {
+            node: round(avg_shadow * sf, 4)
+            for node, sf in node_exposure.items()
+        }
+        max_mcc = round(max((abs(v) for v in node_mcc.values()), default=0), 4)
+        hen_impact_score = max_mcc  # used for ranking
+
         constraints.append({
-            "name":           c_name,
-            "contingency":    cd["contingency"],
-            "from_station":   from_st,
-            "to_station":     to_st,
-            "from_kv":        cd["from_kv"],
-            "to_kv":          cd["to_kv"],
-            "avg_shadow":     avg_shadow,
-            "peak_shadow":    peak_shadow,
-            "hours_binding":  hours_bind,
-            "avg_violated_mw": avg_viol,
-            "flow_direction": direction,
-            "hourly":         hourly,        # keyed by int HE
-            "node_exposure":  node_exposure, # {node: score}
-            "shift_factors":  {},            # placeholder for future PTDF API
+            "name":             c_name,
+            "contingency":      cd["contingency"],
+            "from_station":     from_st,
+            "to_station":       to_st,
+            "from_kv":          cd["from_kv"],
+            "to_kv":            cd["to_kv"],
+            "avg_shadow":       avg_shadow,
+            "peak_shadow":      peak_shadow,
+            "hours_binding":    hours_bind,
+            "avg_violated_mw":  avg_viol,
+            "flow_direction":   direction,
+            "hourly":           hourly,
+            "node_exposure":    node_exposure,
+            "hen_impact_score": hen_impact_score,
+            "node_mcc":         node_mcc,
+            "shift_factors":    {},
         })
 
     return {"constraints": constraints, "data_date": YESTERDAY, "source": "ERCOT"}
