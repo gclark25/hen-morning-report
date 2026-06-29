@@ -1488,7 +1488,7 @@ ANCILLARY SERVICES DA-RT SPREADS — LAST 3 DAYS ($/MW):
 
 Please provide:
 1. PERFORMANCE SUMMARY: Key highlights from yesterday — what drove outperformance or underperformance across the fleet
-2. CONSTRAINT ANALYSIS: Which constraints bound the most hours yesterday and at what shadow price — identify the peak binding hour (HE), the from/to transmission line, flow direction, and which HEN nodes had material exposure. Flag any constraints where the shadow price exceeded $50/MWh and note the revenue implication for exposed nodes (positive or negative based on flow direction).
+2. CONSTRAINT ANALYSIS: Identify the top binding constraints by Marginal Cost of Congestion (MCC = avg shadow price × shift factor). For each material constraint, state the MCC impact on exposed HEN nodes, the peak binding hour (HE), flow direction, and whether the congestion helped or hurt each node's position (positive SF + positive shadow = congestion benefit; negative SF + positive shadow = congestion cost). Flag any constraint where MCC exceeds $10/MWh on a HEN node as commercially significant.
 3. WEATHER & LOAD OUTLOOK: What the 15-day forecast means for ERCOT pricing and HEN dispatch over the next 2 weeks
 4. MODO INDEX CONTEXT: How HEN's custom indices performed relative to prior day; what the market breakdown reveals
 5. AS MARKET ANALYSIS (last 3 days only): Based on the 3-day trailing window of DA-RT spreads:
