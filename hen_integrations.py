@@ -687,7 +687,34 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
             "shift_factors":    {},
         })
 
-    return {"constraints": constraints, "data_date": YESTERDAY, "source": "ERCOT"}
+    # ── Aggregate MCC per HEN node across all constraints ───────────────────
+    # node_mcc_summary[node] = sum of (avg_shadow × shift_factor) across all constraints
+    # This gives each node's total daily congestion cost/benefit in $/MWh
+    from collections import defaultdict
+    node_mcc_totals = defaultdict(float)
+    node_mcc_counts = defaultdict(int)
+
+    for c in constraints:
+        for node, mcc_val in c.get("node_mcc", {}).items():
+            node_mcc_totals[node] += mcc_val
+            node_mcc_counts[node] += 1
+
+    node_mcc_summary = {
+        node: round(node_mcc_totals[node], 4)
+        for node in node_mcc_totals
+    }
+
+    print(f"    Node MCC summary: {len(node_mcc_summary)} nodes with congestion exposure")
+    if node_mcc_summary:
+        top = sorted(node_mcc_summary.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
+        print(f"    Top MCC nodes: {top}")
+
+    return {
+        "constraints":      constraints,
+        "node_mcc_summary": node_mcc_summary,
+        "data_date":        YESTERDAY,
+        "source":           "ERCOT",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
