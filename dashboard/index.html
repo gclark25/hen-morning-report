@@ -1270,10 +1270,9 @@ function renderAll(d, history, aiData) {
       ? rawConstraints.constraints
       : [];
   renderConstraints(constraintsList);
-  const rawNodeMCC = Array.isArray(d.constraints)
-    ? null
-    : (d.constraints && d.constraints.node_mcc_summary) || null;
-  renderNodeMCC(constraintsList, rawNodeMCC || {});
+  // node_mcc_summary is written at top level of latest.json
+  const nodeMCCSummary = d.node_mcc_summary || {};
+  renderNodeMCC(constraintsList, nodeMCCSummary);
 
   // ── AI Analysis tab ───────────────────────────────────────────────────────
   const morning = (aiData.morning) || {};
