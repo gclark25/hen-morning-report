@@ -134,6 +134,36 @@ tr:hover td{background:#fafbfc}
 .heatmap-date-btn.active{background:#0a3d2e;color:#fff;border-color:#0a3d2e}
 .heatmap-date-btn:hover:not(.active){background:#f0f7f4;border-color:#1a7a3f;color:#1a7a3f}
 
+/* ── Regional trend ─────────────────────────────────────────────────────── */
+.region-trend-block{background:#f8f9fa;border-radius:6px;padding:12px 14px}
+.region-trend-name{font-size:10px;font-weight:700;color:#555;text-transform:uppercase;
+                   letter-spacing:.05em;margin-bottom:8px}
+.region-trend-value{font-size:20px;font-weight:700;font-family:monospace;color:#1a1a2e}
+.region-trend-arrow{font-size:14px;margin-left:4px}
+.region-trend-arrow.up{color:#1a7a3f}
+.region-trend-arrow.down{color:#b33000}
+.region-trend-arrow.flat{color:#888}
+.region-sparkline{display:flex;align-items:flex-end;gap:3px;height:32px;margin-top:8px}
+.region-spark-bar{flex:1;border-radius:2px 2px 0 0;min-height:2px;background:#0a3d2e;opacity:0.7}
+.region-spark-bar.neg{background:#b33000}
+.region-trend-dates{display:flex;justify-content:space-between;
+                    font-size:9px;color:#aaa;margin-top:2px}
+
+/* ── Spike alert ─────────────────────────────────────────────────────────── */
+.spike-alert-wrap{background:#fff3e0;border:1px solid #ff8f00;border-radius:8px;
+                  padding:12px 18px;margin-bottom:16px;display:flex;
+                  align-items:flex-start;gap:12px}
+
+/* ── AS offer hour cards ────────────────────────────────────────────────── */
+.offer-type-block{background:#f8f9fa;border-radius:6px;padding:10px 14px;
+                  min-width:160px;border-top:3px solid #0a3d2e}
+.offer-type-name{font-size:10px;font-weight:700;color:#555;text-transform:uppercase;
+                 letter-spacing:.06em;margin-bottom:6px}
+.offer-hour-row{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.offer-he{font-family:monospace;font-size:11px;color:#1a1a2e;font-weight:600;width:38px}
+.offer-bar{height:8px;border-radius:2px;background:#1a7a3f;min-width:2px}
+.offer-val{font-family:monospace;font-size:11px;color:#1a7a3f;font-weight:600}
+
 /* ── Node exposure pills ────────────────────────────────────────────────── */
 .node-pills{display:flex;flex-wrap:wrap;gap:4px;max-width:480px}
 .node-pill{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;
@@ -209,6 +239,17 @@ tr:hover td{background:#fafbfc}
       <div class="kpi-value" id="kpi-neg">—</div><div class="kpi-sub">charging opportunities</div></div>
   </div>
   <div class="callout-grid" id="callout-grid"></div>
+  <!-- Regional DART trend -->
+  <div class="card" id="regional-trend-card">
+    <div class="card-header">
+      <span class="card-title">5-Day Regional DART Trend</span>
+      <span class="card-meta">DA − RT avg $/MWh · arrow = vs prior day</span>
+    </div>
+    <div class="card-body">
+      <div id="regional-trend-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px"></div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header">
       <span class="card-title">Top 5 DART Performers</span>
@@ -313,6 +354,19 @@ tr:hover td{background:#fafbfc}
 
 <!-- ── FORECAST ───────────────────────────────────────────────────────────── -->
 <div id="tab-forecast" class="page">
+  <!-- Net load spike risk alert banner -->
+  <div id="fc-spike-alert" style="display:none;background:#fff3e0;border:1px solid #ff8f00;
+       border-radius:8px;padding:12px 18px;margin-bottom:16px;
+       display:flex;align-items:flex-start;gap:12px">
+    <div style="font-size:22px;flex-shrink:0">⚠️</div>
+    <div>
+      <div style="font-size:13px;font-weight:700;color:#b33000;margin-bottom:4px">
+        NET LOAD SPIKE RISK — Next 48 Hours
+      </div>
+      <div id="fc-spike-detail" style="font-size:12px;color:#5d2e00;line-height:1.6"></div>
+    </div>
+  </div>
+
   <div class="kpi-strip">
     <div class="kpi"><div class="kpi-label">7-Day Peak Load</div>
       <div class="kpi-value" id="fc-peak-load">—</div><div class="kpi-sub">GW gross</div></div>
@@ -367,6 +421,17 @@ tr:hover td{background:#fafbfc}
       <div class="kpi-value" id="as-nspin">—</div><div class="kpi-sub">DA−RT $/MW (yesterday)</div></div>
     <div class="kpi"><div class="kpi-label">ECRS Avg Spread</div>
       <div class="kpi-value" id="as-ecrs">—</div><div class="kpi-sub">DA−RT $/MW (yesterday)</div></div>
+  </div>
+
+  <!-- Best DA offer hours summary -->
+  <div class="card" id="as-offer-card" style="display:none">
+    <div class="card-header">
+      <span class="card-title">Best DA Offer Hours — 3-Day Pattern</span>
+      <span class="card-meta">Hours where DA consistently beats RT · Based on last 3 days</span>
+    </div>
+    <div class="card-body">
+      <div id="as-offer-body" style="display:flex;flex-wrap:wrap;gap:10px"></div>
+    </div>
   </div>
 
   <!-- Line chart -->
@@ -461,7 +526,7 @@ tr:hover td{background:#fafbfc}
   <div class="card">
     <div class="card-header">
       <span class="card-title">HEN Node Exposure by Constraint</span>
-      <span class="card-meta">Based on electrical proximity to binding transmission lines</span>
+      <span class="card-meta">MCC = avg shadow price × shift factor · Ranked by portfolio impact</span>
     </div>
     <div class="card-body">
       <table><thead><tr>
@@ -820,6 +885,38 @@ function renderAll(d, history, aiData) {
   const fc   = d.ercot_forecasts || {};
   const d7fc = fc.daily_7day     || {};
   const h24  = fc.hourly_24hr    || {};
+  // ── Net load spike risk alert ────────────────────────────────────────────
+  const spikeAlert  = document.getElementById('fc-spike-alert');
+  const spikeDetail = document.getElementById('fc-spike-detail');
+  const SPIKE_THRESHOLD = 60; // GW net load spike risk threshold
+
+  if (spikeAlert && spikeDetail && fcDates.length) {
+    // Look at next 48 hours = first 2 days of forecast
+    const next48Dates  = fcDates.slice(0, 2);
+    const spikeEvents  = [];
+
+    next48Dates.forEach((day, i) => {
+      const net = fcNet[i] || 0;
+      const gl  = fcLoad[i] || 0;
+      if (net >= SPIKE_THRESHOLD) {
+        const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(day + 'T12:00:00').getDay()];
+        spikeEvents.push(
+          `${dow} ${day.slice(5)}: peak net load ${net.toFixed(1)} GW ` +
+          `(gross ${gl.toFixed(1)} GW) — exceeds ${SPIKE_THRESHOLD} GW threshold`
+        );
+      }
+    });
+
+    if (spikeEvents.length) {
+      spikeDetail.innerHTML = spikeEvents.join('<br>') +
+        '<br><span style="font-weight:600">→ High probability scarcity pricing window — ' +
+        'consider DA commitment strategy and charge scheduling.</span>';
+      spikeAlert.style.display = 'flex';
+    } else {
+      spikeAlert.style.display = 'none';
+    }
+  }
+
   document.getElementById('fc-source').textContent =
     fc.forecast_date ? 'As of ' + fc.forecast_date + ' · ERCOT Public API' : '';
   const fcDates = d7fc.dates || [];
@@ -1018,9 +1115,130 @@ function renderAll(d, history, aiData) {
     document.getElementById('heatmap-table').style.display = 'none';
   }
 
+  // ── Build best DA offer hours summary ────────────────────────────────────
+  const offerCard = document.getElementById('as-offer-card');
+  const offerBody = document.getElementById('as-offer-body');
+  if (offerCard && offerBody && Object.keys(asSeries).length) {
+    const yesterday = d.data_date || '';
+    // Get last 3 dates from series
+    const allAsDates = [...new Set(
+      Object.values(asSeries).flat().map(r => r.date).filter(Boolean)
+    )].sort().slice(-3);
+
+    const blocks = asTypes.map(at => {
+      const rows3 = (asSeries[at] || []).filter(r =>
+        allAsDates.includes(r.date) && r.spread !== null
+      );
+      if (!rows3.length) return null;
+
+      // Average spread per hour across 3-day window
+      const hourMap = {};
+      for (const r of rows3) {
+        if (!hourMap[r.he]) hourMap[r.he] = [];
+        hourMap[r.he].push(r.spread);
+      }
+      const hourAvgs = Object.entries(hourMap)
+        .map(([he, vals]) => ({
+          he: parseInt(he),
+          avg: vals.reduce((a,b) => a+b, 0) / vals.length
+        }))
+        .filter(h => h.avg > 0)  // only hours where DA > RT
+        .sort((a,b) => b.avg - a.avg)
+        .slice(0, 3);
+
+      if (!hourAvgs.length) return null;
+
+      const maxAvg = hourAvgs[0].avg;
+      const rows = hourAvgs.map(h => {
+        const barW = Math.round(h.avg / maxAvg * 60);
+        return `<div class="offer-hour-row">
+          <span class="offer-he">HE${String(h.he).padStart(2,'0')}</span>
+          <div class="offer-bar" style="width:${barW}px"></div>
+          <span class="offer-val">+$${h.avg.toFixed(2)}</span>
+        </div>`;
+      }).join('');
+
+      return `<div class="offer-type-block">
+        <div class="offer-type-name">${at}</div>
+        ${rows}
+      </div>`;
+    }).filter(Boolean);
+
+    if (blocks.length) {
+      offerBody.innerHTML = blocks.join('');
+      offerCard.style.display = '';
+    }
+  }
+
   // AS line chart data
   window._asChartData = { asTypes, asSeries, asColors: {REGUP:'#1a7a3f', REGDN:'#c87800', RRS:'#7b1fa2', NSPIN:'#1565c0', ECRS:'#b33000'} };
   if (typeof Chart !== 'undefined') window._buildAsChart && window._buildAsChart();
+
+  // ── Regional DART trend ──────────────────────────────────────────────────
+  const trendBody = document.getElementById('regional-trend-body');
+  if (trendBody && history && history.length) {
+    const REGIONS_DEF = {
+      'West Texas':  ['TOYAH_RN','SADLBACK_RN','FAULKNER_RN','COYOTSPR_RN','LONESTAR_RN',
+                      'RTLSNAKE_BT','CEDRVALE_RN','SBEAN_BESS','GOMZ_RN','GRDNE_ESR_RN',
+                      'JDKNS_RN','SANDLAKE_RN'],
+      'North Texas': ['OLNEYTN_RN','DIBOL_RN','FRMRSVLW_RN','MNWL_BESS_RN','LFSTH_RN',
+                      'PAULN_RN','CISC_RN'],
+      'Coastal':     ['MV_VALV4_RN','WLTC_ESR_RN','MAINLAND_RN','FALFUR_RN','PAVLOV_BT_RN',
+                      'POTEETS_RN','TYNAN_RN'],
+      'Premium':     ['CATARINA_B1','HOLCOMB_RN1','HAMI_BESS_RN','JUNCTION_RN',
+                      'RUSSEKST_RN','FTDUNCAN_RN'],
+    };
+
+    const sortedHist = [...history].sort((a,b) => a.date > b.date ? 1 : -1).slice(-5);
+
+    const blocks = Object.entries(REGIONS_DEF).map(([regionName, nodes]) => {
+      // Compute avg DART per day for this region
+      const dayVals = sortedHist.map(entry => {
+        const nodeData = entry.nodes || {};
+        const vals = nodes
+          .filter(n => nodeData[n] && nodeData[n].dart != null)
+          .map(n => nodeData[n].dart);
+        return vals.length ? vals.reduce((a,b) => a+b,0) / vals.length : null;
+      }).filter(v => v !== null);
+
+      if (!dayVals.length) return '';
+
+      const latest   = dayVals[dayVals.length - 1];
+      const prior    = dayVals.length > 1 ? dayVals[dayVals.length - 2] : null;
+      const delta    = prior !== null ? latest - prior : null;
+      const arrowCls = delta === null ? 'flat' : delta > 0.5 ? 'up' : delta < -0.5 ? 'down' : 'flat';
+      const arrowChr = arrowCls === 'up' ? '↑' : arrowCls === 'down' ? '↓' : '→';
+      const valColor = latest > 0 ? '#1a7a3f' : latest < 0 ? '#b33000' : '#888';
+
+      // Sparkline bars
+      const maxAbs = Math.max(...dayVals.map(Math.abs), 1);
+      const bars = dayVals.map((v, i) => {
+        const h   = Math.max(Math.round(Math.abs(v) / maxAbs * 28), 2);
+        const cls = v < 0 ? ' neg' : '';
+        const lbl = sortedHist[i] ? sortedHist[i].date.slice(5) : '';
+        return `<div class="region-spark-bar${cls}" style="height:${h}px" title="${lbl}: $${v.toFixed(2)}"></div>`;
+      }).join('');
+
+      const dates = sortedHist.length >= 2
+        ? `<span>${sortedHist[0].date.slice(5)}</span><span>${sortedHist[sortedHist.length-1].date.slice(5)}</span>`
+        : '';
+
+      return `<div class="region-trend-block">
+        <div class="region-trend-name">${regionName}</div>
+        <div class="region-trend-value" style="color:${valColor}">
+          ${latest >= 0 ? '+' : ''}$${latest.toFixed(2)}
+          <span class="region-trend-arrow ${arrowCls}">${arrowChr}</span>
+        </div>
+        <div style="font-size:10px;color:#aaa;margin-top:2px">
+          ${delta !== null ? (delta >= 0 ? '+' : '') + '$' + delta.toFixed(2) + ' vs prior day' : 'first day'}
+        </div>
+        <div class="region-sparkline">${bars}</div>
+        <div class="region-trend-dates">${dates}</div>
+      </div>`;
+    });
+
+    trendBody.innerHTML = blocks.join('');
+  }
 
   // ── Constraints tab ──────────────────────────────────────────────────────────
   window._dataDate = d.data_date || '';
