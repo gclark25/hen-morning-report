@@ -785,6 +785,52 @@ async function loadData() {
 
 function renderAll(d, history, aiData) {
   // Header
+
+  // ── Node display names ──────────────────────────────────────────────────────
+  const NODE_DISPLAY_NAMES = {
+    'TOYAH_RN': 'Cherry Creek',
+    'SADLBACK_RN': 'Saddleback',
+    'FAULKNER_RN': 'Faulkner',
+    'COYOTSPR_RN': 'Coyote Springs',
+    'LONESTAR_RN': 'Lone Star',
+    'RTLSNAKE_BT': 'Rattlesnake',
+    'CEDRVALE_RN': 'Cedarvale',
+    'SBEAN_BESS': 'Screwbean',
+    'GOMZ_RN': 'Gomez',
+    'GRDNE_ESR_RN': 'Garden City',
+    'JDKNS_RN': 'Judkins',
+    'SANDLAKE_RN': 'Sand Lake',
+    'OLNEYTN_RN': 'Olney',
+    'DIBOL_RN': 'Diboll',
+    'FRMRSVLW_RN': 'Farmersville',
+    'MNWL_BESS_RN': 'Mineral Wells',
+    'LFSTH_RN': 'Lufkin South',
+    'PAULN_RN': 'Pauline',
+    'CISC_RN': 'Cisco',
+    'MV_VALV4_RN': 'Val Verde',
+    'WLTC_ESR_RN': 'Weil Tract',
+    'MAINLAND_RN': 'Mainland',
+    'FALFUR_RN': 'Falfurrias',
+    'PAVLOV_BT_RN': 'Pavlov',
+    'POTEETS_RN': 'Poteet',
+    'TYNAN_RN': 'Tynan',
+    'CATARINA_B1': 'Catarina',
+    'HOLCOMB_RN1': 'Holcomb',
+    'HAMI_BESS_RN': 'Hamilton',
+    'JUNCTION_RN': 'Junction',
+    'RUSSEKST_RN': 'Russek',
+    'FTDUNCAN_RN': 'Fort Duncan',
+  };
+
+  function nodeName(id) {
+    return NODE_DISPLAY_NAMES[id] || id.replace(/_RN$/,"").replace(/_B1$/,"").replace(/_BESS$/,"").replace(/_BT$/,"");
+  }
+
+  function nodeLabel(id) {
+    const name = NODE_DISPLAY_NAMES[id];
+    return name ? `${name} <span style="font-size:10px;color:#aaa;font-weight:400">${id}</span>` : id;
+  }
+
   document.getElementById('data-date').textContent = 'Data: ' + (d.data_date || '—');
   document.getElementById('gen-time').textContent  = 'Generated: ' + (d.generated_at || '—');
   document.getElementById('overview-date').textContent = d.data_date || '';
@@ -825,7 +871,7 @@ function renderAll(d, history, aiData) {
   const top5 = (tb.top10 || []).slice(0,5);
   document.getElementById('top5-body').innerHTML = top5.map(n => `
     <tr>
-      <td class="node-name">${n.node}</td>
+      <td class="node-name">${nodeLabel(n.node)}</td>
       <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
       <td class="rt-prem">+$${n.dart_avg.toFixed(2)}</td>
       <td>${fmt(rt[n.node]?.avg)}</td>
@@ -895,7 +941,7 @@ function renderAll(d, history, aiData) {
         if (s !== null && Math.abs(s) > bestAbs) { bestAbs = Math.abs(s); bestIdx = i; }
       });
 
-      const shortNode = node.replace('_RN','').replace('_B1','').replace('_BESS','').replace('_BT','');
+      const shortNode = nodeName(node);
       const regColor  = {'West TX':'#EAF2FA','North TX':'#e3f2fd','Coastal':'#fff3e0','Premium':'#fce4ec'}[region] || '#f8f9fa';
 
       const blockCells = blocks.map((s,i) =>
@@ -1583,7 +1629,7 @@ function renderNodeMCC(constraints, nodeMCCSummary) {
                      mcc < 0  ? '↓ Slight cost'        : '→ Neutral';
     const dirColor  = mcc > 0 ? '#4378A2' : mcc < 0 ? '#b33000' : '#888';
     const contribs  = nodeContribs[node] || 0;
-    const shortNode = node.replace('_RN','').replace('_B1','').replace('_BESS','').replace('_BT','');
+    const shortNode = nodeName(node);
     return '<tr>' +
       '<td class="node-name">' + shortNode + '</td>' +
       '<td><span style="background:' + bgColor + ';padding:2px 8px;border-radius:3px;' +
