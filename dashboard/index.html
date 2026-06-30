@@ -290,15 +290,15 @@ tr:hover td{background:#fafbfc}
         <b>Baseline:</b> DA price (your hedge / risk-free rate) &nbsp;·&nbsp;
         <b>Window:</b> Rolling 5 days × 24 hourly observations = up to 120 data points per node
         <br>
-        A <b>positive Sharpe</b> means RT consistently beat DA on average relative to its volatility —
-        the DA hedge underperformed and RT dispatch would have captured more value.
-        A <b>negative Sharpe</b> means DA consistently beat RT relative to volatility —
-        locking in the DA price was the better strategy.
+        A <b>positive Sharpe</b> means DA consistently beat RT on average relative to its volatility —
+        locking in the DA price was the better strategy and the DA hedge outperformed.
+        A <b>negative Sharpe</b> means RT consistently exceeded DA relative to volatility —
+        RT dispatch would have captured more value than the DA commitment.
         <b>Higher absolute value = stronger signal.</b> Near zero = noisy, no clear edge either way.
       </div>
       <div style="display:flex;gap:20px;margin-top:8px;font-size:11px">
-        <span><span style="color:#1a7a3f;font-weight:700">● Positive</span> — RT outperformed DA hedge (RT dispatch advantage)</span>
-        <span><span style="color:#b33000;font-weight:700">● Negative</span> — DA outperformed RT (DA commitment advantage)</span>
+        <span><span style="color:#1a7a3f;font-weight:700">● Positive</span> — DA outperformed RT (DA commitment advantage)</span>
+        <span><span style="color:#b33000;font-weight:700">● Negative</span> — RT outperformed DA hedge (RT dispatch advantage)</span>
         <span><span style="color:#888;font-weight:700">● Near zero</span> — No consistent edge, high noise</span>
         <span style="color:#888">Hover any Sharpe value for detail (avg, stdev, sample size)</span>
       </div>
@@ -821,11 +821,11 @@ function renderAll(d, history, aiData) {
   const maxAbsSharpe = allSharpes.length ? Math.max(...allSharpes.map(Math.abs), 0.01) : 1;
 
   function sharpeLabel(s) {
-    if (s >  0.5) return { txt: 'Strong DA hedge', cls: 'vol-low',  badge: '★★★' };
-    if (s >  0.1) return { txt: 'Slight DA edge',  cls: 'vol-low',  badge: '★★☆' };
-    if (s > -0.1) return { txt: 'Neutral',          cls: 'vol-med',  badge: '★☆☆' };
+    if (s >  0.5) return { txt: 'Strong DA edge',     cls: 'vol-low',  badge: '★★★' };
+    if (s >  0.1) return { txt: 'Slight DA edge',     cls: 'vol-low',  badge: '★★☆' };
+    if (s > -0.1) return { txt: 'Neutral',             cls: 'vol-med',  badge: '—'   };
     if (s > -0.5) return { txt: 'RT slightly better', cls: 'vol-high', badge: '↑☆☆' };
-    return               { txt: 'Strong RT upside', cls: 'vol-high', badge: '↑↑↑' };
+    return               { txt: 'Strong RT upside',   cls: 'vol-high', badge: '↑↑↑' };
   }
 
   function volCell(node) {
