@@ -1174,14 +1174,15 @@ def write_history_json(data, history_path="dashboard/history.json", token=None, 
         tb_node = next((n for n in tb.get("top10", []) + tb.get("bottom10", [])
                         if n["node"] == node), {})
         nodes_snapshot[node] = {
-            "dart":     dart[node],
-            "intraday": tb_node.get("intraday_spread", 0),
-            "rt_avg":   r.get("avg", 0),
-            "rt_max":   r.get("max", 0),
-            "rt_min":   r.get("min", 0),
-            "da_avg":   dv.get("avg", 0),
-            "region":   next((reg for reg, nodes in REGIONS.items()
-                              if node in nodes), "Other"),
+            "dart":         dart[node],
+            "dart_hourly":  data.get("dart_hourly", {}).get(node, {}),
+            "intraday":     tb_node.get("intraday_spread", 0),
+            "rt_avg":       r.get("avg", 0),
+            "rt_max":       r.get("max", 0),
+            "rt_min":       r.get("min", 0),
+            "da_avg":       dv.get("avg", 0),
+            "region":       next((reg for reg, nodes in REGIONS.items()
+                                  if node in nodes), "Other"),
         }
 
     regional_snapshot = {}
