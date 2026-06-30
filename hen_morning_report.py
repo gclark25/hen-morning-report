@@ -1518,11 +1518,11 @@ def _fmt_sharpe_dispatch(data):
 
     lines = []
     labels = {
-        "STRONG_DA":  "🟢 STRONG DA COMMITMENT (Sharpe > +0.5)",
-        "LEAN_DA":    "🔵 LEAN DA (Sharpe +0.15 to +0.5)",
+        "STRONG_DA":  "🟢 STRONG DA COMMITMENT (Sharpe > +0.5) — DA consistently beat RT",
+        "LEAN_DA":    "🔵 LEAN DA (Sharpe +0.15 to +0.5) — slight DA premium over RT",
         "NEUTRAL":    "⚪ NEUTRAL — no clear edge (Sharpe -0.15 to +0.15)",
-        "LEAN_RT":    "🟡 LEAN RT (Sharpe -0.5 to -0.15)",
-        "STRONG_RT":  "🔴 STRONG RT DISPATCH (Sharpe < -0.5)",
+        "LEAN_RT":    "🟡 LEAN RT (Sharpe -0.5 to -0.15) — RT slightly exceeded DA",
+        "STRONG_RT":  "🔴 STRONG RT DISPATCH (Sharpe < -0.5) — RT consistently exceeded DA",
     }
     for signal, label in labels.items():
         nodes = groups[signal]
@@ -1665,10 +1665,10 @@ def run_ai_analysis(data, history, api_key):
             },
             json={
                 "model":      "claude-sonnet-4-6",
-                "max_tokens": 4000,
+                "max_tokens": 6000,
                 "messages":   [{"role": "user", "content": prompt}],
             },
-            timeout=120,
+            timeout=180,
         )
         r.raise_for_status()
         text = r.json()["content"][0]["text"].strip()
