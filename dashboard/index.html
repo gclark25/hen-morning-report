@@ -164,6 +164,22 @@ tr:hover td{background:#fafbfc}
 .offer-bar{height:8px;border-radius:2px;background:#1a7a3f;min-width:2px}
 .offer-val{font-family:monospace;font-size:11px;color:#1a7a3f;font-weight:600}
 
+/* ── Time block Sharpe table ────────────────────────────────────────────── */
+#sharpe-block-table{border-collapse:separate;border-spacing:2px;width:100%;font-size:12px}
+#sharpe-block-table th{background:#f8f9fa;padding:7px 10px;text-align:center;
+  font-size:11px;font-weight:700;color:#555;letter-spacing:.04em;border:none;
+  line-height:1.3}
+#sharpe-block-table th:first-child,#sharpe-block-table th:nth-child(2){text-align:left}
+.sb-cell{padding:6px 8px;text-align:center;border-radius:3px;font-family:monospace;
+  font-size:11px;font-weight:700;cursor:default}
+.sb-pos-strong{background:#c8e6c9;color:#1a5c2a}
+.sb-pos-mild  {background:#e8f5e9;color:#2e7d32}
+.sb-neutral   {background:#f4f5f7;color:#888}
+.sb-neg-mild  {background:#fce4ec;color:#880e4f}
+.sb-neg-strong{background:#f8bbd0;color:#880e4f}
+.sb-best-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;
+  font-weight:700;background:#0a3d2e;color:#fff}
+
 /* ── Volatility score ───────────────────────────────────────────────────── */
 .vol-bar-wrap{display:flex;align-items:center;gap:6px}
 .vol-bar{height:8px;border-radius:2px;min-width:2px;max-width:80px}
@@ -305,144 +321,53 @@ tr:hover td{background:#fafbfc}
     </div>
   </div>
 
+  <!-- ── Time Block Sharpe Ratio Table ──────────────────────────────────── -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">Top 10 DART Performers</span>
-      <span class="card-meta">DA avg − RT avg · higher = DA premium</span>
+      <span class="card-title">Sharpe Ratio by Time Block — All 32 Nodes</span>
+      <span class="card-meta">Rolling 5-day · DA = risk-free rate · Green = DA edge · Red = RT edge</span>
     </div>
-    <div class="card-body">
-      <table><thead><tr>
-        <th>Node</th><th>Region</th><th>DART avg</th>
-        <th>Intraday $/MWh</th><th>Best hour</th><th>Best spread</th>
-        <th>Spike hrs</th><th>Neg hrs</th><th>Sharpe Ratio</th>
-      </tr></thead><tbody id="top10-body"></tbody></table>
+    <div class="card-body" style="overflow-x:auto">
+      <table id="sharpe-block-table">
+        <thead><tr>
+          <th style="text-align:left">Node</th>
+          <th style="text-align:left">Region</th>
+          <th>Daily<br><span style="font-weight:400;font-size:10px">All Hours</span></th>
+          <th>HE 01–06<br><span style="font-weight:400;font-size:10px">Overnight</span></th>
+          <th>HE 07–12<br><span style="font-weight:400;font-size:10px">Morning</span></th>
+          <th>HE 13–18<br><span style="font-weight:400;font-size:10px">Midday</span></th>
+          <th>HE 19–24<br><span style="font-weight:400;font-size:10px">Evening Peak</span></th>
+          <th>Best Block</th>
+        </tr></thead>
+        <tbody id="sharpe-block-body"></tbody>
+      </table>
+      <div id="sharpe-block-empty" style="display:none;text-align:center;color:#aaa;padding:24px">
+        Building history — Sharpe scores populate after 2+ days of data
+      </div>
     </div>
   </div>
+
+  <!-- ── Consolidated DART Table ──────────────────────────────────────────── -->
   <div class="card">
-    <div class="card-header"><span class="card-title">Bottom 10 DART Performers</span></div>
-    <div class="card-body">
-      <table><thead><tr>
-        <th>Node</th><th>Region</th><th>DART avg</th>
-        <th>Intraday $/MWh</th><th>Worst hour</th><th>Worst spread</th>
-        <th>Spike hrs</th><th>Neg hrs</th><th>Sharpe Ratio</th>
-      </tr></thead><tbody id="bot10-body"></tbody></table>
+    <div class="card-header">
+      <span class="card-title">All Nodes — DART Performance</span>
+      <span class="card-meta">Sorted by absolute DART spread · DA avg − RT avg · positive = DA premium · negative = RT outperformance</span>
     </div>
-  </div>
-  <div class="card">
-    <div class="card-header"><span class="card-title">All Nodes — RT vs DA</span></div>
     <div class="card-body">
       <table><thead><tr>
-        <th>Node</th><th>Region</th><th>RT avg</th><th>RT min</th>
-        <th>RT max</th><th>DA avg</th><th>DART</th><th>Sharpe Ratio</th>
+        <th>Node</th>
+        <th>Region</th>
+        <th>DART avg</th>
+        <th>RT avg</th>
+        <th>RT min</th>
+        <th>RT max</th>
+        <th>DA avg</th>
+        <th>Spike hrs</th>
+        <th>Neg hrs</th>
+        <th>Daily Sharpe</th>
       </tr></thead><tbody id="all-nodes-body"></tbody></table>
     </div>
   </div>
-</div>
-
-<!-- ── MODO ──────────────────────────────────────────────────────────────── -->
-<div id="tab-modo" class="page">
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">HEN Custom Indices — 2026 YTD</span>
-      <span class="card-meta" id="modo-date-range"></span>
-    </div>
-    <div class="card-body">
-      <div id="modo-bars" style="margin-bottom:20px"></div>
-      <table><thead><tr>
-        <th style="text-align:left">Index</th>
-        <th>$/MW/yr (annualised)</th><th>Window Start</th><th>Days</th><th>Top Markets</th>
-      </tr></thead><tbody id="modo-table-body"></tbody></table>
-    </div>
-  </div>
-</div>
-
-<!-- ── WEATHER ────────────────────────────────────────────────────────────── -->
-<div id="tab-weather" class="page">
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">15-Day City Forecasts — ERCOT Metro Stations</span>
-      <span class="card-meta" id="weather-source"></span>
-    </div>
-    <div class="card-body"><div class="weather-grid" id="weather-grid"></div></div>
-  </div>
-</div>
-
-<!-- ── FUNDAMENTALS ───────────────────────────────────────────────────────── -->
-<div id="tab-fundamentals" class="page">
-  <div class="card">
-    <div class="card-header"><span class="card-title">ERCOT System Fundamentals — 7-day lookback (GW daily peak)</span></div>
-    <div class="card-body">
-      <table><thead><tr>
-        <th>Date</th><th>Gross load</th><th>Wind</th><th>Solar</th><th>Net load</th>
-      </tr></thead><tbody id="fund-body"></tbody></table>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-header"><span class="card-title">5-Day History</span></div>
-    <div class="card-body">
-      <table><thead><tr>
-        <th>Date</th><th>Fleet RT avg</th><th>Fleet RT max</th>
-        <th>Spike nodes</th><th>Neg nodes</th><th>Gross load</th><th>Battery SOC</th>
-      </tr></thead><tbody id="history-body"></tbody></table>
-    </div>
-  </div>
-</div>
-
-<!-- ── FORECAST ───────────────────────────────────────────────────────────── -->
-<div id="tab-forecast" class="page">
-  <!-- Net load spike risk alert banner -->
-  <div id="fc-spike-alert" style="display:none;background:#fff3e0;border:1px solid #ff8f00;
-       border-radius:8px;padding:12px 18px;margin-bottom:16px;
-       display:flex;align-items:flex-start;gap:12px">
-    <div style="font-size:22px;flex-shrink:0">⚠️</div>
-    <div>
-      <div style="font-size:13px;font-weight:700;color:#b33000;margin-bottom:4px">
-        NET LOAD SPIKE RISK — Next 48 Hours
-      </div>
-      <div id="fc-spike-detail" style="font-size:12px;color:#5d2e00;line-height:1.6"></div>
-    </div>
-  </div>
-
-  <div class="kpi-strip">
-    <div class="kpi"><div class="kpi-label">7-Day Peak Load</div>
-      <div class="kpi-value" id="fc-peak-load">—</div><div class="kpi-sub">GW gross</div></div>
-    <div class="kpi"><div class="kpi-label">7-Day Peak Net Load</div>
-      <div class="kpi-value" id="fc-peak-net">—</div><div class="kpi-sub">GW after renewables</div></div>
-    <div class="kpi"><div class="kpi-label">Avg Wind</div>
-      <div class="kpi-value" id="fc-max-wind">—</div><div class="kpi-sub">GW 7-day avg</div></div>
-    <div class="kpi"><div class="kpi-label">Peak Solar</div>
-      <div class="kpi-value" id="fc-max-solar">—</div><div class="kpi-sub">GW 7-day peak</div></div>
-  </div>
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Yesterday + 7-Day Hourly Forecast — Gross Load · Net Load · Wind · Solar</span>
-      <span class="card-meta" id="fc-source"></span>
-    </div>
-    <div class="card-body" style="position:relative;height:320px"><canvas id="fc-chart"></canvas></div>
-  </div>
-  <div class="card">
-    <div class="card-header"><span class="card-title">7-Day Forward Forecast — Daily Peaks</span></div>
-    <div class="card-body">
-      <div id="fc-bars" style="margin-bottom:20px"></div>
-      <table><thead><tr>
-        <th style="text-align:left">Date</th><th>Peak Gross Load</th>
-        <th>Wind Avg</th><th>Solar Peak</th><th>Peak Net Load</th><th>Renewables %</th>
-      </tr></thead><tbody id="fc-7day-body"></tbody></table>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Hourly Detail — Yesterday + 7-Day Forecast</span>
-      <span class="card-meta" id="fc-24hr-meta"></span>
-    </div>
-    <div class="card-body">
-      <table><thead><tr>
-        <th style="text-align:left">Hour (HE)</th><th>Gross Load GW</th>
-        <th>Wind GW</th><th>Solar GW</th><th>Net Load GW</th><th>Renewables %</th>
-      </tr></thead><tbody id="fc-24hr-body"></tbody></table>
-    </div>
-  </div>
-</div>
 
 <!-- ── AS PRICES ──────────────────────────────────────────────────────────── -->
 <div id="tab-as" class="page">
@@ -779,7 +704,107 @@ function renderAll(d, history, aiData) {
       <td>${fmt((d.da||{})[n.node]?.avg)}</td>
     </tr>`).join('');
 
-  // ── Prices tab ────────────────────────────────────────────────────────────
+  // ── Time-block Sharpe renderer ───────────────────────────────────────────────
+  const BLOCKS = [
+    { id: 'b0624', label: 'HE 01–06', hours: [1,2,3,4,5,6]       },
+    { id: 'b0712', label: 'HE 07–12', hours: [7,8,9,10,11,12]     },
+    { id: 'b1318', label: 'HE 13–18', hours: [13,14,15,16,17,18]  },
+    { id: 'b1924', label: 'HE 19–24', hours: [19,20,21,22,23,24]  },
+  ];
+
+  function blockSharpe(node, hours) {
+    const vals = [];
+    // Today
+    const todayDH = dartHourly[node] || {};
+    for (const h of hours) {
+      const v = todayDH[h] ?? todayDH[String(h)];
+      if (v != null) vals.push(v);
+    }
+    // History
+    for (const day of (history || [])) {
+      const dh = (day.nodes && day.nodes[node] && day.nodes[node].dart_hourly) || {};
+      for (const h of hours) {
+        const v = dh[h] ?? dh[String(h)];
+        if (v != null) vals.push(v);
+      }
+    }
+    if (vals.length < 3) return null;
+    const mean = vals.reduce((a,b) => a+b,0) / vals.length;
+    const stdev = Math.sqrt(vals.reduce((s,v) => s+(v-mean)**2,0) / vals.length);
+    if (stdev < 0.01) return 0;
+    return mean / stdev;
+  }
+
+  function sbCls(s) {
+    if (s === null) return 'sb-neutral';
+    if (s >  0.5) return 'sb-pos-strong';
+    if (s >  0.1) return 'sb-pos-mild';
+    if (s > -0.1) return 'sb-neutral';
+    if (s > -0.5) return 'sb-neg-mild';
+    return 'sb-neg-strong';
+  }
+
+  function sbFmt(s) {
+    if (s === null) return '—';
+    const sign = s >= 0 ? '+' : '';
+    return sign + s.toFixed(2);
+  }
+
+  const sbBody  = document.getElementById('sharpe-block-body');
+  const sbEmpty = document.getElementById('sharpe-block-empty');
+
+  if (sbBody) {
+    const allNodes = Object.keys(dartHourly);
+    const rows = allNodes.map(node => {
+      const region = NODE_REGIONS_PRICES[node] || '—';
+      const daily  = sharpeRatio(node);
+      const dailyS = daily ? daily.sharpe : null;
+      const blocks = BLOCKS.map(b => blockSharpe(node, b.hours));
+
+      // Best block = highest absolute Sharpe
+      let bestIdx = null, bestAbs = 0.1;
+      blocks.forEach((s, i) => {
+        if (s !== null && Math.abs(s) > bestAbs) { bestAbs = Math.abs(s); bestIdx = i; }
+      });
+
+      const shortNode = node.replace('_RN','').replace('_B1','').replace('_BESS','').replace('_BT','');
+      const regColor  = {'West TX':'#e8f5e9','North TX':'#e3f2fd','Coastal':'#fff3e0','Premium':'#fce4ec'}[region] || '#f8f9fa';
+
+      const blockCells = blocks.map((s,i) =>
+        `<td style="padding:2px"><div class="sb-cell ${sbCls(s)}"
+          title="${BLOCKS[i].label}: ${sbFmt(s)}">${sbFmt(s)}</div></td>`
+      ).join('');
+
+      const bestBadge = bestIdx !== null
+        ? `<span class="sb-best-badge">${BLOCKS[bestIdx].label}</span>`
+        : '<span style="color:#aaa;font-size:11px">—</span>';
+
+      return { node, region, dailyS, blocks, html:
+        `<tr>
+          <td class="node-name">${shortNode}</td>
+          <td><span style="background:${regColor};padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${region}</span></td>
+          <td style="padding:2px"><div class="sb-cell ${sbCls(dailyS)}">${sbFmt(dailyS)}</div></td>
+          ${blockCells}
+          <td style="text-align:center">${bestBadge}</td>
+        </tr>`
+      };
+    });
+
+    // Sort by absolute daily Sharpe descending
+    rows.sort((a,b) => Math.abs(b.dailyS||0) - Math.abs(a.dailyS||0));
+
+    const hasData = rows.some(r => r.dailyS !== null);
+    if (hasData) {
+      sbBody.innerHTML = rows.map(r => r.html).join('');
+      if (sbEmpty) sbEmpty.style.display = 'none';
+      document.getElementById('sharpe-block-table').style.display = '';
+    } else {
+      if (sbEmpty) sbEmpty.style.display = '';
+      document.getElementById('sharpe-block-table').style.display = 'none';
+    }
+  }
+
+// ── Prices tab ────────────────────────────────────────────────────────────
   const da          = d.da || {};
   const dartHourly  = d.dart_hourly || {};
 
@@ -848,59 +873,42 @@ function renderAll(d, history, aiData) {
       '</div>' +
       '</td>';
   }
-  document.getElementById('top10-body').innerHTML = (tb.top10 || []).map(n => `
-    <tr>
-      <td class="node-name">${n.node}</td>
-      <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
-      <td class="da-prem">+$${n.dart_avg.toFixed(2)}</td>
-      <td>$${n.intraday_spread.toFixed(2)}</td>
-      <td>HE ${String(n.best_hour).padStart(2,'0')}:00</td>
-      <td class="da-prem">+$${n.best_spread.toFixed(2)}</td>
-      <td>${n.spike_hours} hrs</td>
-      <td>${n.neg_hours} hrs</td>
-      ${volCell(n.node)}
-    </tr>`).join('');
-
-  document.getElementById('bot10-body').innerHTML = (tb.bottom10 || []).map(n => `
-    <tr>
-      <td class="node-name">${n.node}</td>
-      <td><span class="region-tag ${regionClass(n.region)}">${n.region}</span></td>
-      <td class="rt-prem">$${n.dart_avg.toFixed(2)}</td>
-      <td>$${n.intraday_spread.toFixed(2)}</td>
-      <td>HE ${String(n.worst_hour).padStart(2,'0')}:00</td>
-      <td class="rt-prem">${n.worst_spread.toFixed(2)}</td>
-      <td>${n.spike_hours} hrs</td>
-      <td>${n.neg_hours} hrs</td>
-      ${volCell(n.node)}
-    </tr>`).join('');
+  // Consolidated DART table — all nodes sorted by absolute DART
+  const NODE_REGIONS_PRICES = {
+    'TOYAH_RN':'West TX','SADLBACK_RN':'West TX','FAULKNER_RN':'West TX',
+    'COYOTSPR_RN':'West TX','LONESTAR_RN':'West TX','RTLSNAKE_BT':'West TX',
+    'CEDRVALE_RN':'West TX','SBEAN_BESS':'West TX','GOMZ_RN':'West TX',
+    'GRDNE_ESR_RN':'West TX','JDKNS_RN':'West TX','SANDLAKE_RN':'West TX',
+    'OLNEYTN_RN':'North TX','DIBOL_RN':'North TX','FRMRSVLW_RN':'North TX',
+    'MNWL_BESS_RN':'North TX','LFSTH_RN':'North TX','PAULN_RN':'North TX','CISC_RN':'North TX',
+    'MV_VALV4_RN':'Coastal','WLTC_ESR_RN':'Coastal','MAINLAND_RN':'Coastal',
+    'FALFUR_RN':'Coastal','PAVLOV_BT_RN':'Coastal','POTEETS_RN':'Coastal','TYNAN_RN':'Coastal',
+    'CATARINA_B1':'Premium','HOLCOMB_RN1':'Premium','HAMI_BESS_RN':'Premium',
+    'JUNCTION_RN':'Premium','RUSSEKST_RN':'Premium','FTDUNCAN_RN':'Premium',
+  };
 
   document.getElementById('all-nodes-body').innerHTML = Object.entries(rt)
-    .sort((a,b) => b[1].avg - a[1].avg)
+    .filter(([node]) => dart[node] != null)
+    .sort((a,b) => Math.abs(dart[b[0]]||0) - Math.abs(dart[a[0]]||0))
     .map(([node, r]) => {
-      const dv = da[node] || {};
-      const sp = dart[node];
-      const spStr = sp != null ? (sp >= 0 ? '+$'+sp.toFixed(2) : '-$'+Math.abs(sp).toFixed(2)) : '—';
-      const spClass = sp > 5 ? 'rt-prem' : sp < -5 ? 'da-prem' : '';
-      const reg = node.includes('TOYAH')||node.includes('SADL')||node.includes('FAUL')||
-                  node.includes('COYOT')||node.includes('LONE')||node.includes('RTLS')||
-                  node.includes('CEDR')||node.includes('SBEAN')||node.includes('GOMZ')||
-                  node.includes('GRDNE')||node.includes('JDKNS')||node.includes('SANDL') ? 'West Texas' :
-                  node.includes('OLNEY')||node.includes('DIBOL')||node.includes('FRMR')||
-                  node.includes('MNWL')||node.includes('LFST')||node.includes('PAUL')||
-                  node.includes('CISC') ? 'North Texas' :
-                  node.includes('MV_V')||node.includes('WLTC')||node.includes('MAINL')||
-                  node.includes('FALF')||node.includes('PAVL')||node.includes('POTE')||
-                  node.includes('TYNA') ? 'Coastal' :
-                  node.includes('CATA')||node.includes('HOLC')||node.includes('HAMI')||
-                  node.includes('JUNC')||node.includes('RUSS')||node.includes('FTDU') ? 'Premium' : 'Other';
+      const dv     = da[node] || {};
+      const sp     = dart[node];
+      const spStr  = sp != null ? (sp >= 0 ? '+$'+sp.toFixed(2) : '-$'+Math.abs(sp).toFixed(2)) : '—';
+      const spCls  = sp > 5 ? 'da-prem' : sp < -5 ? 'rt-prem' : '';
+      const region = NODE_REGIONS_PRICES[node] || 'Other';
+      const regBg  = {'West TX':'#e8f5e9','North TX':'#e3f2fd','Coastal':'#fff3e0','Premium':'#fce4ec'}[region]||'#f8f9fa';
+      const tbNode = (tb.top10||[]).concat(tb.bottom10||[]).find(n => n.node === node) || {};
+      const shortNode = node.replace('_RN','').replace('_B1','').replace('_BESS','').replace('_BT','');
       return `<tr>
-        <td class="node-name">${node}</td>
-        <td><span class="region-tag ${regionClass(reg)}">${reg}</span></td>
+        <td class="node-name">${shortNode}</td>
+        <td><span style="background:${regBg};padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${region}</span></td>
+        <td${spCls?' class="'+spCls+'"':''}>${spStr}</td>
         <td${r.max>100?' class="spike"':''}>${fmt(r.avg)}</td>
         <td${r.min<0?' class="neg"':''}>${fmt(r.min)}</td>
         <td${r.max>100?' class="spike"':''}>${fmt(r.max)}</td>
         <td>${fmt(dv.avg)}</td>
-        <td${spClass?' class="'+spClass+'"':''}>${spStr}</td>
+        <td>${tbNode.spike_hours||0} hrs</td>
+        <td>${tbNode.neg_hours||0} hrs</td>
         ${volCell(node)}
       </tr>`;
     }).join('');
