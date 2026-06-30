@@ -164,6 +164,14 @@ tr:hover td{background:#fafbfc}
 .offer-bar{height:8px;border-radius:2px;background:#1a7a3f;min-width:2px}
 .offer-val{font-family:monospace;font-size:11px;color:#1a7a3f;font-weight:600}
 
+/* ── Volatility score ───────────────────────────────────────────────────── */
+.vol-bar-wrap{display:flex;align-items:center;gap:6px}
+.vol-bar{height:8px;border-radius:2px;min-width:2px;max-width:80px}
+.vol-high{background:#b33000}
+.vol-med {background:#c87800}
+.vol-low {background:#1a7a3f}
+.vol-score{font-family:monospace;font-size:11px;font-weight:700}
+
 /* ── Node exposure pills ────────────────────────────────────────────────── */
 .node-pills{display:flex;flex-wrap:wrap;gap:4px;max-width:480px}
 .node-pill{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;
@@ -269,6 +277,34 @@ tr:hover td{background:#fafbfc}
 
 <!-- ── PRICES ─────────────────────────────────────────────────────────────── -->
 <div id="tab-prices" class="page">
+  <!-- Sharpe Ratio definition panel -->
+  <div style="background:#f0f4ff;border:1px solid #c5d0e8;border-radius:8px;
+              padding:14px 18px;margin-bottom:16px;display:flex;gap:16px;align-items:flex-start">
+    <div style="font-size:22px;flex-shrink:0">📐</div>
+    <div>
+      <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:6px">
+        Sharpe Ratio — What It Means
+      </div>
+      <div style="font-size:12px;color:#444;line-height:1.7">
+        <b>Formula:</b> Avg DART Spread ÷ Std Dev of DART Spread &nbsp;·&nbsp;
+        <b>Baseline:</b> DA price (your hedge / risk-free rate) &nbsp;·&nbsp;
+        <b>Window:</b> Rolling 5 days × 24 hourly observations = up to 120 data points per node
+        <br>
+        A <b>positive Sharpe</b> means RT consistently beat DA on average relative to its volatility —
+        the DA hedge underperformed and RT dispatch would have captured more value.
+        A <b>negative Sharpe</b> means DA consistently beat RT relative to volatility —
+        locking in the DA price was the better strategy.
+        <b>Higher absolute value = stronger signal.</b> Near zero = noisy, no clear edge either way.
+      </div>
+      <div style="display:flex;gap:20px;margin-top:8px;font-size:11px">
+        <span><span style="color:#1a7a3f;font-weight:700">● Positive</span> — RT outperformed DA hedge (RT dispatch advantage)</span>
+        <span><span style="color:#b33000;font-weight:700">● Negative</span> — DA outperformed RT (DA commitment advantage)</span>
+        <span><span style="color:#888;font-weight:700">● Near zero</span> — No consistent edge, high noise</span>
+        <span style="color:#888">Hover any Sharpe value for detail (avg, stdev, sample size)</span>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header">
       <span class="card-title">Top 10 DART Performers</span>
@@ -278,7 +314,7 @@ tr:hover td{background:#fafbfc}
       <table><thead><tr>
         <th>Node</th><th>Region</th><th>DART avg</th>
         <th>Intraday $/MWh</th><th>Best hour</th><th>Best spread</th>
-        <th>Spike hrs</th><th>Neg hrs</th>
+        <th>Spike hrs</th><th>Neg hrs</th><th>Sharpe Ratio</th>
       </tr></thead><tbody id="top10-body"></tbody></table>
     </div>
   </div>
@@ -288,7 +324,7 @@ tr:hover td{background:#fafbfc}
       <table><thead><tr>
         <th>Node</th><th>Region</th><th>DART avg</th>
         <th>Intraday $/MWh</th><th>Worst hour</th><th>Worst spread</th>
-        <th>Spike hrs</th><th>Neg hrs</th>
+        <th>Spike hrs</th><th>Neg hrs</th><th>Sharpe Ratio</th>
       </tr></thead><tbody id="bot10-body"></tbody></table>
     </div>
   </div>
@@ -297,7 +333,7 @@ tr:hover td{background:#fafbfc}
     <div class="card-body">
       <table><thead><tr>
         <th>Node</th><th>Region</th><th>RT avg</th><th>RT min</th>
-        <th>RT max</th><th>DA avg</th><th>DART</th>
+        <th>RT max</th><th>DA avg</th><th>DART</th><th>Sharpe Ratio</th>
       </tr></thead><tbody id="all-nodes-body"></tbody></table>
     </div>
   </div>
@@ -744,7 +780,74 @@ function renderAll(d, history, aiData) {
     </tr>`).join('');
 
   // ── Prices tab ────────────────────────────────────────────────────────────
-  const da = d.da || {};
+  const da          = d.da || {};
+  const dartHourly  = d.dart_hourly || {};
+
+  // ── Rolling 5-day Sharpe Ratio per node ─────────────────────────────────
+  // Sharpe = avg(DART spreads) / stdev(DART spreads) using DA as risk-free rate
+  // Uses all hourly DART observations across 5 history days + today
+  // = up to 5 x 24 = 120 hourly observations per node
+  function sharpeRatio(node) {
+    // Collect all hourly DART values across history + today
+    const allHrs = [];
+
+    // Today's hourly DART
+    const todayHrs = Object.values(dartHourly[node] || {});
+    allHrs.push(...todayHrs);
+
+    // History days
+    for (const day of (history || [])) {
+      const nh = (day.nodes && day.nodes[node] && day.nodes[node].dart_hourly)
+        ? Object.values(day.nodes[node].dart_hourly)
+        : [];
+      allHrs.push(...nh);
+    }
+
+    if (allHrs.length < 4) return null;  // need enough observations
+
+    const mean = allHrs.reduce((a,b) => a+b, 0) / allHrs.length;
+    const variance = allHrs.reduce((s,v) => s + (v-mean)**2, 0) / allHrs.length;
+    const stdev = Math.sqrt(variance);
+    if (stdev < 0.01) return null;  // avoid division by near-zero
+
+    return { sharpe: mean / stdev, mean, stdev, n: allHrs.length };
+  }
+
+  // Compute Sharpe for all nodes and find range for scaling
+  const allSharpes = Object.keys(dartHourly)
+    .map(n => sharpeRatio(n))
+    .filter(s => s !== null)
+    .map(s => s.sharpe);
+  const maxAbsSharpe = allSharpes.length ? Math.max(...allSharpes.map(Math.abs), 0.01) : 1;
+
+  function sharpeLabel(s) {
+    if (s >  0.5) return { txt: 'Strong DA hedge', cls: 'vol-low',  badge: '★★★' };
+    if (s >  0.1) return { txt: 'Slight DA edge',  cls: 'vol-low',  badge: '★★☆' };
+    if (s > -0.1) return { txt: 'Neutral',          cls: 'vol-med',  badge: '★☆☆' };
+    if (s > -0.5) return { txt: 'RT slightly better', cls: 'vol-high', badge: '↑☆☆' };
+    return               { txt: 'Strong RT upside', cls: 'vol-high', badge: '↑↑↑' };
+  }
+
+  function volCell(node) {
+    const result = sharpeRatio(node);
+    if (!result) return '<td style="color:#aaa;font-size:11px;text-align:center">—</td>';
+    const { sharpe, mean, stdev, n } = result;
+    const lbl  = sharpeLabel(sharpe);
+    const sign = sharpe >= 0 ? '+' : '';
+    const pct  = Math.min(Math.abs(sharpe) / maxAbsSharpe, 1);
+    const barW = Math.round(pct * 70);
+    const barColor = sharpe > 0 ? '#1a7a3f' : '#b33000';
+    return '<td>' +
+      '<div class="vol-bar-wrap" title="Sharpe: ' + sign + sharpe.toFixed(3) +
+        ' | avg DART: $' + mean.toFixed(2) +
+        ' | stdev: $' + stdev.toFixed(2) +
+        ' | n=' + n + ' hours">' +
+      '<div class="vol-bar" style="width:' + barW + 'px;background:' + barColor + '"></div>' +
+      '<span class="vol-score ' + lbl.cls + '" style="min-width:44px">' + sign + sharpe.toFixed(2) + '</span>' +
+      '<span style="font-size:10px;color:#888;margin-left:2px">' + lbl.txt + '</span>' +
+      '</div>' +
+      '</td>';
+  }
   document.getElementById('top10-body').innerHTML = (tb.top10 || []).map(n => `
     <tr>
       <td class="node-name">${n.node}</td>
@@ -755,6 +858,7 @@ function renderAll(d, history, aiData) {
       <td class="da-prem">+$${n.best_spread.toFixed(2)}</td>
       <td>${n.spike_hours} hrs</td>
       <td>${n.neg_hours} hrs</td>
+      ${volCell(n.node)}
     </tr>`).join('');
 
   document.getElementById('bot10-body').innerHTML = (tb.bottom10 || []).map(n => `
@@ -767,6 +871,7 @@ function renderAll(d, history, aiData) {
       <td class="rt-prem">${n.worst_spread.toFixed(2)}</td>
       <td>${n.spike_hours} hrs</td>
       <td>${n.neg_hours} hrs</td>
+      ${volCell(n.node)}
     </tr>`).join('');
 
   document.getElementById('all-nodes-body').innerHTML = Object.entries(rt)
@@ -796,6 +901,7 @@ function renderAll(d, history, aiData) {
         <td${r.max>100?' class="spike"':''}>${fmt(r.max)}</td>
         <td>${fmt(dv.avg)}</td>
         <td${spClass?' class="'+spClass+'"':''}>${spStr}</td>
+        ${volCell(node)}
       </tr>`;
     }).join('');
 
