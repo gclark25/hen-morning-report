@@ -1045,6 +1045,7 @@ def write_dashboard_json(data):
         "top_bottom":         tb,
         "constraints":        data.get("constraints", []),
         "node_mcc_summary":   data.get("node_mcc_summary", {}),
+        "sharpe_ratios":      data.get("sharpe_ratios", {}),
         "weather":            data.get("weather", {}),
         "modo":               data.get("modo", {}),
         "asset_status":       data.get("asset_status", {}),
@@ -1428,6 +1429,119 @@ def _fmt_as_prices(data):
 # ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 
 
+def compute_sharpe_ratios(data, history_path="dashboard/history.json"):
+    """
+    Compute rolling 5-day Sharpe ratio per node using DA as risk-free rate.
+    Sharpe = avg(DART hourly spreads) / stdev(DART hourly spreads)
+    Uses today's dart_hourly + up to 4 prior days from history.json
+    Returns dict: {node: {sharpe, mean_dart, stdev_dart, n_obs, signal}}
+    """
+    import json, os, math
+
+    dart_hourly_today = data.get("dart_hourly", {})
+
+    # Load history
+    prior_days = []
+    if os.path.exists(history_path):
+        try:
+            with open(history_path) as f:
+                hist = json.load(f)
+            # Sort oldest to newest, take last 4 (excluding today)
+            prior_days = sorted(hist, key=lambda d: d.get("date",""))[-4:]
+        except Exception:
+            pass
+
+    results = {}
+    all_nodes = set(dart_hourly_today.keys())
+    for day in prior_days:
+        for node in (day.get("nodes") or {}).keys():
+            all_nodes.add(node)
+
+    for node in all_nodes:
+        hrs = []
+        # Today
+        hrs.extend(dart_hourly_today.get(node, {}).values())
+        # Prior days
+        for day in prior_days:
+            node_data = (day.get("nodes") or {}).get(node, {})
+            hrs.extend(node_data.get("dart_hourly", {}).values())
+
+        if len(hrs) < 4:
+            continue
+
+        mean   = sum(hrs) / len(hrs)
+        var    = sum((v - mean) ** 2 for v in hrs) / len(hrs)
+        stdev  = math.sqrt(var)
+
+        if stdev < 0.01:
+            sharpe = 0.0
+        else:
+            sharpe = round(mean / stdev, 4)
+
+        # Dispatch signal based on Sharpe + mean DART
+        if sharpe > 0.5:
+            signal = "STRONG_DA"       # DA consistently beats RT — lock in DA
+        elif sharpe > 0.15:
+            signal = "LEAN_DA"         # Slight DA edge — prefer DA commitment
+        elif sharpe > -0.15:
+            signal = "NEUTRAL"         # No clear edge — use market conditions
+        elif sharpe > -0.5:
+            signal = "LEAN_RT"         # RT slightly better — consider RT dispatch
+        else:
+            signal = "STRONG_RT"       # RT consistently outperforms — RT dispatch
+
+        results[node] = {
+            "sharpe":     sharpe,
+            "mean_dart":  round(mean, 4),
+            "stdev_dart": round(stdev, 4),
+            "n_obs":      len(hrs),
+            "signal":     signal,
+        }
+
+    print(f"  Sharpe ratios computed: {len(results)} nodes · "
+          f"strong_DA={sum(1 for v in results.values() if v['signal']=='STRONG_DA')} · "
+          f"strong_RT={sum(1 for v in results.values() if v['signal']=='STRONG_RT')}")
+    return results
+
+
+def _fmt_sharpe_dispatch(data):
+    """Format rolling Sharpe ratios and dispatch signals for the AI prompt."""
+    sharpes = data.get("sharpe_ratios", {})
+    if not sharpes:
+        return "  Not available (insufficient history — builds after 2+ days)"
+
+    # Group by signal
+    groups = {"STRONG_DA": [], "LEAN_DA": [], "NEUTRAL": [],
+              "LEAN_RT": [], "STRONG_RT": []}
+    for node, s in sharpes.items():
+        groups[s["signal"]].append((node, s))
+
+    lines = []
+    labels = {
+        "STRONG_DA":  "🟢 STRONG DA COMMITMENT (Sharpe > +0.5)",
+        "LEAN_DA":    "🔵 LEAN DA (Sharpe +0.15 to +0.5)",
+        "NEUTRAL":    "⚪ NEUTRAL — no clear edge (Sharpe -0.15 to +0.15)",
+        "LEAN_RT":    "🟡 LEAN RT (Sharpe -0.5 to -0.15)",
+        "STRONG_RT":  "🔴 STRONG RT DISPATCH (Sharpe < -0.5)",
+    }
+    for signal, label in labels.items():
+        nodes = groups[signal]
+        if not nodes:
+            continue
+        lines.append(f"  {label}:")
+        for node, s in sorted(nodes, key=lambda x: abs(x[1]["sharpe"]), reverse=True):
+            mcc = data.get("node_mcc_summary", {}).get(node, 0)
+            mcc_str = f"MCC ${mcc:+.2f}/MWh" if mcc else "no MCC exposure"
+            lines.append(
+                f"    {node}: Sharpe={s['sharpe']:+.3f} · "
+                f"avg DART=${s['mean_dart']:+.2f} · "
+                f"stdev=${s['stdev_dart']:.2f} · "
+                f"n={s['n_obs']}hrs · {mcc_str}"
+            )
+    return "\n".join(lines) if lines else "  No signals computed"
+
+
+
 def build_ai_prompt_morning(data, history):
     """Build the prompt for the morning AI analysis."""
     tb    = compute_top_bottom(data)
@@ -1494,7 +1608,10 @@ RECENT HISTORY (last 3 days):
 {hist_summary or '  No history available'}
 
 ---
-TOP-5 BINDING CONSTRAINTS (ERCOT — ranked by MCC):
+TOP-5 ROLLING 5-DAY SHARPE RATIOS & DISPATCH SIGNALS (DA = risk-free baseline):
+{_fmt_sharpe_dispatch(data)}
+
+BINDING CONSTRAINTS (ERCOT — ranked by MCC):
 {_fmt_constraints(data)}
 
 HEN NODE MCC SUMMARY (daily congestion cost/benefit $/MWh across all binding constraints):
@@ -1516,9 +1633,11 @@ ANCILLARY SERVICES DA-RT SPREADS — LAST 3 DAYS ($/MW):
 
 Please provide:
 1. PERFORMANCE SUMMARY: Key highlights from yesterday — what drove outperformance or underperformance across the fleet
-2. CONSTRAINT ANALYSIS: Identify the top binding constraints by Marginal Cost of Congestion (MCC = avg shadow price × shift factor). For each material constraint, state the MCC impact on exposed HEN nodes, the peak binding hour (HE), flow direction, and whether the congestion helped or hurt each node's position (positive SF + positive shadow = congestion benefit; negative SF + positive shadow = congestion cost). Flag any constraint where MCC exceeds $10/MWh on a HEN node as commercially significant.
-3. WEATHER & LOAD OUTLOOK: What the 15-day forecast means for ERCOT pricing and HEN dispatch over the next 2 weeks
-4. MODO INDEX CONTEXT: How HEN's custom indices performed relative to prior day; what the market breakdown reveals
+2. DISPATCH STRATEGY BY NODE — Using the rolling 5-day Sharpe ratios below, provide a concise dispatch recommendation for each signal group. For STRONG_DA nodes explain why DA commitment is favored (consistent DA premium, low RT upside). For STRONG_RT nodes explain why RT dispatch is favored (RT consistently exceeds DA, positive congestion benefit). For NEUTRAL nodes flag the uncertainty and suggest monitoring. Cross-reference with today's MCC exposure — a LEAN_RT node that also has strong positive MCC exposure is a high-confidence RT dispatch candidate. Keep to 4-5 sentences total focusing on the most actionable nodes.
+
+3. CONSTRAINT ANALYSIS: Identify the top binding constraints by Marginal Cost of Congestion (MCC = avg shadow price × shift factor). For each material constraint, state the MCC impact on exposed HEN nodes, the peak binding hour (HE), flow direction, and whether the congestion helped or hurt each node's position (positive SF + positive shadow = congestion benefit; negative SF + positive shadow = congestion cost). Flag any constraint where MCC exceeds $10/MWh on a HEN node as commercially significant.
+4. WEATHER & LOAD OUTLOOK: What the 15-day forecast means for ERCOT pricing and HEN dispatch over the next 2 weeks
+5. MODO INDEX CONTEXT: How HEN's custom indices performed relative to prior day; what the market breakdown reveals
 5. AS MARKET ANALYSIS (last 3 days only): Based on the 3-day trailing window of DA-RT spreads:
    - Which AS service types have shown the most consistent DA premium (positive spread) over the last 3 days
    - Which specific hours of the day have seen the largest and most repeatable spread opportunities
@@ -1527,7 +1646,7 @@ Please provide:
    Keep this section tight and commercially actionable — 4-5 sentences, specific dollar values and hour-endings where possible.
 6. ASSET AVAILABILITY: Any outage impacts on the fleet and operational risk flags
 7. FORWARD OPPORTUNITIES: Top 3 specific actionable opportunities in the next 7-14 days based on all available data
-8. RISK FLAGS: Any structural concerns worth escalating to the trading desk
+9. RISK FLAGS: Any structural concerns worth escalating to the trading desk
 Be specific, use numbers, and focus on commercially actionable insights. Keep each section to 3-5 sentences.
 """
     return prompt
@@ -1618,6 +1737,8 @@ def main():
 
     # ── Write dashboard JSON ──────────────────────────────────────────────
     print("\nWriting dashboard data...")
+    # Compute rolling Sharpe ratios using today + history
+    data["sharpe_ratios"] = compute_sharpe_ratios(data)
     write_dashboard_json(data)
 
     # ── Write history JSON ────────────────────────────────────────────────
