@@ -1,7 +1,7 @@
 name: HEN Daily Morning Report
 on:
   schedule:
-    - cron: '0 11 * * 1-5'
+    - cron: '0 11 * * *'
   workflow_dispatch:
 jobs:
   morning-report:
@@ -23,21 +23,16 @@ jobs:
       - name: Run morning report
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-          # ── ERCOT ────────────────────────────────────────────────────────
           ERCOT_USERNAME:         ${{ secrets.ERCOT_USERNAME }}
           ERCOT_PASSWORD:         ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
           ERCOT_NODES:            ${{ secrets.ERCOT_TEST_NODES }}
-          # ── Claude AI ────────────────────────────────────────────────────
           ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
-          # ── AG2 Trader weather & load forecasts ──────────────────────────
           AG2_ACCOUNT:            ${{ secrets.AG2_ACCOUNT }}
           AG2_PROFILE:            ${{ secrets.AG2_PROFILE }}
           AG2_PASSWORD:           ${{ secrets.AG2_PASSWORD }}
-          # ── Modo Energy custom indices ───────────────────────────────────
           MODO_API_KEY:           ${{ secrets.MODO_API_KEY }}
           MODO_INDEX_IDS:         ${{ secrets.MODO_INDEX_IDS }}
-          # ── PowerTools asset availability ────────────────────────────────
           POWERTOOLS_URL:         ${{ secrets.POWERTOOLS_URL }}
           POWERTOOLS_API_KEY:     ${{ secrets.POWERTOOLS_API_KEY }}
           POWERTOOLS_USERNAME:    ${{ secrets.POWERTOOLS_USERNAME }}
@@ -50,7 +45,6 @@ jobs:
           cp latest.json dashboard/latest.json
           git add dashboard/latest.json dashboard/history.json
           git add dashboard/ai_analysis.json || true
-          git add index.html
           git diff --staged --quiet || git commit -m "Data update — $(date -u +%Y-%m-%d)"
           git push
       - name: Deploy to Cloudflare Pages
