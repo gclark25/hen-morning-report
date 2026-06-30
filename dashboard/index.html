@@ -969,7 +969,7 @@ function renderAll(d, history, aiData) {
         if (s !== null && Math.abs(s) > bestAbs) { bestAbs = Math.abs(s); bestIdx = i; }
       });
 
-      const shortNode = nodeName(node);
+      const shortNode = NODE_DISPLAY_NAMES[node] || node.replace('_RN','').replace('_B1','').replace('_BESS','').replace('_BT','');
       const regColor  = {'West TX':'#EAF2FA','North TX':'#e3f2fd','Coastal':'#fff3e0','Premium':'#fce4ec'}[region] || '#f8f9fa';
 
       const blockCells = blocks.map((s,i) =>
