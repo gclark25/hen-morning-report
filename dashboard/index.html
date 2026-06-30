@@ -956,7 +956,7 @@ function renderAll(d, history, aiData) {
   const sbEmpty = document.getElementById('sharpe-block-empty');
 
   if (sbBody) {
-    const allNodes = Object.keys(dartHourly);
+   const allNodes = Object.keys(dartHourly || {});
     const rows = allNodes.map(node => {
       const region = NODE_REGIONS_PRICES[node] || '—';
       const daily  = sharpeRatio(node);
