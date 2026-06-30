@@ -1664,7 +1664,7 @@ function renderNodeMCC(constraints, nodeMCCSummary) {
                      mcc < 0  ? '↓ Slight cost'        : '→ Neutral';
     const dirColor  = mcc > 0 ? '#4378A2' : mcc < 0 ? '#b33000' : '#888';
     const contribs  = nodeContribs[node] || 0;
-    const shortNode = nodeName(node);
+    const shortNode = NODE_DISPLAY_NAMES[node] || node.replace('_RN','').replace('_B1','').replace('_BESS','').replace('_BT','');
     return '<tr>' +
       '<td class="node-name">' + shortNode + '</td>' +
       '<td><span style="background:' + bgColor + ';padding:2px 8px;border-radius:3px;' +
