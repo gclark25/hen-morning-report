@@ -906,6 +906,8 @@ function renderAll(d, history, aiData) {
       <td>${fmt((d.da||{})[n.node]?.avg)}</td>
     </tr>`).join('');
 
+    const dartHourly  = d.dart_hourly || {};
+
   // ── Time-block Sharpe renderer ───────────────────────────────────────────────
   const BLOCKS = [
     { id: 'b0624', label: 'HE 01–06', hours: [1,2,3,4,5,6]       },
@@ -1008,7 +1010,6 @@ function renderAll(d, history, aiData) {
 
 // ── Prices tab ────────────────────────────────────────────────────────────
   const da          = d.da || {};
-  const dartHourly  = d.dart_hourly || {};
 
   // ── Rolling 5-day Sharpe Ratio per node ─────────────────────────────────
   // Sharpe = avg(DART spreads) / stdev(DART spreads) using DA as risk-free rate
