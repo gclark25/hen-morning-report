@@ -752,18 +752,34 @@ def _ag2_csv_get(endpoint, extra_params, timeout=25):
 
 
 def _parse_ag2_csv(csv_text):
+    """
+    Parse WSI/AG2 Trader CSV. The format has a metadata title row first,
+    followed by the actual column headers on row 2, then data rows.
+    We skip the title row and treat row 2 as headers.
+    """
     import csv, io
     rows = []
     if not csv_text or not csv_text.strip():
         return rows
     try:
-        reader = csv.DictReader(io.StringIO(csv_text.strip()))
+        lines = [l for l in csv_text.strip().splitlines() if l.strip()]
+        if not lines:
+            return rows
+        first = lines[0]
+        is_metadata = ('Forecast' in first or ' - ' in first or
+                       not any(c.isdigit() for c in first))
+        if is_metadata and len(lines) > 1:
+            csv_body = chr(10).join(lines[1:])
+        else:
+            csv_body = chr(10).join(lines)
+        reader = csv.DictReader(io.StringIO(csv_body))
         for row in reader:
             rows.append({k.strip(): v.strip() for k, v in row.items() if k})
+        if rows:
+            print(f"    DEBUG AG2 parsed {len(rows)} rows, cols: {list(rows[0].keys())[:6]}")
     except Exception as e:
         print(f"  WARN [AG2 CSV parse] {e}")
     return rows
-
 
 def collect_ag2_weather():
     acct = os.environ.get("AG2_ACCOUNT", "")
@@ -792,15 +808,16 @@ def collect_ag2_weather():
     for row in minmax_rows:
         city = str(
             row.get("City") or row.get("Station") or row.get("Location") or
-            row.get("CityName") or row.get("city") or ""
+            row.get("CityName") or row.get("city") or row.get("CITY") or
+            row.get("City Name") or row.get("city name") or ""
         ).strip()
         city_key = city.lower()
         if city_key not in ag2_lower:
             continue
         canonical = ag2_lower[city_key]
-        dt = str(row.get("Date") or row.get("date") or "")[:10]
-        hi = int(safe_float(row.get("MaxTemp") or row.get("Max") or row.get("High") or 0))
-        lo = int(safe_float(row.get("MinTemp") or row.get("Min") or row.get("Low") or 0))
+        dt = str(row.get("Date") or row.get("date") or row.get("DATE") or row.get("ValidDate") or row.get("Forecast Date") or "")[:10]
+        hi = int(safe_float(row.get("MaxTemp") or row.get("Max") or row.get("High") or row.get("Max Temp") or row.get("MaxT") or row.get("MAXTEMP") or 0))
+        lo = int(safe_float(row.get("MinTemp") or row.get("Min") or row.get("Low") or row.get("Min Temp") or row.get("MinT") or row.get("MINTEMP") or 0))
         if dt:
             city_days.setdefault(canonical, {})[dt] = {"high": hi, "low": lo}
 
