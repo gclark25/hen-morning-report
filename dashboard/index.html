@@ -382,6 +382,110 @@ tr:hover td{background:#fafbfc}
     </div>
   </div>
 
+<!-- ── MODO ──────────────────────────────────────────────────────────────── -->
+<div id="tab-modo" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">HEN Custom Indices — 2026 YTD</span>
+      <span class="card-meta" id="modo-date-range"></span>
+    </div>
+    <div class="card-body">
+      <div id="modo-bars" style="margin-bottom:20px"></div>
+      <table><thead><tr>
+        <th style="text-align:left">Index</th>
+        <th>$/MW/yr (annualised)</th><th>Window Start</th><th>Days</th><th>Top Markets</th>
+      </tr></thead><tbody id="modo-table-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── WEATHER ────────────────────────────────────────────────────────────── -->
+<div id="tab-weather" class="page">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">15-Day City Forecasts — ERCOT Metro Stations</span>
+      <span class="card-meta" id="weather-source"></span>
+    </div>
+    <div class="card-body"><div class="weather-grid" id="weather-grid"></div></div>
+  </div>
+</div>
+
+<!-- ── FUNDAMENTALS ───────────────────────────────────────────────────────── -->
+<div id="tab-fundamentals" class="page">
+  <div class="card">
+    <div class="card-header"><span class="card-title">ERCOT System Fundamentals — 7-day lookback (GW daily peak)</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Date</th><th>Gross load</th><th>Wind</th><th>Solar</th><th>Net load</th>
+      </tr></thead><tbody id="fund-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">5-Day History</span></div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th>Date</th><th>Fleet RT avg</th><th>Fleet RT max</th>
+        <th>Spike nodes</th><th>Neg nodes</th><th>Gross load</th><th>Battery SOC</th>
+      </tr></thead><tbody id="history-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── FORECAST ───────────────────────────────────────────────────────────── -->
+<div id="tab-forecast" class="page">
+  <!-- Net load spike risk alert banner -->
+  <div id="fc-spike-alert" style="display:none;background:#fff3e0;border:1px solid #ff8f00;
+       border-radius:8px;padding:12px 18px;margin-bottom:16px;
+       align-items:flex-start;gap:12px">
+    <div style="font-size:22px;flex-shrink:0">⚠️</div>
+    <div>
+      <div style="font-size:13px;font-weight:700;color:#b33000;margin-bottom:4px">
+        NET LOAD SPIKE RISK — Next 48 Hours
+      </div>
+      <div id="fc-spike-detail" style="font-size:12px;color:#5d2e00;line-height:1.6"></div>
+    </div>
+  </div>
+  <div class="kpi-strip">
+    <div class="kpi"><div class="kpi-label">7-Day Peak Load</div>
+      <div class="kpi-value" id="fc-peak-load">—</div><div class="kpi-sub">GW gross</div></div>
+    <div class="kpi"><div class="kpi-label">7-Day Peak Net Load</div>
+      <div class="kpi-value" id="fc-peak-net">—</div><div class="kpi-sub">GW after renewables</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Wind</div>
+      <div class="kpi-value" id="fc-max-wind">—</div><div class="kpi-sub">GW 7-day avg</div></div>
+    <div class="kpi"><div class="kpi-label">Peak Solar</div>
+      <div class="kpi-value" id="fc-max-solar">—</div><div class="kpi-sub">GW 7-day peak</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Yesterday + 7-Day Hourly Forecast — Gross Load · Net Load · Wind · Solar</span>
+      <span class="card-meta" id="fc-source"></span>
+    </div>
+    <div class="card-body" style="position:relative;height:320px"><canvas id="fc-chart"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">7-Day Forward Forecast — Daily Peaks</span></div>
+    <div class="card-body">
+      <div id="fc-bars" style="margin-bottom:20px"></div>
+      <table><thead><tr>
+        <th style="text-align:left">Date</th><th>Peak Gross Load</th>
+        <th>Wind Avg</th><th>Solar Peak</th><th>Peak Net Load</th><th>Renewables %</th>
+      </tr></thead><tbody id="fc-7day-body"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Hourly Detail — Yesterday + 7-Day Forecast</span>
+      <span class="card-meta" id="fc-24hr-meta"></span>
+    </div>
+    <div class="card-body">
+      <table><thead><tr>
+        <th style="text-align:left">Hour (HE)</th><th>Gross Load GW</th>
+        <th>Wind GW</th><th>Solar GW</th><th>Net Load GW</th><th>Renewables %</th>
+      </tr></thead><tbody id="fc-24hr-body"></tbody></table>
+    </div>
+  </div>
+</div>
+
 <!-- ── AS PRICES ──────────────────────────────────────────────────────────── -->
 <div id="tab-as" class="page">
   <div class="kpi-strip">
