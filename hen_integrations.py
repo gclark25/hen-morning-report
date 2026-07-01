@@ -804,17 +804,11 @@ def collect_ag2_weather():
 
     print("  Pulling AG2 Trader 15-day city forecasts for ERCOT metros...")
 
-    max_csv  = _ag2_csv_get("GetCityTableForecast", {
+    minmax_csv  = _ag2_csv_get("GetCityTableForecast", {
         "IsCustom": "false", "CurrentTabName": "MinMax", "TempUnits": "F",
         "Id": "allcities", "Region": "NA",
     })
-    max_rows = _parse_ag2_csv(max_csv)
-
-    min_csv  = _ag2_csv_get("GetCityTableForecast", {
-        "IsCustom": "false", "CurrentTabName": "Min", "TempUnits": "F",
-        "Id": "allcities", "Region": "NA",
-    })
-    min_rows = _parse_ag2_csv(min_csv)
+    minmax_rows = _parse_ag2_csv(minmax_csv)
 
     pop_csv  = _ag2_csv_get("GetCityTableForecast", {
         "IsCustom": "false", "CurrentTabName": "POP", "TempUnits": "F",
@@ -896,17 +890,52 @@ def collect_ag2_weather():
 
         return result
 
-    max_parsed    = _parse_wide_rows(max_rows,  metrics_cycle=['high'])
-    min_parsed    = _parse_wide_rows(min_rows,  metrics_cycle=['low'])
-    pop_parsed    = _parse_wide_rows(pop_rows,  metrics_cycle=['precip_pct'])
-    # Merge high and low into single minmax_parsed structure
-    minmax_parsed = {}
-    for city in set(list(max_parsed.keys()) + list(min_parsed.keys())):
-        minmax_parsed[city] = {}
-        if city in max_parsed:
-            minmax_parsed[city].update(max_parsed[city])
-        if city in min_parsed:
-            minmax_parsed[city].update(min_parsed[city])
+    # MinMax cells contain "low/high" (e.g. "72/98") — parse both in one pass
+    def _parse_minmax_rows(rows):
+        """Parse MinMax rows where each date cell is 'low/high' format."""
+        result = {}
+        for row in rows:
+            keys = list(row.keys())
+            if not keys: continue
+            label = row.get(keys[0], '').strip()
+            import re as _re3
+            clean = _re3.sub(r'\s*\([^)]*\)', '', label).strip()
+            clean = _re3.sub(r'\s+', ' ', clean)
+            clean = _re3.sub(r'\s+([A-Z]{2})$', r', \1', clean)
+            city_key = clean.lower()
+            canonical = ag2_lower.get(city_key)
+            if not canonical:
+                city_part = city_key.split(',')[0].strip()
+                for ag2_name, ag2_canonical in ag2_lower.items():
+                    if ag2_name.split(',')[0].strip() == city_part:
+                        canonical = ag2_canonical
+                        break
+            if not canonical: continue
+            hi_dates = {}
+            lo_dates = {}
+            for col, val in row.items():
+                col = col.strip()
+                if col == keys[0] or col == 'Normals' or not col: continue
+                try:
+                    d = _dt.strptime(col, "%m/%d/%Y").strftime("%Y-%m-%d")
+                    val = (val or '').strip()
+                    if '/' in val:
+                        parts = val.split('/')
+                        lo_dates[d] = int(safe_float(parts[0]))
+                        hi_dates[d] = int(safe_float(parts[1]))
+                    else:
+                        # Fallback: single value = high only
+                        hi_dates[d] = int(safe_float(val))
+                except (ValueError, IndexError):
+                    pass
+            if hi_dates:
+                result.setdefault(canonical, {})['high'] = hi_dates
+            if lo_dates:
+                result.setdefault(canonical, {})['low'] = lo_dates
+        return result
+
+    minmax_parsed = _parse_minmax_rows(minmax_rows)
+    pop_parsed    = _parse_wide_rows(pop_rows, metrics_cycle=['precip_pct'])
 
     for city_name, metrics in minmax_parsed.items():
         hi_days  = metrics.get('high', {})
