@@ -1172,9 +1172,10 @@ function renderAll(d, history, aiData) {
       const rows = days.map(day => {
         const precip = day.precip_pct
           ? `<span class="precip">${day.precip_pct}%</span>` : '';
+        const tempStr = day.low > 0 ? `${day.high}° / ${day.low}°` : `${day.high}°`;
         return `<div class="city-row">
           <span class="city-date">${day.date.slice(5)}</span>
-          <span>${day.high}° / ${day.low}°</span>${precip}
+          <span>${tempStr}</span>${precip}
         </div>`;
       }).join('');
       return `<div class="city-card">
