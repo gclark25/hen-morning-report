@@ -805,7 +805,7 @@ def collect_ag2_weather():
     print("  Pulling AG2 Trader 15-day city forecasts for ERCOT metros...")
 
     max_csv  = _ag2_csv_get("GetCityTableForecast", {
-        "IsCustom": "false", "CurrentTabName": "Max", "TempUnits": "F",
+        "IsCustom": "false", "CurrentTabName": "MinMax", "TempUnits": "F",
         "Id": "allcities", "Region": "NA",
     })
     max_rows = _parse_ag2_csv(max_csv)
