@@ -782,6 +782,9 @@ def _parse_ag2_csv(csv_text):
                 continue
             if not row or not row[0].strip():
                 continue
+            # Skip WSI label rows like "City:,,,,"
+            if row[0].strip().rstrip(':').lower() in ('city', 'station', 'location'):
+                continue
             record = {}
             for i, val in enumerate(row):
                 key = headers[i] if i < len(headers) else f"col{i}"
