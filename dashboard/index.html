@@ -264,16 +264,7 @@ tr:hover td{background:#fafbfc}
   <div class="tab" onclick="showTab('fundamentals')">Fundamentals</div>
   <div class="tab" onclick="showTab('weather')">Weather</div>
 </div>
-  <div class="tab" onclick="showTab('prices')">Prices & DART</div>
-  <div class="tab" onclick="showTab('modo')">Modo Indices</div>
-  <div class="tab" onclick="showTab('weather')">Weather</div>
-  <div class="tab" onclick="showTab('fundamentals')">Fundamentals</div>
-  <div class="tab" onclick="showTab('forecast')">Forecast</div>
-  <div class="tab" onclick="showTab('as')">AS Prices</div>
-  <div class="tab" onclick="showTab('analysis')">AI Analysis</div>
 
-  <div class="tab" onclick="showTab('constraints')">Constraints</div>
-</div>
 
 <!-- ── OVERVIEW ────────────────────────────────────────────────────────────── -->
 <div id="tab-overview" class="page active">
@@ -956,7 +947,7 @@ function renderAll(d, history, aiData) {
   const sbEmpty = document.getElementById('sharpe-block-empty');
 
   if (sbBody) {
-   const allNodes = Object.keys(dartHourly || {});
+    const allNodes = Object.keys(dartHourly || {});
     const rows = allNodes.map(node => {
       const region = NODE_REGIONS_PRICES[node] || '—';
       const daily  = sharpeRatio(node);
@@ -969,7 +960,7 @@ function renderAll(d, history, aiData) {
         if (s !== null && Math.abs(s) > bestAbs) { bestAbs = Math.abs(s); bestIdx = i; }
       });
 
-      const shortNode = NODE_DISPLAY_NAMES[node] || node.replace('_RN','').replace('_B1','').replace('_BESS','').replace('_BT','');
+      const shortNode = nodeName(node);
       const regColor  = {'West TX':'#EAF2FA','North TX':'#e3f2fd','Coastal':'#fff3e0','Premium':'#fce4ec'}[region] || '#f8f9fa';
 
       const blockCells = blocks.map((s,i) =>
@@ -1041,7 +1032,7 @@ function renderAll(d, history, aiData) {
   }
 
   // Compute Sharpe for all nodes and find range for scaling
-  var allSharpes = Object.keys(dartHourly)
+  var allSharpes = Object.keys(dartHourly || {})
     .map(n => sharpeRatio(n))
     .filter(s => s !== null)
     .map(s => s.sharpe);
