@@ -753,9 +753,12 @@ def _ag2_csv_get(endpoint, extra_params, timeout=25):
 
 def _parse_ag2_csv(csv_text):
     """
-    Parse WSI/AG2 Trader CSV. The format has a metadata title row first,
-    followed by the actual column headers on row 2, then data rows.
-    We skip the title row and treat row 2 as headers.
+    Parse WSI/AG2 Trader CSV wide format.
+    Row 1: metadata title (skipped)
+    Row 2: headers — first col is blank/city, remaining cols are dates (M/D/YYYY) + Normals
+    Row 3+: data rows — first col = "City Name High" or "City Name Low", rest = values
+
+    Returns list of dicts with keys: city, metric (High/Low), and date->value pairs.
     """
     import csv, io
     rows = []
@@ -765,16 +768,25 @@ def _parse_ag2_csv(csv_text):
         lines = [l for l in csv_text.strip().splitlines() if l.strip()]
         if not lines:
             return rows
+        # Skip metadata title row (contains 'Forecast' or ' - ')
         first = lines[0]
-        is_metadata = ('Forecast' in first or ' - ' in first or
-                       not any(c.isdigit() for c in first))
-        if is_metadata and len(lines) > 1:
-            csv_body = chr(10).join(lines[1:])
-        else:
-            csv_body = chr(10).join(lines)
-        reader = csv.DictReader(io.StringIO(csv_body))
+        if 'Forecast' in first or ' - ' in first or not any(c.isdigit() for c in first):
+            lines = lines[1:]
+        if not lines:
+            return rows
+        reader = csv.reader(io.StringIO(chr(10).join(lines)))
+        headers = None
         for row in reader:
-            rows.append({k.strip(): v.strip() for k, v in row.items() if k})
+            if headers is None:
+                headers = [h.strip() for h in row]
+                continue
+            if not row or not row[0].strip():
+                continue
+            record = {}
+            for i, val in enumerate(row):
+                key = headers[i] if i < len(headers) else f"col{i}"
+                record[key.strip()] = val.strip()
+            rows.append(record)
         if rows:
             print(f"    DEBUG AG2 parsed {len(rows)} rows, cols: {list(rows[0].keys())[:6]}")
     except Exception as e:
@@ -802,46 +814,59 @@ def collect_ag2_weather():
     pop_rows = _parse_ag2_csv(pop_csv)
 
     cities_out = {}
-    city_days  = {}
     ag2_lower  = {c.lower(): c for c in AG2_ERCOT_CITIES}
 
-    for row in minmax_rows:
-        city = str(
-            row.get("City") or row.get("Station") or row.get("Location") or
-            row.get("CityName") or row.get("city") or row.get("CITY") or
-            row.get("City Name") or row.get("city name") or ""
-        ).strip()
-        city_key = city.lower()
-        if city_key not in ag2_lower:
-            continue
-        canonical = ag2_lower[city_key]
-        dt = str(row.get("Date") or row.get("date") or row.get("DATE") or row.get("ValidDate") or row.get("Forecast Date") or "")[:10]
-        hi = int(safe_float(row.get("MaxTemp") or row.get("Max") or row.get("High") or row.get("Max Temp") or row.get("MaxT") or row.get("MAXTEMP") or 0))
-        lo = int(safe_float(row.get("MinTemp") or row.get("Min") or row.get("Low") or row.get("Min Temp") or row.get("MinT") or row.get("MINTEMP") or 0))
-        if dt:
-            city_days.setdefault(canonical, {})[dt] = {"high": hi, "low": lo}
+    # WSI wide format: first column = "City Name High" / "City Name Low"
+    # remaining columns = dates like "7/1/2026", "7/2/2026", ...
+    from datetime import datetime as _dt
 
-    pop_by_city = {}
-    for row in pop_rows:
-        city = str(row.get("City") or row.get("Station") or row.get("Location") or "").strip()
-        city_key = city.lower()
-        if city_key not in ag2_lower:
-            continue
-        canonical = ag2_lower[city_key]
-        dt      = str(row.get("Date") or row.get("date") or "")[:10]
-        pop_val = int(safe_float(row.get("POP") or row.get("Precip") or row.get("PoP") or 0))
-        if dt:
-            pop_by_city.setdefault(canonical, {})[dt] = pop_val
+    def _parse_wide_rows(rows):
+        """Extract {canonical_city: {metric: {date: value}}} from wide-format rows."""
+        result = {}
+        for row in rows:
+            keys = list(row.keys())
+            if not keys:
+                continue
+            label = row.get(keys[0], '').strip()
+            metric = None
+            clean_label = label
+            for suffix in [' High', ' Low', ' PoP', ' POP', ' Precip']:
+                if label.upper().endswith(suffix.upper()):
+                    metric = suffix.strip().lower()
+                    clean_label = label[:len(label)-len(suffix)].strip()
+                    break
+            if metric is None:
+                continue
+            city_key = clean_label.lower()
+            if city_key not in ag2_lower:
+                continue
+            canonical = ag2_lower[city_key]
+            dates = {}
+            for col, val in row.items():
+                col = col.strip()
+                if col == keys[0] or col == 'Normals' or not col:
+                    continue
+                try:
+                    d = _dt.strptime(col, "%m/%d/%Y").strftime("%Y-%m-%d")
+                    dates[d] = int(safe_float(val or 0))
+                except ValueError:
+                    pass
+            if dates:
+                result.setdefault(canonical, {})[metric] = dates
+        return result
 
-    for city_name, days_data in city_days.items():
-        pop_for_city = pop_by_city.get(city_name, {})
-        days_list    = []
-        for dt in sorted(days_data.keys())[:15]:
-            d = days_data[dt]
-            days_list.append({
-                "date": dt, "high": d["high"], "low": d["low"],
-                "precip_pct": pop_for_city.get(dt, 0),
-            })
+    minmax_parsed = _parse_wide_rows(minmax_rows)
+    pop_parsed    = _parse_wide_rows(pop_rows)
+
+    for city_name, metrics in minmax_parsed.items():
+        hi_days  = metrics.get('high', {})
+        lo_days  = metrics.get('low',  {})
+        pop_days = pop_parsed.get(city_name, {}).get('pop',
+                   pop_parsed.get(city_name, {}).get('precip', {}))
+        all_dates = sorted(set(list(hi_days.keys()) + list(lo_days.keys())))[:15]
+        days_list = [{"date": dt, "high": hi_days.get(dt, 0),
+                      "low": lo_days.get(dt, 0), "precip_pct": pop_days.get(dt, 0)}
+                     for dt in all_dates]
         if days_list:
             cities_out[city_name] = {"days": days_list}
 
@@ -849,9 +874,8 @@ def collect_ag2_weather():
     print(f"    AG2: {len(cities_out)} cities · {n_days} days each")
     if not cities_out and minmax_rows:
         sample = minmax_rows[:3]
-        print(f"    DEBUG — sample CSV columns: {list(sample[0].keys())}")
-        print(f"    DEBUG — sample City values: {[r.get('City') or r.get('Station') or '?' for r in sample]}")
-        print(f"    DEBUG — all column names in first row: {list(sample[0].keys()) if sample else 'no rows'}")
+        print(f"    DEBUG — cols: {list(sample[0].keys())[:8] if sample else []}")
+        print(f"    DEBUG — first-col values: {[list(r.values())[0] for r in sample[:5]]}")
 
     return {
         "weather": {
