@@ -792,8 +792,8 @@ def _parse_ag2_csv(csv_text):
                     else:
                         sub = subheaders[i].lower().rstrip(':') if i < len(subheaders) else ''
                         combined.append(f"{h}_{sub}" if sub else h)
-                  headers = combined
-                  continue
+                headers = combined
+                continue
             if not row or not row[0].strip():
                 continue
             # Skip WSI label rows like "City:,,,,"
@@ -905,60 +905,60 @@ def collect_ag2_weather():
 
         return result
 
-# MinMax cells: two rows per city labeled "City Name High" / "City Name Low"
-        def _parse_minmax_rows(rows):
-            """Parse MinMax rows where row labels end in ' High' or ' Low'."""
-            result = {}
-            for row in rows:
-                keys = list(row.keys())
-                if not keys:
-                    continue
-                label = row.get(keys[0], '').strip()
-                metric = None
-                clean_label = label
-                for suffix in [' High', ' Low']:
-                    if label.endswith(suffix):
-                        metric = 'high' if suffix == ' High' else 'low'
-                        clean_label = label[:-len(suffix)].strip()
+    # MinMax cells: two rows per city labeled "City Name High" / "City Name Low"
+    def _parse_minmax_rows(rows):
+        """Parse MinMax rows where row labels end in ' High' or ' Low'."""
+        result = {}
+        for row in rows:
+            keys = list(row.keys())
+            if not keys:
+                continue
+            label = row.get(keys[0], '').strip()
+            metric = None
+            clean_label = label
+            for suffix in [' High', ' Low']:
+                if label.endswith(suffix):
+                    metric = 'high' if suffix == ' High' else 'low'
+                    clean_label = label[:-len(suffix)].strip()
+                    break
+            if metric is None:
+                continue
+            import re as _re2
+            clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
+            clean = _re2.sub(r'\s+', ' ', clean)
+            clean = _re2.sub(r'\s+([A-Z]{2})$', r', \1', clean)
+            city_key = clean.lower()
+            canonical = ag2_lower.get(city_key)
+            if not canonical:
+                city_part = city_key.split(',')[0].strip()
+                for ag2_name, ag2_canonical in ag2_lower.items():
+                    if ag2_name.split(',')[0].strip() == city_part:
+                        canonical = ag2_canonical
                         break
-                if metric is None:
+            if not canonical:
+                continue
+            dates = {}
+            for col, val in row.items():
+                col = col.strip()
+                if col == keys[0] or col == 'Normals' or not col:
                     continue
-                import re as _re2
-                clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
-                clean = _re2.sub(r'\s+', ' ', clean)
-                clean = _re2.sub(r'\s+([A-Z]{2})$', r', \1', clean)
-                city_key = clean.lower()
-                canonical = ag2_lower.get(city_key)
-                if not canonical:
-                    city_part = city_key.split(',')[0].strip()
-                    for ag2_name, ag2_canonical in ag2_lower.items():
-                        if ag2_name.split(',')[0].strip() == city_part:
-                            canonical = ag2_canonical
-                            break
-                if not canonical:
-                    continue
-                dates = {}
-                for col, val in row.items():
-                    col = col.strip()
-                    if col == keys[0] or col == 'Normals' or not col:
-                        continue
-                    # Handle both plain dates and "date_min"/"date_max" format
-                    date_part = col.split('_')[0]
-                    metric_part = col.split('_')[1] if '_' in col else None
-                    try:
-                        d = _dt.strptime(date_part, "%m/%d/%Y").strftime("%Y-%m-%d")
-                        v = int(safe_float(val or 0))
-                        if metric_part == 'min':
-                            result.setdefault(canonical, {}).setdefault('low', {})[d] = v
-                        elif metric_part == 'max':
-                            result.setdefault(canonical, {}).setdefault('high', {})[d] = v
-                        else:
-                            dates[d] = v
-                    except ValueError:
-                        pass
-                if dates:
-                    result.setdefault(canonical, {})[metric] = dates
-            return result
+                # Handle both plain dates and "date_min"/"date_max" format
+                date_part = col.split('_')[0]
+                metric_part = col.split('_')[1] if '_' in col else None
+                try:
+                    d = _dt.strptime(date_part, "%m/%d/%Y").strftime("%Y-%m-%d")
+                    v = int(safe_float(val or 0))
+                    if metric_part == 'min':
+                        result.setdefault(canonical, {}).setdefault('low', {})[d] = v
+                    elif metric_part == 'max':
+                        result.setdefault(canonical, {}).setdefault('high', {})[d] = v
+                    else:
+                        dates[d] = v
+                except ValueError:
+                    pass
+            if dates:
+                result.setdefault(canonical, {})[metric] = dates
+        return result
 
     # Debug: show actual cell values from MinMax CSV
     if minmax_rows:
@@ -966,7 +966,7 @@ def collect_ag2_weather():
         _keys = list(_r.keys())
         _sample = {k: _r[k] for k in _keys[:4]}
         print(f"    DEBUG MinMax cell values (first row): {_sample}")
-        minmax_parsed = _parse_minmax_rows(minmax_rows)
+    minmax_parsed = _parse_minmax_rows(minmax_rows)
     # Debug: verify a city got both high and low
     _dbg = next(iter(minmax_parsed.items()), None)
     if _dbg:
