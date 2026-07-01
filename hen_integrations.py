@@ -943,7 +943,7 @@ def collect_ag2_weather():
         _keys = list(_r.keys())
         _sample = {k: _r[k] for k in _keys[:4]}
         print(f"    DEBUG MinMax cell values (first row): {_sample}")
-    minmax_parsed = _parse_minmax_rows(minmax_rows)
+    minmax_parsed = _parse_wide_rows(minmax_rows, metrics_cycle=['high'])
     # Debug: verify a city got both high and low
     _dbg = next(iter(minmax_parsed.items()), None)
     if _dbg:
