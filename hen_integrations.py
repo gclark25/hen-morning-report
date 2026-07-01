@@ -803,13 +803,13 @@ def collect_ag2_weather():
 
     minmax_csv  = _ag2_csv_get("GetCityTableForecast", {
         "IsCustom": "false", "CurrentTabName": "MinMax", "TempUnits": "F",
-        "Id": "tx", "Region": "NA",
+        "Id": "allcities", "Region": "NA",
     })
     minmax_rows = _parse_ag2_csv(minmax_csv)
 
     pop_csv  = _ag2_csv_get("GetCityTableForecast", {
         "IsCustom": "false", "CurrentTabName": "POP", "TempUnits": "F",
-        "Id": "tx", "Region": "NA",
+        "Id": "allcities", "Region": "NA",
     })
     pop_rows = _parse_ag2_csv(pop_csv)
 
@@ -837,19 +837,27 @@ def collect_ag2_weather():
                     break
             if metric is None:
                 continue
-            # Normalize city label - remove airport codes like "(KDFW)", 
-            # standardize spacing and commas
             import re as _re2
+            # Remove airport code suffix like "(KDFW)", strip extra spaces
             clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
             clean = _re2.sub(r'\s+', ' ', clean)
-            # Try exact match first, then try adding ", TX" or matching without state
+            # WSI format: "Dallas Fort Worth TX" (space before state, no comma)
+            # Our format:  "Dallas Fort Worth, TX" (comma before state)
+            # Normalize: insert comma before 2-letter state code if missing
+            clean = _re2.sub(r'\s+([A-Z]{2})$', r', \1', clean)
             city_key = clean.lower()
             canonical = ag2_lower.get(city_key)
             if not canonical:
-                # Try matching by city name only (without state)
+                # Try title-casing variants
+                for variant in [clean.title(), clean.upper(), clean]:
+                    canonical = ag2_lower.get(variant.lower())
+                    if canonical:
+                        break
+            if not canonical:
+                # Last resort: match on city name portion only (before comma)
+                city_part = city_key.split(',')[0].strip()
                 for ag2_name, ag2_canonical in ag2_lower.items():
-                    city_part = ag2_name.split(',')[0].strip()
-                    if city_key.startswith(city_part) or city_part in city_key:
+                    if ag2_name.split(',')[0].strip() == city_part:
                         canonical = ag2_canonical
                         break
             if not canonical:
