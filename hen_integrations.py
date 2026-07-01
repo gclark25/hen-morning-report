@@ -896,11 +896,11 @@ def collect_ag2_weather():
     if not cities_out and minmax_rows:
         sample = minmax_rows[:3]
         print(f"    DEBUG — cols: {list(sample[0].keys())[:8] if sample else []}")
-        # Show actual city labels from first column
         first_key = list(sample[0].keys())[0] if sample else ''
-        city_labels = [r.get(first_key, '') for r in sample[:10]]
-        print(f"    DEBUG — city labels (first col key='{first_key}'): {city_labels}")
-        print(f"    DEBUG — first-col values: {[list(r.values())[0] for r in sample[:5]]}")
+        all_labels = [r.get(first_key, '') for r in minmax_rows]
+        tx_labels = [l for l in all_labels if ' TX' in l or ', TX' in l]
+        print(f"    DEBUG — TX city labels found ({len(tx_labels)}): {tx_labels[:10]}")
+        print(f"    DEBUG — sample labels (first 5): {all_labels[:5]}")
 
     return {
         "weather": {
