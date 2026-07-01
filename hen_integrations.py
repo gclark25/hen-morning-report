@@ -907,24 +907,19 @@ def collect_ag2_weather():
 
     # MinMax cells: two rows per city labeled "City Name High" / "City Name Low"
     def _parse_minmax_rows(rows):
-        """Parse MinMax rows where row labels end in ' High' or ' Low'."""
+        """Parse MinMax rows. Column headers are 'date_min'/'date_max' format.
+        Each row is one city; min/max are read from column name suffixes."""
+        import re as _re2
         result = {}
         for row in rows:
             keys = list(row.keys())
             if not keys:
                 continue
             label = row.get(keys[0], '').strip()
-            metric = None
-            clean_label = label
-            for suffix in [' High', ' Low']:
-                if label.endswith(suffix):
-                    metric = 'high' if suffix == ' High' else 'low'
-                    clean_label = label[:-len(suffix)].strip()
-                    break
-            if metric is None:
+            if not label:
                 continue
-            import re as _re2
-            clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
+            # Normalize city name: strip airport code, add comma before state
+            clean = _re2.sub(r'\s*\([^)]*\)', '', label).strip()
             clean = _re2.sub(r'\s+', ' ', clean)
             clean = _re2.sub(r'\s+([A-Z]{2})$', r', \1', clean)
             city_key = clean.lower()
@@ -937,27 +932,24 @@ def collect_ag2_weather():
                         break
             if not canonical:
                 continue
-            dates = {}
+            # Parse date columns — keys are "M/D/YYYY_min" or "M/D/YYYY_max"
             for col, val in row.items():
                 col = col.strip()
                 if col == keys[0] or col == 'Normals' or not col:
                     continue
-                # Handle both plain dates and "date_min"/"date_max" format
-                date_part = col.split('_')[0]
-                metric_part = col.split('_')[1] if '_' in col else None
+                parts = col.rsplit('_', 1)
+                if len(parts) != 2:
+                    continue
+                date_str, metric_part = parts[0], parts[1].lower()
+                if metric_part not in ('min', 'max'):
+                    continue
                 try:
-                    d = _dt.strptime(date_part, "%m/%d/%Y").strftime("%Y-%m-%d")
+                    d = _dt.strptime(date_str, "%m/%d/%Y").strftime("%Y-%m-%d")
                     v = int(safe_float(val or 0))
-                    if metric_part == 'min':
-                        result.setdefault(canonical, {}).setdefault('low', {})[d] = v
-                    elif metric_part == 'max':
-                        result.setdefault(canonical, {}).setdefault('high', {})[d] = v
-                    else:
-                        dates[d] = v
+                    metric_key = 'low' if metric_part == 'min' else 'high'
+                    result.setdefault(canonical, {}).setdefault(metric_key, {})[d] = v
                 except ValueError:
                     pass
-            if dates:
-                result.setdefault(canonical, {})[metric] = dates
         return result
 
     # Debug: show actual cell values from MinMax CSV
