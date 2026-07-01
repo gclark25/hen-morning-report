@@ -934,7 +934,20 @@ def collect_ag2_weather():
                 result.setdefault(canonical, {})['low'] = lo_dates
         return result
 
+    # Debug: show actual cell values from MinMax CSV
+    if minmax_rows:
+        _r = minmax_rows[0]
+        _keys = list(_r.keys())
+        _sample = {k: _r[k] for k in _keys[:4]}
+        print(f"    DEBUG MinMax cell values (first row): {_sample}")
     minmax_parsed = _parse_minmax_rows(minmax_rows)
+    # Debug: verify a city got both high and low
+    _dbg = next(iter(minmax_parsed.items()), None)
+    if _dbg:
+        _city, _m = _dbg
+        print(f"    DEBUG parsed city={_city} keys={list(_m.keys())}")
+        if 'high' in _m: print(f"      high sample: {list(_m['high'].items())[:2]}")
+        if 'low'  in _m: print(f"      low sample:  {list(_m['low'].items())[:2]}")
     pop_parsed    = _parse_wide_rows(pop_rows, metrics_cycle=['precip_pct'])
 
     for city_name, metrics in minmax_parsed.items():
