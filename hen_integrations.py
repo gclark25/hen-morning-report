@@ -804,12 +804,12 @@ def collect_ag2_weather():
 
     print("  Pulling AG2 Trader 15-day city forecasts for ERCOT metros...")
 
-    # Try "Min/Max" (the exact sub-tab name from the AG2 UI) which should return low/high
-    minmax_csv  = _ag2_csv_get("GetCityTableForecast", {
-        "IsCustom": "false", "CurrentTabName": "Min/Max", "TempUnits": "F",
-        "Id": "allcities", "Region": "NA",
-    })
-    minmax_rows = _parse_ag2_csv(minmax_csv)
+   # Single call — MinMax returns both High and Low rows per city
+minmax_csv = _ag2_csv_get("GetCityTableForecast", {
+    "IsCustom": "false", "CurrentTabName": "MinMax", "TempUnits": "F",
+    "Id": "allcities", "Region": "NA",
+})
+minmax_rows = _parse_ag2_csv(minmax_csv)
     # Fallback to "MinMax" if Min/Max returns nothing or errors
     if not minmax_rows:
         minmax_csv  = _ag2_csv_get("GetCityTableForecast", {
@@ -900,47 +900,59 @@ def collect_ag2_weather():
 
     # MinMax cells contain "low/high" (e.g. "72/98") — parse both in one pass
     def _parse_minmax_rows(rows):
-        """Parse MinMax rows where each date cell is 'low/high' format."""
-        result = {}
-        for row in rows:
-            keys = list(row.keys())
-            if not keys: continue
-            label = row.get(keys[0], '').strip()
-            import re as _re3
-            clean = _re3.sub(r'\s*\([^)]*\)', '', label).strip()
-            clean = _re3.sub(r'\s+', ' ', clean)
-            clean = _re3.sub(r'\s+([A-Z]{2})$', r', \1', clean)
-            city_key = clean.lower()
-            canonical = ag2_lower.get(city_key)
-            if not canonical:
-                city_part = city_key.split(',')[0].strip()
-                for ag2_name, ag2_canonical in ag2_lower.items():
-                    if ag2_name.split(',')[0].strip() == city_part:
-                        canonical = ag2_canonical
-                        break
-            if not canonical: continue
-            hi_dates = {}
-            lo_dates = {}
-            for col, val in row.items():
-                col = col.strip()
-                if col == keys[0] or col == 'Normals' or not col: continue
-                try:
-                    d = _dt.strptime(col, "%m/%d/%Y").strftime("%Y-%m-%d")
-                    val = (val or '').strip()
-                    if '/' in val:
-                        parts = val.split('/')
-                        lo_dates[d] = int(safe_float(parts[0]))
-                        hi_dates[d] = int(safe_float(parts[1]))
-                    else:
-                        # Fallback: single value = high only
-                        hi_dates[d] = int(safe_float(val))
-                except (ValueError, IndexError):
-                    pass
-            if hi_dates:
-                result.setdefault(canonical, {})['high'] = hi_dates
-            if lo_dates:
-                result.setdefault(canonical, {})['low'] = lo_dates
-        return result
+    """Parse MinMax rows where row labels end in ' High' or ' Low'.
+    The MinMax tab returns two rows per city — 'City Name High' and
+    'City Name Low' — with plain integer values per date column.
+    """
+    result = {}
+    for row in rows:
+        keys = list(row.keys())
+        if not keys:
+            continue
+        label = row.get(keys[0], '').strip()
+
+        # Detect metric from suffix
+        metric = None
+        clean_label = label
+        for suffix in [' High', ' Low']:
+            if label.endswith(suffix):
+                metric = 'high' if suffix == ' High' else 'low'
+                clean_label = label[:-len(suffix)].strip()
+                break
+
+        if metric is None:
+            continue  # skip rows without High/Low suffix
+
+        # Normalize city name to canonical form
+        clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
+        clean = _re2.sub(r'\s+', ' ', clean)
+        clean = _re2.sub(r'\s+([A-Z]{2})$', r', \1', clean)
+        city_key = clean.lower()
+        canonical = ag2_lower.get(city_key)
+        if not canonical:
+            city_part = city_key.split(',')[0].strip()
+            for ag2_name, ag2_canonical in ag2_lower.items():
+                if ag2_name.split(',')[0].strip() == city_part:
+                    canonical = ag2_canonical
+                    break
+        if not canonical:
+            continue
+
+        dates = {}
+        for col, val in row.items():
+            col = col.strip()
+            if col == keys[0] or col == 'Normals' or not col:
+                continue
+            try:
+                d = _dt.strptime(col, "%m/%d/%Y").strftime("%Y-%m-%d")
+                dates[d] = int(safe_float(val or 0))
+            except ValueError:
+                pass
+
+        if dates:
+            result.setdefault(canonical, {})[metric] = dates
+
+    return result
 
     # Debug: show actual cell values from MinMax CSV
     if minmax_rows:
