@@ -804,11 +804,19 @@ def collect_ag2_weather():
 
     print("  Pulling AG2 Trader 15-day city forecasts for ERCOT metros...")
 
+    # Try "Min/Max" (the exact sub-tab name from the AG2 UI) which should return low/high
     minmax_csv  = _ag2_csv_get("GetCityTableForecast", {
-        "IsCustom": "false", "CurrentTabName": "MinMax", "TempUnits": "F",
+        "IsCustom": "false", "CurrentTabName": "Min/Max", "TempUnits": "F",
         "Id": "allcities", "Region": "NA",
     })
     minmax_rows = _parse_ag2_csv(minmax_csv)
+    # Fallback to "MinMax" if Min/Max returns nothing or errors
+    if not minmax_rows:
+        minmax_csv  = _ag2_csv_get("GetCityTableForecast", {
+            "IsCustom": "false", "CurrentTabName": "MinMax", "TempUnits": "F",
+            "Id": "allcities", "Region": "NA",
+        })
+        minmax_rows = _parse_ag2_csv(minmax_csv)
 
     pop_csv  = _ag2_csv_get("GetCityTableForecast", {
         "IsCustom": "false", "CurrentTabName": "POP", "TempUnits": "F",
