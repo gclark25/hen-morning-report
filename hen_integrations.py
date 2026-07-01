@@ -864,6 +864,9 @@ def collect_ag2_weather():
                         canonical = ag2_canonical
                         break
             if not canonical:
+                # Debug: print non-matching labels that contain TX
+                if ' TX' in label or ', TX' in label.upper():
+                    print(f"      DEBUG no-match: label={repr(label)} clean={repr(clean)} city_key={repr(city_key)}")
                 continue
             dates = {}
             for col, val in row.items():
