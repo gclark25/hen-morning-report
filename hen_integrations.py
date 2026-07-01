@@ -804,11 +804,17 @@ def collect_ag2_weather():
 
     print("  Pulling AG2 Trader 15-day city forecasts for ERCOT metros...")
 
-    minmax_csv  = _ag2_csv_get("GetCityTableForecast", {
-        "IsCustom": "false", "CurrentTabName": "MinMax", "TempUnits": "F",
+    max_csv  = _ag2_csv_get("GetCityTableForecast", {
+        "IsCustom": "false", "CurrentTabName": "Max", "TempUnits": "F",
         "Id": "allcities", "Region": "NA",
     })
-    minmax_rows = _parse_ag2_csv(minmax_csv)
+    max_rows = _parse_ag2_csv(max_csv)
+
+    min_csv  = _ag2_csv_get("GetCityTableForecast", {
+        "IsCustom": "false", "CurrentTabName": "Min", "TempUnits": "F",
+        "Id": "allcities", "Region": "NA",
+    })
+    min_rows = _parse_ag2_csv(min_csv)
 
     pop_csv  = _ag2_csv_get("GetCityTableForecast", {
         "IsCustom": "false", "CurrentTabName": "POP", "TempUnits": "F",
@@ -890,25 +896,17 @@ def collect_ag2_weather():
 
         return result
 
-    minmax_parsed = _parse_wide_rows(minmax_rows, metrics_cycle=['high', 'low'])
-    pop_parsed    = _parse_wide_rows(pop_rows,    metrics_cycle=['precip_pct'])
-    # Debug: check a known city
-    _dbg_city = next(iter(minmax_parsed), None)
-    if _dbg_city:
-        _dbg = minmax_parsed[_dbg_city]
-        print(f"    DEBUG minmax sample city={_dbg_city} keys={list(_dbg.keys())}")
-        if 'high' in _dbg:
-            _s = sorted(_dbg['high'].items())[:2]
-            print(f"      high sample: {_s}")
-        if 'low' in _dbg:
-            _s = sorted(_dbg['low'].items())[:2]
-            print(f"      low sample: {_s}")
-        else:
-            print(f"      NO LOW KEY — metrics in result: {list(_dbg.keys())}")
-    # Also show first 5 row labels to understand structure
-    _first_key = list(minmax_rows[0].keys())[0] if minmax_rows else ''
-    _labels = [r.get(_first_key, '') for r in minmax_rows[:6]]
-    print(f"    DEBUG first 6 minmax labels: {_labels}")
+    max_parsed    = _parse_wide_rows(max_rows,  metrics_cycle=['high'])
+    min_parsed    = _parse_wide_rows(min_rows,  metrics_cycle=['low'])
+    pop_parsed    = _parse_wide_rows(pop_rows,  metrics_cycle=['precip_pct'])
+    # Merge high and low into single minmax_parsed structure
+    minmax_parsed = {}
+    for city in set(list(max_parsed.keys()) + list(min_parsed.keys())):
+        minmax_parsed[city] = {}
+        if city in max_parsed:
+            minmax_parsed[city].update(max_parsed[city])
+        if city in min_parsed:
+            minmax_parsed[city].update(min_parsed[city])
 
     for city_name, metrics in minmax_parsed.items():
         hi_days  = metrics.get('high', {})
