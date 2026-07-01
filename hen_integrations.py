@@ -891,61 +891,51 @@ def collect_ag2_weather():
 
         return result
 
-    # MinMax cells contain "low/high" (e.g. "72/98") — parse both in one pass
-    def _parse_minmax_rows(rows):
-    """Parse MinMax rows where row labels end in ' High' or ' Low'.
-    The MinMax tab returns two rows per city — 'City Name High' and
-    'City Name Low' — with plain integer values per date column.
-    """
-    result = {}
-    for row in rows:
-        keys = list(row.keys())
-        if not keys:
-            continue
-        label = row.get(keys[0], '').strip()
-
-        # Detect metric from suffix
-        metric = None
-        clean_label = label
-        for suffix in [' High', ' Low']:
-            if label.endswith(suffix):
-                metric = 'high' if suffix == ' High' else 'low'
-                clean_label = label[:-len(suffix)].strip()
-                break
-
-        if metric is None:
-            continue  # skip rows without High/Low suffix
-
-        # Normalize city name to canonical form
-        clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
-        clean = _re2.sub(r'\s+', ' ', clean)
-        clean = _re2.sub(r'\s+([A-Z]{2})$', r', \1', clean)
-        city_key = clean.lower()
-        canonical = ag2_lower.get(city_key)
-        if not canonical:
-            city_part = city_key.split(',')[0].strip()
-            for ag2_name, ag2_canonical in ag2_lower.items():
-                if ag2_name.split(',')[0].strip() == city_part:
-                    canonical = ag2_canonical
-                    break
-        if not canonical:
-            continue
-
-        dates = {}
-        for col, val in row.items():
-            col = col.strip()
-            if col == keys[0] or col == 'Normals' or not col:
-                continue
-            try:
-                d = _dt.strptime(col, "%m/%d/%Y").strftime("%Y-%m-%d")
-                dates[d] = int(safe_float(val or 0))
-            except ValueError:
-                pass
-
-        if dates:
-            result.setdefault(canonical, {})[metric] = dates
-
-    return result
+# MinMax cells: two rows per city labeled "City Name High" / "City Name Low"
+        def _parse_minmax_rows(rows):
+            """Parse MinMax rows where row labels end in ' High' or ' Low'."""
+            result = {}
+            for row in rows:
+                keys = list(row.keys())
+                if not keys:
+                    continue
+                label = row.get(keys[0], '').strip()
+                metric = None
+                clean_label = label
+                for suffix in [' High', ' Low']:
+                    if label.endswith(suffix):
+                        metric = 'high' if suffix == ' High' else 'low'
+                        clean_label = label[:-len(suffix)].strip()
+                        break
+                if metric is None:
+                    continue
+                import re as _re2
+                clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
+                clean = _re2.sub(r'\s+', ' ', clean)
+                clean = _re2.sub(r'\s+([A-Z]{2})$', r', \1', clean)
+                city_key = clean.lower()
+                canonical = ag2_lower.get(city_key)
+                if not canonical:
+                    city_part = city_key.split(',')[0].strip()
+                    for ag2_name, ag2_canonical in ag2_lower.items():
+                        if ag2_name.split(',')[0].strip() == city_part:
+                            canonical = ag2_canonical
+                            break
+                if not canonical:
+                    continue
+                dates = {}
+                for col, val in row.items():
+                    col = col.strip()
+                    if col == keys[0] or col == 'Normals' or not col:
+                        continue
+                    try:
+                        d = _dt.strptime(col, "%m/%d/%Y").strftime("%Y-%m-%d")
+                        dates[d] = int(safe_float(val or 0))
+                    except ValueError:
+                        pass
+                if dates:
+                    result.setdefault(canonical, {})[metric] = dates
+            return result
 
     # Debug: show actual cell values from MinMax CSV
     if minmax_rows:
