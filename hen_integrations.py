@@ -880,6 +880,9 @@ def collect_ag2_weather():
                     pass
             if dates:
                 result.setdefault(canonical, {})[metric] = dates
+            else:
+                if ' TX' in label:
+                    print(f"      DEBUG empty dates for: {repr(label)} row_keys={list(row.keys())[:5]}")
         return result
 
     minmax_parsed = _parse_wide_rows(minmax_rows)
