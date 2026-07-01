@@ -839,6 +839,8 @@ def collect_ag2_weather():
                     clean_label = label[:len(label)-len(suffix)].strip()
                     break
             if metric is None:
+                if ' TX' in label:
+                    print(f"      DEBUG metric=None for TX: label={repr(label)} ends={repr(label[-10:])}")
                 continue
             import re as _re2
             # Remove airport code suffix like "(KDFW)", strip extra spaces
