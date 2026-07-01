@@ -823,9 +823,15 @@ def collect_ag2_weather():
     # remaining columns = dates like "7/1/2026", "7/2/2026", ...
     from datetime import datetime as _dt
 
-    def _parse_wide_rows(rows):
-        """Extract {canonical_city: {metric: {date: value}}} from wide-format rows."""
+    def _parse_wide_rows(rows, metrics_cycle=None):
+        """Extract {canonical_city: {metric: {date: value}}} from wide-format rows.
+        
+        metrics_cycle: if provided, a list like ['high','low'] to assign metrics by
+        alternating city occurrence (for MinMax rows where High/Low aren't labeled).
+        If None, detect metric from row label suffix.
+        """
         result = {}
+        city_counts = {}  # track how many times each city has appeared
         for row in rows:
             keys = list(row.keys())
             if not keys:
@@ -833,43 +839,42 @@ def collect_ag2_weather():
             label = row.get(keys[0], '').strip()
             metric = None
             clean_label = label
-            for suffix in [' High', ' Low', ' PoP', ' POP', ' Precip']:
-                if label.upper().endswith(suffix.upper()):
-                    metric = suffix.strip().lower()
-                    clean_label = label[:len(label)-len(suffix)].strip()
-                    break
-            if metric is None:
-                if ' TX' in label:
-                    print(f"      DEBUG metric=None for TX: label={repr(label)} ends={repr(label[-10:])}")
-                continue
+            if metrics_cycle:
+                # Metric inferred by alternating occurrence of each city
+                # First strip any suffix just in case
+                for suffix in [' High', ' Low', ' PoP', ' POP', ' Precip']:
+                    if label.upper().endswith(suffix.upper()):
+                        metric = suffix.strip().lower()
+                        clean_label = label[:len(label)-len(suffix)].strip()
+                        break
+                if metric is None:
+                    # No suffix — use cycle based on city occurrence count
+                    clean_label = label
+            else:
+                for suffix in [' High', ' Low', ' PoP', ' POP', ' Precip']:
+                    if label.upper().endswith(suffix.upper()):
+                        metric = suffix.strip().lower()
+                        clean_label = label[:len(label)-len(suffix)].strip()
+                        break
             import re as _re2
-            # Remove airport code suffix like "(KDFW)", strip extra spaces
             clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
             clean = _re2.sub(r'\s+', ' ', clean)
-            # WSI format: "Dallas Fort Worth TX" (space before state, no comma)
-            # Our format:  "Dallas Fort Worth, TX" (comma before state)
-            # Normalize: insert comma before 2-letter state code if missing
             clean = _re2.sub(r'\s+([A-Z]{2})$', r', \1', clean)
             city_key = clean.lower()
             canonical = ag2_lower.get(city_key)
             if not canonical:
-                # Try title-casing variants
-                for variant in [clean.title(), clean.upper(), clean]:
-                    canonical = ag2_lower.get(variant.lower())
-                    if canonical:
-                        break
-            if not canonical:
-                # Last resort: match on city name portion only (before comma)
                 city_part = city_key.split(',')[0].strip()
                 for ag2_name, ag2_canonical in ag2_lower.items():
                     if ag2_name.split(',')[0].strip() == city_part:
                         canonical = ag2_canonical
                         break
             if not canonical:
-                # Debug: print non-matching labels that contain TX
-                if ' TX' in label or ', TX' in label.upper():
-                    print(f"      DEBUG no-match: label={repr(label)} clean={repr(clean)} city_key={repr(city_key)}")
                 continue
+            # For MinMax rows without metric suffix, assign by alternating occurrence
+            if metric is None and metrics_cycle:
+                count = city_counts.get(canonical, 0)
+                metric = metrics_cycle[count % len(metrics_cycle)]
+                city_counts[canonical] = count + 1
             dates = {}
             for col, val in row.items():
                 col = col.strip()
@@ -882,12 +887,10 @@ def collect_ag2_weather():
                     pass
             if dates:
                 result.setdefault(canonical, {})[metric] = dates
-            else:
-                if ' TX' in label:
-                    print(f"      DEBUG empty dates for: {repr(label)} row_keys={list(row.keys())[:5]}")
+
         return result
 
-    minmax_parsed = _parse_wide_rows(minmax_rows)
+    minmax_parsed = _parse_wide_rows(minmax_rows, metrics_cycle=['high', 'low'])
     pop_parsed    = _parse_wide_rows(pop_rows)
 
     for city_name, metrics in minmax_parsed.items():
