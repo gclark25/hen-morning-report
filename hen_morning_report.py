@@ -596,7 +596,7 @@ def _build_weather_html(data):
     gen_at = wx.get("generated_at", "")[:10]
     return f"""
     <div class="section" style="margin-top:20px">
-      <div class="section-title">15-Day Weather Forecast — ERCOT Metro Stations
+      <div class="section-title">7-Day Weather Forecast — ERCOT Metro Stations
         <span style="font-weight:400;font-size:10px;color:#aaa;margin-left:8px">
           Hi°F / Lo°F · Precip % · Source: {source} · As of {gen_at}
         </span>
@@ -1636,7 +1636,7 @@ Please provide:
 2. DISPATCH STRATEGY BY NODE — Using the rolling 5-day Sharpe ratios below, provide a concise dispatch recommendation for each signal group. For STRONG_DA nodes explain why DA commitment is favored (consistent DA premium, low RT upside). For STRONG_RT nodes explain why RT dispatch is favored (RT consistently exceeds DA, positive congestion benefit). For NEUTRAL nodes flag the uncertainty and suggest monitoring. Cross-reference with today's MCC exposure — a LEAN_RT node that also has strong positive MCC exposure is a high-confidence RT dispatch candidate. Keep to 4-5 sentences total focusing on the most actionable nodes.
 
 3. CONSTRAINT ANALYSIS: Identify the top binding constraints by Marginal Cost of Congestion (MCC = avg shadow price × shift factor). For each material constraint, state the MCC impact on exposed HEN nodes, the peak binding hour (HE), flow direction, and whether the congestion helped or hurt each node's position (positive SF + positive shadow = congestion benefit; negative SF + positive shadow = congestion cost). Flag any constraint where MCC exceeds $10/MWh on a HEN node as commercially significant.
-4. WEATHER & LOAD OUTLOOK: What the 15-day forecast means for ERCOT pricing and HEN dispatch over the next 2 weeks
+4. WEATHER & LOAD OUTLOOK: What the 7-day forecast means for ERCOT pricing and HEN dispatch over the next week
 5. MODO INDEX CONTEXT: How HEN's custom indices performed relative to prior day; what the market breakdown reveals
 5. AS MARKET ANALYSIS (last 3 days only): Based on the 3-day trailing window of DA-RT spreads:
    - Which AS service types have shown the most consistent DA premium (positive spread) over the last 3 days
