@@ -803,13 +803,13 @@ def collect_ag2_weather():
 
     minmax_csv  = _ag2_csv_get("GetCityTableForecast", {
         "IsCustom": "false", "CurrentTabName": "MinMax", "TempUnits": "F",
-        "Id": "allcities", "Region": "NA",
+        "Id": "tx", "Region": "NA",
     })
     minmax_rows = _parse_ag2_csv(minmax_csv)
 
     pop_csv  = _ag2_csv_get("GetCityTableForecast", {
         "IsCustom": "false", "CurrentTabName": "POP", "TempUnits": "F",
-        "Id": "allcities", "Region": "NA",
+        "Id": "tx", "Region": "NA",
     })
     pop_rows = _parse_ag2_csv(pop_csv)
 
@@ -837,10 +837,23 @@ def collect_ag2_weather():
                     break
             if metric is None:
                 continue
-            city_key = clean_label.lower()
-            if city_key not in ag2_lower:
+            # Normalize city label - remove airport codes like "(KDFW)", 
+            # standardize spacing and commas
+            import re as _re2
+            clean = _re2.sub(r'\s*\([^)]*\)', '', clean_label).strip()
+            clean = _re2.sub(r'\s+', ' ', clean)
+            # Try exact match first, then try adding ", TX" or matching without state
+            city_key = clean.lower()
+            canonical = ag2_lower.get(city_key)
+            if not canonical:
+                # Try matching by city name only (without state)
+                for ag2_name, ag2_canonical in ag2_lower.items():
+                    city_part = ag2_name.split(',')[0].strip()
+                    if city_key.startswith(city_part) or city_part in city_key:
+                        canonical = ag2_canonical
+                        break
+            if not canonical:
                 continue
-            canonical = ag2_lower[city_key]
             dates = {}
             for col, val in row.items():
                 col = col.strip()
@@ -875,6 +888,10 @@ def collect_ag2_weather():
     if not cities_out and minmax_rows:
         sample = minmax_rows[:3]
         print(f"    DEBUG — cols: {list(sample[0].keys())[:8] if sample else []}")
+        # Show actual city labels from first column
+        first_key = list(sample[0].keys())[0] if sample else ''
+        city_labels = [r.get(first_key, '') for r in sample[:10]]
+        print(f"    DEBUG — city labels (first col key='{first_key}'): {city_labels}")
         print(f"    DEBUG — first-col values: {[list(r.values())[0] for r in sample[:5]]}")
 
     return {
