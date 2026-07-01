@@ -851,6 +851,7 @@ def collect_ag2_weather():
         sample = minmax_rows[:3]
         print(f"    DEBUG — sample CSV columns: {list(sample[0].keys())}")
         print(f"    DEBUG — sample City values: {[r.get('City') or r.get('Station') or '?' for r in sample]}")
+        print(f"    DEBUG — all column names in first row: {list(sample[0].keys()) if sample else 'no rows'}")
 
     return {
         "weather": {
