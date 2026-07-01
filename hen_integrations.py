@@ -870,8 +870,8 @@ def collect_ag2_weather():
                         break
             if not canonical:
                 continue
-            # For MinMax rows without metric suffix, assign by alternating occurrence
-            if metric is None and metrics_cycle:
+            # For MinMax rows, assign metric by alternating occurrence (always use cycle)
+            if metrics_cycle:
                 count = city_counts.get(canonical, 0)
                 metric = metrics_cycle[count % len(metrics_cycle)]
                 city_counts[canonical] = count + 1
@@ -891,13 +891,14 @@ def collect_ag2_weather():
         return result
 
     minmax_parsed = _parse_wide_rows(minmax_rows, metrics_cycle=['high', 'low'])
-    pop_parsed    = _parse_wide_rows(pop_rows)
+    pop_parsed    = _parse_wide_rows(pop_rows,    metrics_cycle=['precip_pct'])
 
     for city_name, metrics in minmax_parsed.items():
         hi_days  = metrics.get('high', {})
         lo_days  = metrics.get('low',  {})
-        pop_days = pop_parsed.get(city_name, {}).get('pop',
-                   pop_parsed.get(city_name, {}).get('precip', {}))
+        city_pop = pop_parsed.get(city_name, {})
+        pop_days = (city_pop.get('precip_pct') or city_pop.get('pop') or
+                    city_pop.get('precip') or {})
         all_dates = sorted(set(list(hi_days.keys()) + list(lo_days.keys())))[:15]
         days_list = [{"date": dt, "high": hi_days.get(dt, 0),
                       "low": lo_days.get(dt, 0), "precip_pct": pop_days.get(dt, 0)}
