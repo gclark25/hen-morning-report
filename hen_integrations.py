@@ -892,6 +892,23 @@ def collect_ag2_weather():
 
     minmax_parsed = _parse_wide_rows(minmax_rows, metrics_cycle=['high', 'low'])
     pop_parsed    = _parse_wide_rows(pop_rows,    metrics_cycle=['precip_pct'])
+    # Debug: check a known city
+    _dbg_city = next(iter(minmax_parsed), None)
+    if _dbg_city:
+        _dbg = minmax_parsed[_dbg_city]
+        print(f"    DEBUG minmax sample city={_dbg_city} keys={list(_dbg.keys())}")
+        if 'high' in _dbg:
+            _s = sorted(_dbg['high'].items())[:2]
+            print(f"      high sample: {_s}")
+        if 'low' in _dbg:
+            _s = sorted(_dbg['low'].items())[:2]
+            print(f"      low sample: {_s}")
+        else:
+            print(f"      NO LOW KEY — metrics in result: {list(_dbg.keys())}")
+    # Also show first 5 row labels to understand structure
+    _first_key = list(minmax_rows[0].keys())[0] if minmax_rows else ''
+    _labels = [r.get(_first_key, '') for r in minmax_rows[:6]]
+    print(f"    DEBUG first 6 minmax labels: {_labels}")
 
     for city_name, metrics in minmax_parsed.items():
         hi_days  = metrics.get('high', {})
