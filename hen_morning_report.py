@@ -1256,7 +1256,7 @@ def _fmt_node_mcc(data):
 
     sorted_nodes = sorted(summary.items(), key=lambda x: abs(x[1]), reverse=True)
     lines = []
-    for node, mcc in sorted_nodes[:15]:  # top 15 by magnitude
+    for node, mcc in sorted_nodes[:8]:  # top 8 by magnitude
         direction = "benefit" if mcc > 0 else "cost"
         lines.append(f"  {node}: {'+' if mcc >= 0 else ''}${mcc:.4f}/MWh ({direction})")
     return "\n".join(lines)
@@ -1527,6 +1527,10 @@ def _fmt_sharpe_dispatch(data):
     for signal, label in labels.items():
         nodes = groups[signal]
         if not nodes:
+            continue
+        if signal == "NEUTRAL":
+            node_names = ", ".join(n for n, _ in sorted(nodes))
+            lines.append(f"  {label}: {node_names}")
             continue
         lines.append(f"  {label}:")
         for node, s in sorted(nodes, key=lambda x: abs(x[1]["sharpe"]), reverse=True):
