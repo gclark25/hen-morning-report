@@ -261,7 +261,6 @@ tr:hover td{background:#fafbfc}
   <div class="tab" onclick="showTab('forecast')">Forecast</div>
   <div class="tab" onclick="showTab('as')">AS Prices</div>
   <div class="tab" onclick="showTab('modo')">Modo Indices</div>
-  <div class="tab" onclick="showTab('fundamentals')">Fundamentals</div>
   <div class="tab" onclick="showTab('weather')">Weather</div>
 </div>
 
@@ -431,26 +430,6 @@ tr:hover td{background:#fafbfc}
 </div>
 
 <!-- ── FUNDAMENTALS ───────────────────────────────────────────────────────── -->
-<div id="tab-fundamentals" class="page">
-  <div class="card">
-    <div class="card-header"><span class="card-title">ERCOT System Fundamentals — 7-day lookback (GW daily peak)</span></div>
-    <div class="card-body">
-      <table><thead><tr>
-        <th>Date</th><th>Gross load</th><th>Wind</th><th>Solar</th><th>Net load</th>
-      </tr></thead><tbody id="fund-body"></tbody></table>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-header"><span class="card-title">5-Day History</span></div>
-    <div class="card-body">
-      <table><thead><tr>
-        <th>Date</th><th>Fleet RT avg</th><th>Fleet RT max</th>
-        <th>Spike nodes</th><th>Neg nodes</th><th>Gross load</th><th>Battery SOC</th>
-      </tr></thead><tbody id="history-body"></tbody></table>
-    </div>
-  </div>
-</div>
-
 <!-- ── FORECAST ───────────────────────────────────────────────────────────── -->
 <div id="tab-forecast" class="page">
   <!-- Net load spike risk alert banner -->
@@ -1187,34 +1166,6 @@ function renderAll(d, history, aiData) {
     wxGrid.style.display = '';
     if (wxUnavailable) wxUnavailable.style.display = 'none';
   }
-
-  // ── Fundamentals tab ──────────────────────────────────────────────────────
-  const load  = d.gross_load  || {};
-  const wind  = d.wind        || {};
-  const solar = d.solar       || {};
-  const allDays = [...new Set([...Object.keys(load), ...Object.keys(wind), ...Object.keys(solar)])]
-    .sort().slice(-7);
-
-  document.getElementById('fund-body').innerHTML = allDays.map(day => {
-    const g   = load[day]  || 0;
-    const w   = wind[day]  || 0;
-    const s   = solar[day] || 0;
-    const net = (g - w - s).toFixed(1);
-    const cls = net < 30 ? ' style="background:#f0faf4"' : '';
-    return `<tr${cls}><td>${day}</td><td>${g.toFixed(1)}</td><td>${w.toFixed(1)}</td>
-      <td>${s.toFixed(1)}</td><td>${net}</td></tr>`;
-  }).join('') || '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:16px">Data not available</td></tr>';
-
-  document.getElementById('history-body').innerHTML = (history || []).slice().reverse().map(e => `
-    <tr>
-      <td>${e.date}</td>
-      <td>${fmt(e.fleet?.rt_avg)}</td>
-      <td>${fmt(e.fleet?.rt_max)}</td>
-      <td>${e.fleet?.spike_nodes ?? '—'}</td>
-      <td>${e.fleet?.neg_nodes ?? '—'}</td>
-      <td>${e.fundamentals?.gross_load?.toFixed(1) ?? '—'} GW</td>
-      <td>${e.battery?.ending_soc ?? '—'}%</td>
-    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:16px">No history yet</td></tr>';
 
   // ── Forecast tab ──────────────────────────────────────────────────────────
   const fc   = d.ercot_forecasts || {};
