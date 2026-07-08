@@ -1580,7 +1580,7 @@ def build_ai_prompt_morning(data, history):
                 f"neg nodes {entry['fleet'].get('neg_nodes', 0)}\n"
             )
 
-    prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN), operator of 32 BESS sites across ERCOT. Generate a concise but comprehensive morning analysis for {YESTERDAY}.
+    prompt = f"""You are a commercial energy analyst for Hunt Energy Network (HEN), operator of 32 BESS sites across ERCOT. Generate a concise but comprehensive morning analysis for {TODAY_STR}.
 
 CRITICAL FRAMING — READ BEFORE ANALYZING:
 - DART spread = DA price − RT price
