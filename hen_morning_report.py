@@ -1652,6 +1652,9 @@ Please provide:
 7. FORWARD OPPORTUNITIES: Top 3 specific actionable opportunities in the next 7-14 days based on all available data
 9. RISK FLAGS: Any structural concerns worth escalating to the trading desk
 Be specific, use numbers, and focus on commercially actionable insights. Keep each section to 3-5 sentences.
+
+End the analysis with this exact closing line in italics:
+*Analysis prepared by HEN Commercial Analytics. All DART interpretations reflect asset dispatch strategy context. Constraint MCC values reflect yesterday's settlement; today's binding hours and shadow prices may differ. DA offer deadlines: Energy 10:00 AM CT | AS 10:00 AM CT. Next update: Tomorrow morning.*
 """
     return prompt
 
