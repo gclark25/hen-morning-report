@@ -459,10 +459,20 @@ tr:hover td{background:#fafbfc}
       <span class="card-title">Yesterday + 7-Day Hourly Forecast — Gross Load · Net Load · Wind · Solar</span>
       <span class="card-meta" id="fc-source"></span>
     </div>
+    <div style="padding:4px 16px 8px;font-size:10px;color:#aaa;line-height:1.6">
+      Load: <span style="color:#888">Load Forecast by Model &amp; Weather Zone</span> &nbsp;·&nbsp;
+      Wind: <span style="color:#888">Wind Power Production Hourly Avg Actual/Forecast</span> &nbsp;·&nbsp;
+      Solar: <span style="color:#888">Solar Power Production Hourly Actual/Forecast</span>
+    </div>
     <div class="card-body" style="position:relative;height:320px"><canvas id="fc-chart"></canvas></div>
   </div>
   <div class="card">
-    <div class="card-header"><span class="card-title">7-Day Forward Forecast — Daily Peaks</span></div>
+    <div class="card-header"><span class="card-title">7-Day Forward Forecast — Daily Peaks</span>
+        <span class="card-meta" style="display:flex;gap:16px;align-items:center">
+          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;background:#4378A2;border-radius:2px"></span>Gross Load</span>
+          <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:12px;height:12px;background:#d0e4f7;border-radius:2px"></span>Net Load</span>
+        </span>
+      </div>
     <div class="card-body">
       <div id="fc-bars" style="margin-bottom:20px"></div>
       <table><thead><tr>
