@@ -1181,8 +1181,19 @@ function renderAll(d, history, aiData) {
   const fc   = d.ercot_forecasts || {};
   const d7fc = fc.daily_7day     || {};
   const h24  = fc.hourly_24hr    || {};
+  const fcGenAt = fc.generated_at || '';
+  let fcRunStr = '';
+  if (fcGenAt) {
+    const genDt = new Date(fcGenAt);
+    if (!isNaN(genDt)) {
+      fcRunStr = genDt.toLocaleString('en-US', {
+        timeZone: 'America/Chicago', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      }) + ' CT';
+    }
+  }
   document.getElementById('fc-source').textContent =
-    fc.forecast_date ? 'As of ' + fc.forecast_date + ' · ERCOT Public API' : '';
+    fc.forecast_date ? 'Forecast run: ' + (fcRunStr || fc.forecast_date) + ' · ERCOT Public API' : '';
   const fcDates = d7fc.dates || [];
   const fcLoad  = (d7fc.gross_load_peak || []).slice();
   const fcWind  = (d7fc.wind_avg        || []).slice();
@@ -1336,7 +1347,7 @@ function renderAll(d, history, aiData) {
   const todayStr = (()=>{ const t=new Date(); return t.toISOString().slice(0,10); })();
   let fcStartIdx = 0;
   for (let i=0; i<fcAll.length; i++) { if (fcAll[i] >= todayStr) { fcStartIdx = i; break; } }
-  const blendedLabels = [...yestLabels, ...fcAll.slice(fcStartIdx).map(ts => { const [d2,hr] = ts.split(' '); return parseInt(hr||'0')===0 ? d2.slice(5)+' 00' : hr; })];
+  const blendedLabels = [...yestLabels, ...fcAll.slice(fcStartIdx).map(ts => { const [d2,hr] = ts.split(' '); return d2.slice(5) + ' ' + (hr || '00'); })];
   window._fcChartData = {
     labels: blendedLabels,
     gl:     [...yestGl,   ...fcastGl.slice(fcStartIdx)],
@@ -1868,9 +1879,11 @@ window._buildFcChart = function() {
             ticks:{ font:{size:10}, maxRotation:45, autoSkip:true, maxTicksLimit:20,
               callback(val,idx){
                 const l=d.labels[idx]||'';
-                if(l.includes('HE')) { const he=parseInt(l.slice(-2)); return he%6===0?l.replace('HE',''):''; }
-                if(l.includes('-')) return l;
-                const h=parseInt(l); return h%6===0?l:'';
+                const m=l.match(/(\d{1,2})$/);
+                if(!m) return '';
+                const hr=parseInt(m[1],10);
+                if(hr%6!==0) return '';
+                return l.replace('HE','');
               }
             },
             grid:{ color:'rgba(0,0,0,0.05)' }},
