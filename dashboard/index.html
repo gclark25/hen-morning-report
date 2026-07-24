@@ -1886,8 +1886,8 @@ window._buildFcChart = function() {
               axis.ticks = dayTicks.length ? dayTicks : axis.ticks;
             },
             ticks:{ font:{size:11}, maxRotation:0, autoSkip:false,
-              callback(val,idx){
-                const l = d.labels[idx] || '';
+              callback(value){
+                const l = d.labels[value] || '';
                 const datePart = l.replace('HE','').trim().split(' ')[0];
                 const [mm, dd] = datePart.split('-').map(Number);
                 if (!mm || !dd) return datePart;
