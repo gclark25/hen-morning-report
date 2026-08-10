@@ -27,6 +27,7 @@ jobs:
           ERCOT_PASSWORD:         ${{ secrets.ERCOT_PASSWORD }}
           ERCOT_SUBSCRIPTION_KEY: ${{ secrets.ERCOT_SUBSCRIPTION_KEY }}
           ERCOT_NODES:            ${{ secrets.ERCOT_TEST_NODES }}
+          ERCOT_HUBS_ZONES:       ${{ secrets.ERCOT_HUBS_ZONES }}
           ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
           AG2_ACCOUNT:            ${{ secrets.AG2_ACCOUNT }}
           AG2_PROFILE:            ${{ secrets.AG2_PROFILE }}

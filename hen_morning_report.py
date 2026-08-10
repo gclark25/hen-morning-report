@@ -61,6 +61,17 @@ NODES = (
     else ["HB_BUSAVG", "HB_HOUSTON", "HB_NORTH", "HB_SOUTH", "HB_WEST"]
 )
 
+# ERCOT hubs + major investor-owned-utility load zones — tracked separately
+# from the HEN fleet nodes (own price matrix/table, not folded into fleet
+# Sharpe/DART performance views).
+_hubs_zones_env = os.environ.get("ERCOT_HUBS_ZONES", "").strip()
+HUBS_AND_ZONES = (
+    [n.strip() for n in _hubs_zones_env.split(",") if n.strip()]
+    if _hubs_zones_env
+    else ["HB_HOUSTON", "HB_NORTH", "HB_SOUTH", "HB_WEST",
+          "LZ_HOUSTON", "LZ_NORTH", "LZ_SOUTH", "LZ_WEST"]
+)
+
 # Regional groupings — passed into latest.json for dashboard rendering
 REGIONS = {
     "West Texas": [
@@ -224,6 +235,96 @@ def extract_da_price_with_hour(row):
         return hour, price if price != 0 else None
     return None, None
 
+def _pull_rt_da_hourly(node_list, token, sub_key):
+    """
+    Pull RT (aggregated 15-min → hourly avg) and DA (already hourly) prices
+    for a list of settlement points (nodes, hubs, or load zones).
+    Returns (rt_summary, rt_hourly, da_summary, da_hourly) — same shapes as
+    the original per-node fleet pull.
+    """
+    rt_summary = {}
+    rt_hourly  = {}
+    da_summary = {}
+    da_hourly  = {}
+
+    for node in node_list:
+        time.sleep(3)
+
+        # RT prices — aggregate 4 x 15-min intervals into hourly averages
+        try:
+            rows = ercot_get("np6-905-cd/spp_node_zone_hub", token, sub_key,
+                             {"settlementPoint":   node,
+                              "deliveryDateFrom":  YESTERDAY,
+                              "deliveryDateTo":    YESTERDAY})
+            hour_buckets = defaultdict(list)
+            all_prices   = []
+            for row in rows:
+                hr, price = extract_price_with_interval(row)
+                if hr is not None and price is not None:
+                    hour_buckets[hr].append(price)
+                    all_prices.append(price)
+            if all_prices:
+                rt_summary[node] = {
+                    "avg": round(sum(all_prices) / len(all_prices), 2),
+                    "max": round(max(all_prices), 2),
+                    "min": round(min(all_prices), 2),
+                }
+                rt_hourly[node] = {
+                    str(hr): round(sum(v) / len(v), 2)
+                    for hr, v in sorted(hour_buckets.items())
+                }
+        except Exception as e:
+            print(f"    WARN: RT {node} — {e}")
+
+        time.sleep(3)
+
+        # DA prices — already hourly
+        try:
+            rows = ercot_get("np4-190-cd/dam_stlmnt_pnt_prices", token, sub_key,
+                             {"settlementPoint":   node,
+                              "deliveryDateFrom":  YESTERDAY,
+                              "deliveryDateTo":    YESTERDAY})
+            hour_prices = {}
+            all_prices  = []
+            for row in rows:
+                hr, price = extract_da_price_with_hour(row)
+                if hr is not None and price is not None:
+                    hour_prices[hr] = price
+                    all_prices.append(price)
+            if all_prices:
+                da_summary[node] = {
+                    "avg": round(sum(all_prices) / len(all_prices), 2),
+                    "max": round(max(all_prices), 2),
+                }
+                da_hourly[node] = {
+                    str(hr): round(p, 2)
+                    for hr, p in sorted(hour_prices.items())
+                }
+        except Exception as e:
+            print(f"    WARN: DA {node} — {e}")
+
+    return rt_summary, rt_hourly, da_summary, da_hourly
+
+def _compute_dart(rt_summary, rt_hourly, da_summary, da_hourly):
+    """Daily-avg DART (DA − RT) + hourly DART, for whatever set of settlement
+    points was passed into _pull_rt_da_hourly."""
+    common = set(rt_summary) & set(da_summary)
+    dart = {
+        n: round(da_summary[n]["avg"] - rt_summary[n]["avg"], 2)
+        for n in common
+    }
+    dart_hourly = {}
+    for n in common:
+        rth = rt_hourly.get(n, {})
+        dah = da_hourly.get(n, {})
+        shared_hrs = set(rth) & set(dah)
+        if shared_hrs:
+            dart_hourly[n] = {
+                hr: round(dah[hr] - rth[hr], 2)
+                for hr in sorted(shared_hrs)
+            }
+    return dart, dart_hourly
+
 # ── DATA COLLECTION ───────────────────────────────────────────────────────────
 
 def collect_data(token, sub_key):
@@ -325,94 +426,34 @@ def collect_data(token, sub_key):
 
     # ── RT + DA prices — hourly per node ────────────────────────────────────
     print(f"  Pulling RT + DA prices for {len(NODES)} nodes (hourly)...")
-    rt_summary = {}
-    rt_hourly  = {}
-    da_summary = {}
-    da_hourly  = {}
-
-    for node in NODES:
-        time.sleep(3)
-
-        # RT prices — aggregate 4 x 15-min intervals into hourly averages
-        try:
-            rows = ercot_get("np6-905-cd/spp_node_zone_hub", token, sub_key,
-                             {"settlementPoint":   node,
-                              "deliveryDateFrom":  YESTERDAY,
-                              "deliveryDateTo":    YESTERDAY})
-            hour_buckets = defaultdict(list)
-            all_prices   = []
-            for row in rows:
-                hr, price = extract_price_with_interval(row)
-                if hr is not None and price is not None:
-                    hour_buckets[hr].append(price)
-                    all_prices.append(price)
-            if all_prices:
-                rt_summary[node] = {
-                    "avg": round(sum(all_prices) / len(all_prices), 2),
-                    "max": round(max(all_prices), 2),
-                    "min": round(min(all_prices), 2),
-                }
-                rt_hourly[node] = {
-                    str(hr): round(sum(v) / len(v), 2)
-                    for hr, v in sorted(hour_buckets.items())
-                }
-        except Exception as e:
-            print(f"    WARN: RT {node} — {e}")
-
-        time.sleep(3)
-
-        # DA prices — already hourly
-        try:
-            rows = ercot_get("np4-190-cd/dam_stlmnt_pnt_prices", token, sub_key,
-                             {"settlementPoint":   node,
-                              "deliveryDateFrom":  YESTERDAY,
-                              "deliveryDateTo":    YESTERDAY})
-            hour_prices = {}
-            all_prices  = []
-            for row in rows:
-                hr, price = extract_da_price_with_hour(row)
-                if hr is not None and price is not None:
-                    hour_prices[hr] = price
-                    all_prices.append(price)
-            if all_prices:
-                da_summary[node] = {
-                    "avg": round(sum(all_prices) / len(all_prices), 2),
-                    "max": round(max(all_prices), 2),
-                }
-                da_hourly[node] = {
-                    str(hr): round(p, 2)
-                    for hr, p in sorted(hour_prices.items())
-                }
-        except Exception as e:
-            print(f"    WARN: DA {node} — {e}")
+    rt_summary, rt_hourly, da_summary, da_hourly = _pull_rt_da_hourly(NODES, token, sub_key)
 
     data["rt"]        = rt_summary
     data["rt_hourly"] = rt_hourly
     data["da"]        = da_summary
     data["da_hourly"] = da_hourly
 
-    # DART spreads — daily avg (DA − RT: positive = DA premium over RT)
-    common = set(rt_summary) & set(da_summary)
-    data["dart"] = {
-        n: round(da_summary[n]["avg"] - rt_summary[n]["avg"], 2)
-        for n in common
-    }
-
-    # Hourly DART spreads per node (DA − RT per hour)
-    dart_hourly = {}
-    for n in common:
-        rth = rt_hourly.get(n, {})
-        dah = da_hourly.get(n, {})
-        shared_hrs = set(rth) & set(dah)
-        if shared_hrs:
-            dart_hourly[n] = {
-                hr: round(dah[hr] - rth[hr], 2)
-                for hr in sorted(shared_hrs)
-            }
-    data["dart_hourly"] = dart_hourly
+    data["dart"], data["dart_hourly"] = _compute_dart(
+        rt_summary, rt_hourly, da_summary, da_hourly)
 
     print(f"  RT: {len(rt_summary)} nodes DA: {len(da_summary)} nodes "
-          f"DART hourly: {len(dart_hourly)} nodes")
+          f"DART hourly: {len(data['dart_hourly'])} nodes")
+
+    # ── RT + DA prices — hourly per ERCOT hub / load zone ───────────────────
+    print(f"  Pulling RT + DA prices for {len(HUBS_AND_ZONES)} hubs/zones (hourly)...")
+    hz_rt_summary, hz_rt_hourly, hz_da_summary, hz_da_hourly = _pull_rt_da_hourly(
+        HUBS_AND_ZONES, token, sub_key)
+
+    data["hub_zone_rt"]        = hz_rt_summary
+    data["hub_zone_rt_hourly"] = hz_rt_hourly
+    data["hub_zone_da"]        = hz_da_summary
+    data["hub_zone_da_hourly"] = hz_da_hourly
+
+    data["hub_zone_dart"], data["hub_zone_dart_hourly"] = _compute_dart(
+        hz_rt_summary, hz_rt_hourly, hz_da_summary, hz_da_hourly)
+
+    print(f"  Hubs/Zones RT: {len(hz_rt_summary)} DA: {len(hz_da_summary)} "
+          f"DART hourly: {len(data['hub_zone_dart_hourly'])}")
 
     # ── Additional integrations ────────────────────────────────────────────
     print("\n── Collecting additional integrations ──")
@@ -1036,6 +1077,12 @@ def write_dashboard_json(data):
         "da_hourly":          data.get("da_hourly", {}),
         "dart":               data.get("dart", {}),
         "dart_hourly":        data.get("dart_hourly", {}),
+        "hub_zone_rt":          data.get("hub_zone_rt", {}),
+        "hub_zone_rt_hourly":   data.get("hub_zone_rt_hourly", {}),
+        "hub_zone_da":          data.get("hub_zone_da", {}),
+        "hub_zone_da_hourly":   data.get("hub_zone_da_hourly", {}),
+        "hub_zone_dart":        data.get("hub_zone_dart", {}),
+        "hub_zone_dart_hourly": data.get("hub_zone_dart_hourly", {}),
         "gross_load":         data.get("gross_load", {}),
         "gross_load_hourly":  data.get("gross_load_hourly", {}),
         "wind":               data.get("wind", {}),

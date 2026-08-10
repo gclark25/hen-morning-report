@@ -345,6 +345,25 @@ tr:hover td{background:#fafbfc}
     </div>
   </div>
 
+  <!-- ── 24-Hour Price Matrix — Hubs & Load Zones ────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">24-Hour Price Matrix — ERCOT Hubs &amp; Load Zones</span>
+      <span class="card-meta">DA / RT / DART hourly avg $/MWh · HE 01–24 · highlighted = negative DART</span>
+    </div>
+    <div class="card-body">
+      <div class="heatmap-wrap">
+        <table class="price-matrix-table" id="hub-zone-matrix-table">
+          <thead id="hub-zone-matrix-thead"></thead>
+          <tbody id="hub-zone-matrix-tbody"></tbody>
+        </table>
+      </div>
+      <div id="hub-zone-matrix-empty" style="display:none;text-align:center;color:#aaa;padding:24px">
+        No hourly hub/load-zone price data available
+      </div>
+    </div>
+  </div>
+
   <!-- Sharpe Ratio definition panel -->
   <div style="background:#EAF2FA;border:1px solid #b3cfe8;border-radius:8px;
               padding:14px 18px;margin-bottom:16px;display:flex;gap:16px;align-items:flex-start">
@@ -927,6 +946,7 @@ function renderAll(d, history, aiData) {
   // ── Time-block Sharpe renderer ───────────────────────────────────────────────
   var dartHourly    = d.dart_hourly || {};
   renderPriceMatrix(d.rt_hourly || {}, d.da_hourly || {}, dartHourly);
+  renderHubZoneMatrix(d.hub_zone_rt_hourly || {}, d.hub_zone_da_hourly || {}, d.hub_zone_dart_hourly || {});
   var NODE_REGIONS_PRICES = {
     'TOYAH_RN':'West TX','SADLBACK_RN':'West TX','FAULKNER_RN':'West TX',
     'COYOTSPR_RN':'West TX','LONESTAR_RN':'West TX','RTLSNAKE_BT':'West TX',
@@ -1737,6 +1757,86 @@ function renderPriceMatrix(rtHourly, daHourly, dartHourly) {
 
     nodesPresent.forEach(node => {
       const shortNode = pmShortNode(node);
+      const rth = rtHourly[node]   || {};
+      const dah = daHourly[node]   || {};
+      const dth = dartHourly[node] || {};
+
+      const metrics = [
+        { key: 'DA',   data: dah },
+        { key: 'RT',   data: rth },
+        { key: 'DART', data: dth },
+      ];
+
+      metrics.forEach((m, mi) => {
+        const cells = Array.from({length:24}, (_, i) => {
+          const hr = i + 1;
+          const v  = m.data[hr] ?? m.data[String(hr)];
+          const isNeg = m.key === 'DART' && v != null && v < 0;
+          return '<td class="pm-val' + (isNeg ? ' pm-neg' : '') + '">' + pmFmt(v) + '</td>';
+        }).join('');
+
+        rowsHtml += '<tr' + (m.key === 'DART' ? ' class="pm-dart-row"' : '') + '>' +
+          (mi === 0 ? '<td class="pm-node-label" rowspan="3">' + shortNode + '</td>' : '') +
+          '<td class="pm-metric-label">' + m.key + '</td>' +
+          cells +
+          '</tr>';
+      });
+    });
+  });
+
+  tbody.innerHTML = rowsHtml;
+}
+
+// ── 24-Hour Price Matrix renderer — ERCOT Hubs & Load Zones ─────────────────
+const HZ_GROUPS = {
+  'ERCOT Hubs':  ['HB_HOUSTON', 'HB_NORTH', 'HB_SOUTH', 'HB_WEST'],
+  'Load Zones':  ['LZ_HOUSTON', 'LZ_NORTH', 'LZ_SOUTH', 'LZ_WEST'],
+};
+const HZ_GROUP_COLORS = { 'ERCOT Hubs': '#EAF2FA', 'Load Zones': '#fff3e0' };
+
+function hzShortNode(id) {
+  return id.replace(/^HB_/, '').replace(/^LZ_/, '')
+    .toLowerCase().replace(/^./, c => c.toUpperCase());
+}
+
+function renderHubZoneMatrix(rtHourly, daHourly, dartHourly) {
+  const thead = document.getElementById('hub-zone-matrix-thead');
+  const tbody = document.getElementById('hub-zone-matrix-tbody');
+  const table = document.getElementById('hub-zone-matrix-table');
+  const empty = document.getElementById('hub-zone-matrix-empty');
+  if (!thead || !tbody) return;
+
+  const availableNodes = new Set([
+    ...Object.keys(rtHourly || {}),
+    ...Object.keys(daHourly || {}),
+    ...Object.keys(dartHourly || {}),
+  ]);
+
+  if (!availableNodes.size) {
+    if (table) table.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (table) table.style.display = '';
+  if (empty) empty.style.display = 'none';
+
+  thead.innerHTML = '<tr>' +
+    '<th class="pm-node-head">Node</th>' +
+    '<th class="pm-metric-head">Metric</th>' +
+    Array.from({length:24}, (_, i) => '<th>HE ' + String(i+1).padStart(2,'0') + '</th>').join('') +
+    '</tr>';
+
+  let rowsHtml = '';
+  Object.entries(HZ_GROUPS).forEach(([groupName, nodesInGroup]) => {
+    const nodesPresent = nodesInGroup.filter(n => availableNodes.has(n));
+    if (!nodesPresent.length) return;
+
+    const groupColor = HZ_GROUP_COLORS[groupName] || '#f8f9fa';
+    rowsHtml += '<tr class="pm-region-row"><td colspan="26" style="background:' +
+      groupColor + '">' + groupName + '</td></tr>';
+
+    nodesPresent.forEach(node => {
+      const shortNode = hzShortNode(node);
       const rth = rtHourly[node]   || {};
       const dah = daHourly[node]   || {};
       const dth = dartHourly[node] || {};
