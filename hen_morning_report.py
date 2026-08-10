@@ -40,6 +40,7 @@ import os
 import sys
 import json
 import time
+import random
 import requests
 from datetime import date, timedelta
 from urllib.parse import quote
@@ -154,7 +155,20 @@ def get_token(username, password, sub_key):
 
 # ── ERCOT API ─────────────────────────────────────────────────────────────────
 
-def ercot_get(path, token, sub_key, params=None):
+def ercot_get(path, token, sub_key, params=None, max_attempts=5):
+    """
+    GET against the ERCOT public API with retry/backoff.
+
+    - Up to `max_attempts` tries total (default 5 = 4 retries).
+    - 429 (rate limited) gets its own, longer backoff schedule: honors the
+      Retry-After header if ERCOT sends one, otherwise backs off
+      exponentially (15s, 30s, 60s, 120s) since rate-limit windows take
+      longer to clear than a transient network blip. Small random jitter
+      is added so multiple calls that got 429'd together don't all retry
+      in lockstep and immediately re-trip the limit.
+    - Other transient errors (timeout, 500/502/503, connection errors) use
+      a shorter linear backoff (10s, 20s, 30s, 40s).
+    """
     headers = {
         "Authorization":             f"Bearer {token}",
         "Ocp-Apim-Subscription-Key": sub_key,
@@ -163,8 +177,8 @@ def ercot_get(path, token, sub_key, params=None):
     p = {"size": 1000}
     if params:
         p.update(params)
-    # Retry once on transient errors (timeout, 500/502/503)
-    for attempt in range(2):
+
+    for attempt in range(max_attempts):
         try:
             r = requests.get(f"{BASE_URL}/{path}", headers=headers, params=p, timeout=45)
             r.raise_for_status()
@@ -177,12 +191,35 @@ def ercot_get(path, token, sub_key, params=None):
                 if isinstance(v, list):
                     return v
             return []
-        except Exception as e:
-            if attempt == 0:
-                print(f"    WARN: {path} attempt 1 failed ({e}) — retrying in 10s...")
-                time.sleep(10)
-            else:
+        except requests.exceptions.HTTPError as e:
+            is_last = attempt == max_attempts - 1
+            status  = e.response.status_code if e.response is not None else None
+            if is_last:
                 raise
+            if status == 429:
+                retry_after = e.response.headers.get("Retry-After") if e.response is not None else None
+                if retry_after:
+                    try:
+                        wait = float(retry_after)
+                    except ValueError:
+                        wait = 15 * (2 ** attempt)
+                else:
+                    wait = 15 * (2 ** attempt)          # 15, 30, 60, 120...
+                wait = min(wait, 120) + random.uniform(0, 3)
+                print(f"    WARN: {path} attempt {attempt+1} failed "
+                      f"(429 rate limited) — retrying in {wait:.0f}s...")
+            else:
+                wait = 10 * (attempt + 1)               # 10, 20, 30, 40...
+                print(f"    WARN: {path} attempt {attempt+1} failed ({e}) "
+                      f"— retrying in {wait}s...")
+            time.sleep(wait)
+        except Exception as e:
+            if attempt == max_attempts - 1:
+                raise
+            wait = 10 * (attempt + 1)
+            print(f"    WARN: {path} attempt {attempt+1} failed ({e}) "
+                  f"— retrying in {wait}s...")
+            time.sleep(wait)
     return []
 
 def safe_float(val):
@@ -248,7 +285,7 @@ def _pull_rt_da_hourly(node_list, token, sub_key):
     da_hourly  = {}
 
     for node in node_list:
-        time.sleep(3)
+        time.sleep(4 + random.uniform(0, 1.5))
 
         # RT prices — aggregate 4 x 15-min intervals into hourly averages
         try:
@@ -276,7 +313,7 @@ def _pull_rt_da_hourly(node_list, token, sub_key):
         except Exception as e:
             print(f"    WARN: RT {node} — {e}")
 
-        time.sleep(3)
+        time.sleep(4 + random.uniform(0, 1.5))
 
         # DA prices — already hourly
         try:
