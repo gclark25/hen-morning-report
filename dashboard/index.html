@@ -40,7 +40,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
    1200px isn't enough room to show every column without cramming/scrolling,
    even on wide monitors that have plenty of unused space on either side. */
 .card.wide-card{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);
-  padding-left:24px;padding-right:24px;box-sizing:border-box}
+  padding-left:24px;padding-right:24px;box-sizing:border-box;
+  overflow:visible} /* .card's overflow:hidden (for rounded-corner clipping) breaks
+  position:sticky in child table headers — it becomes the sticky containing block
+  instead of the viewport. Not needed here since these cards don't rely on
+  corner-clipping the way narrower cards do. */
 .card-header{padding:12px 16px;border-bottom:1px solid #f0f0f0;
              display:flex;justify-content:space-between;align-items:center}
 .card-title{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em}
@@ -345,12 +349,10 @@ tr:hover td{background:#fafbfc}
       <span class="card-meta">DA / RT / DART hourly avg $/MWh · HE 01–24 · grouped by region · highlighted = negative DART</span>
     </div>
     <div class="card-body">
-      <div class="heatmap-wrap">
-        <table class="price-matrix-table" id="price-matrix-table">
-          <thead id="price-matrix-thead"></thead>
-          <tbody id="price-matrix-tbody"></tbody>
-        </table>
-      </div>
+      <table class="price-matrix-table" id="price-matrix-table">
+        <thead id="price-matrix-thead"></thead>
+        <tbody id="price-matrix-tbody"></tbody>
+      </table>
       <div id="price-matrix-empty" style="display:none;text-align:center;color:#aaa;padding:24px">
         No hourly price data available
       </div>
@@ -364,12 +366,10 @@ tr:hover td{background:#fafbfc}
       <span class="card-meta">DA / RT / DART hourly avg $/MWh · HE 01–24 · highlighted = negative DART</span>
     </div>
     <div class="card-body">
-      <div class="heatmap-wrap">
-        <table class="price-matrix-table" id="hub-zone-matrix-table">
-          <thead id="hub-zone-matrix-thead"></thead>
-          <tbody id="hub-zone-matrix-tbody"></tbody>
-        </table>
-      </div>
+      <table class="price-matrix-table" id="hub-zone-matrix-table">
+        <thead id="hub-zone-matrix-thead"></thead>
+        <tbody id="hub-zone-matrix-tbody"></tbody>
+      </table>
       <div id="hub-zone-matrix-empty" style="display:none;text-align:center;color:#aaa;padding:24px">
         No hourly hub/load-zone price data available
       </div>
