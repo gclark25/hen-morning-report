@@ -35,6 +35,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 /* Cards */
 .card{background:#fff;border-radius:8px;border:1px solid #e8e8e8;margin-bottom:16px;overflow:hidden}
+/* Lets a specific card break out of .page's 1200px cap to use the full
+   viewport width — for dense tables (like the 24hr price matrices) where
+   1200px isn't enough room to show every column without cramming/scrolling,
+   even on wide monitors that have plenty of unused space on either side. */
+.card.wide-card{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);
+  padding-left:24px;padding-right:24px;box-sizing:border-box}
 .card-header{padding:12px 16px;border-bottom:1px solid #f0f0f0;
              display:flex;justify-content:space-between;align-items:center}
 .card-title{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em}
@@ -138,19 +144,25 @@ tr:hover td{background:#fafbfc}
 .heatmap-date-btn:hover:not(.active){background:#EAF2FA;border-color:#4378A2;color:#4378A2}
 
 /* ── 24-Hour Price Matrix (DA / RT / DART by node) ───────────────────────── */
-.price-matrix-table{border-collapse:separate;border-spacing:1px;width:100%;font-size:10.5px}
-.price-matrix-table th{background:#f8f9fa;padding:5px 4px;text-align:center;
-  font-weight:700;color:#555;font-size:9.5px;letter-spacing:.03em;
-  text-transform:uppercase;border:none;position:sticky;top:0;z-index:3;white-space:nowrap}
-.price-matrix-table th.pm-node-head{text-align:left;min-width:82px;position:sticky;left:0;z-index:4;background:#f8f9fa}
-.price-matrix-table th.pm-metric-head{text-align:left;min-width:50px;position:sticky;left:82px;z-index:4;background:#f8f9fa}
-.price-matrix-table td.pm-node-label{font-family:monospace;font-weight:700;font-size:10.5px;color:#1a1a2e;
-  padding:3px 6px;white-space:nowrap;position:sticky;left:0;background:#fff;z-index:2;
+:root{--table-sticky-top:92px} /* fallback; JS measures the real header+tabs height on load */
+.price-matrix-table{border-collapse:separate;border-spacing:1px;width:100%;
+  table-layout:fixed;font-size:9.5px}
+.price-matrix-table th{background:#f8f9fa;padding:4px 2px;text-align:center;
+  font-weight:700;color:#555;font-size:9px;letter-spacing:.02em;
+  text-transform:uppercase;border:none;position:sticky;
+  top:var(--table-sticky-top);z-index:3;white-space:nowrap;overflow:hidden}
+.price-matrix-table th.pm-node-head{text-align:left;width:64px;position:sticky;
+  left:0;z-index:4;background:#f8f9fa}
+.price-matrix-table th.pm-metric-head{text-align:left;width:38px;position:sticky;
+  left:64px;z-index:4;background:#f8f9fa}
+.price-matrix-table td.pm-node-label{font-family:monospace;font-weight:700;font-size:9.5px;color:#1a1a2e;
+  padding:3px 4px;white-space:nowrap;overflow:hidden;position:sticky;left:0;background:#fff;z-index:2;
   border-right:1px solid #eee;vertical-align:middle}
-.price-matrix-table td.pm-metric-label{font-size:9.5px;font-weight:600;color:#888;
-  padding:3px 6px;white-space:nowrap;position:sticky;left:82px;background:#fff;z-index:2;border-right:1px solid #eee}
+.price-matrix-table td.pm-metric-label{font-size:8.5px;font-weight:600;color:#888;
+  padding:3px 4px;white-space:nowrap;overflow:hidden;position:sticky;left:64px;background:#fff;z-index:2;border-right:1px solid #eee}
 .price-matrix-table tr.pm-dart-row td.pm-metric-label{color:#555;font-weight:700}
-.price-matrix-table td.pm-val{font-family:monospace;font-size:10.5px;text-align:center;padding:3px 2px;white-space:nowrap}
+.price-matrix-table td.pm-val{font-family:monospace;font-size:9.5px;text-align:center;
+  padding:2px 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .price-matrix-table td.pm-val.pm-neg{background:#fdeaea;color:#b33000;font-weight:700;border-radius:2px}
 .price-matrix-table tr.pm-region-row td{background:#eef3f8;font-weight:700;color:#1a1a2e;
   font-size:11px;padding:6px 8px;text-transform:uppercase;letter-spacing:.04em}
@@ -327,7 +339,7 @@ tr:hover td{background:#fafbfc}
 <!-- ── PRICES ─────────────────────────────────────────────────────────────── -->
 <div id="tab-prices" class="page">
   <!-- ── 24-Hour Price Matrix ────────────────────────────────────────────── -->
-  <div class="card">
+  <div class="card wide-card">
     <div class="card-header">
       <span class="card-title">24-Hour Price Matrix — HEN Fleet</span>
       <span class="card-meta">DA / RT / DART hourly avg $/MWh · HE 01–24 · grouped by region · highlighted = negative DART</span>
@@ -346,7 +358,7 @@ tr:hover td{background:#fafbfc}
   </div>
 
   <!-- ── 24-Hour Price Matrix — Hubs & Load Zones ────────────────────────── -->
-  <div class="card">
+  <div class="card wide-card">
     <div class="card-header">
       <span class="card-title">24-Hour Price Matrix — ERCOT Hubs &amp; Load Zones</span>
       <span class="card-meta">DA / RT / DART hourly avg $/MWh · HE 01–24 · highlighted = negative DART</span>
@@ -737,6 +749,25 @@ function showTab(name) {
     });
   }
 }
+
+// ── Sticky table-header offset ──────────────────────────────────────────────
+// The app's own top bar (.header) and tab strip (.tabs) are both
+// position:sticky at the top of the page. Any sticky table header inside a
+// card needs to sit BELOW both of those, not at top:0, or it slides underneath
+// them while scrolling. Measure the real rendered heights instead of hardcoding
+// pixel guesses, so this stays correct if either bar's height ever changes.
+function updateStickyOffset() {
+  const header = document.querySelector('.header');
+  const tabs   = document.querySelector('.tabs');
+  const offset = (header ? header.offsetHeight : 53) + (tabs ? tabs.offsetHeight : 38);
+  document.documentElement.style.setProperty('--table-sticky-top', offset + 'px');
+}
+window.addEventListener('load', updateStickyOffset);
+window.addEventListener('resize', () => {
+  clearTimeout(window._stickyResizeTimer);
+  window._stickyResizeTimer = setTimeout(updateStickyOffset, 150);
+});
+updateStickyOffset();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt  = v => v == null ? '—' : '$' + Number(v).toFixed(2);
@@ -1772,7 +1803,8 @@ function renderPriceMatrix(rtHourly, daHourly, dartHourly) {
           const hr = i + 1;
           const v  = m.data[hr] ?? m.data[String(hr)];
           const isNeg = m.key === 'DART' && v != null && v < 0;
-          return '<td class="pm-val' + (isNeg ? ' pm-neg' : '') + '">' + pmFmt(v) + '</td>';
+          const title = shortNode + ' ' + m.key + ' HE' + String(hr).padStart(2,'0') + ': ' + pmFmt(v);
+          return '<td class="pm-val' + (isNeg ? ' pm-neg' : '') + '" title="' + title + '">' + pmFmt(v) + '</td>';
         }).join('');
 
         rowsHtml += '<tr' + (m.key === 'DART' ? ' class="pm-dart-row"' : '') + '>' +
@@ -1852,7 +1884,8 @@ function renderHubZoneMatrix(rtHourly, daHourly, dartHourly) {
           const hr = i + 1;
           const v  = m.data[hr] ?? m.data[String(hr)];
           const isNeg = m.key === 'DART' && v != null && v < 0;
-          return '<td class="pm-val' + (isNeg ? ' pm-neg' : '') + '">' + pmFmt(v) + '</td>';
+          const title = shortNode + ' ' + m.key + ' HE' + String(hr).padStart(2,'0') + ': ' + pmFmt(v);
+          return '<td class="pm-val' + (isNeg ? ' pm-neg' : '') + '" title="' + title + '">' + pmFmt(v) + '</td>';
         }).join('');
 
         rowsHtml += '<tr' + (m.key === 'DART' ? ' class="pm-dart-row"' : '') + '>' +
