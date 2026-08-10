@@ -137,6 +137,24 @@ tr:hover td{background:#fafbfc}
 .heatmap-date-btn.active{background:#002D62;color:#fff;border-color:#002D62}
 .heatmap-date-btn:hover:not(.active){background:#EAF2FA;border-color:#4378A2;color:#4378A2}
 
+/* ── 24-Hour Price Matrix (DA / RT / DART by node) ───────────────────────── */
+.price-matrix-table{border-collapse:separate;border-spacing:1px;width:100%;font-size:10.5px}
+.price-matrix-table th{background:#f8f9fa;padding:5px 4px;text-align:center;
+  font-weight:700;color:#555;font-size:9.5px;letter-spacing:.03em;
+  text-transform:uppercase;border:none;position:sticky;top:0;z-index:3;white-space:nowrap}
+.price-matrix-table th.pm-node-head{text-align:left;min-width:82px;position:sticky;left:0;z-index:4;background:#f8f9fa}
+.price-matrix-table th.pm-metric-head{text-align:left;min-width:50px;position:sticky;left:82px;z-index:4;background:#f8f9fa}
+.price-matrix-table td.pm-node-label{font-family:monospace;font-weight:700;font-size:10.5px;color:#1a1a2e;
+  padding:3px 6px;white-space:nowrap;position:sticky;left:0;background:#fff;z-index:2;
+  border-right:1px solid #eee;vertical-align:middle}
+.price-matrix-table td.pm-metric-label{font-size:9.5px;font-weight:600;color:#888;
+  padding:3px 6px;white-space:nowrap;position:sticky;left:82px;background:#fff;z-index:2;border-right:1px solid #eee}
+.price-matrix-table tr.pm-dart-row td.pm-metric-label{color:#555;font-weight:700}
+.price-matrix-table td.pm-val{font-family:monospace;font-size:10.5px;text-align:center;padding:3px 2px;white-space:nowrap}
+.price-matrix-table td.pm-val.pm-neg{background:#fdeaea;color:#b33000;font-weight:700;border-radius:2px}
+.price-matrix-table tr.pm-region-row td{background:#eef3f8;font-weight:700;color:#1a1a2e;
+  font-size:11px;padding:6px 8px;text-transform:uppercase;letter-spacing:.04em}
+
 /* ── Regional trend ─────────────────────────────────────────────────────── */
 .region-trend-block{background:#f8f9fa;border-radius:6px;padding:12px 14px}
 .region-trend-name{font-size:10px;font-weight:700;color:#555;text-transform:uppercase;
@@ -308,6 +326,25 @@ tr:hover td{background:#fafbfc}
 
 <!-- ── PRICES ─────────────────────────────────────────────────────────────── -->
 <div id="tab-prices" class="page">
+  <!-- ── 24-Hour Price Matrix ────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">24-Hour Price Matrix — HEN Fleet</span>
+      <span class="card-meta">DA / RT / DART hourly avg $/MWh · HE 01–24 · grouped by region · highlighted = negative DART</span>
+    </div>
+    <div class="card-body">
+      <div class="heatmap-wrap">
+        <table class="price-matrix-table" id="price-matrix-table">
+          <thead id="price-matrix-thead"></thead>
+          <tbody id="price-matrix-tbody"></tbody>
+        </table>
+      </div>
+      <div id="price-matrix-empty" style="display:none;text-align:center;color:#aaa;padding:24px">
+        No hourly price data available
+      </div>
+    </div>
+  </div>
+
   <!-- Sharpe Ratio definition panel -->
   <div style="background:#EAF2FA;border:1px solid #b3cfe8;border-radius:8px;
               padding:14px 18px;margin-bottom:16px;display:flex;gap:16px;align-items:flex-start">
@@ -889,6 +926,7 @@ function renderAll(d, history, aiData) {
 
   // ── Time-block Sharpe renderer ───────────────────────────────────────────────
   var dartHourly    = d.dart_hourly || {};
+  renderPriceMatrix(d.rt_hourly || {}, d.da_hourly || {}, dartHourly);
   var NODE_REGIONS_PRICES = {
     'TOYAH_RN':'West TX','SADLBACK_RN':'West TX','FAULKNER_RN':'West TX',
     'COYOTSPR_RN':'West TX','LONESTAR_RN':'West TX','RTLSNAKE_BT':'West TX',
@@ -1641,6 +1679,92 @@ function renderNodeMCC(constraints, nodeMCCSummary) {
           ' constraint' + (contribs !== 1 ? 's' : '') + '</td>' +
       '</tr>';
   }).join('');
+}
+
+// ── 24-Hour Price Matrix renderer (DA / RT / DART by node, grouped by region) ──
+const PM_REGIONS = {
+  'West Texas': ['TOYAH_RN','SADLBACK_RN','FAULKNER_RN','COYOTSPR_RN','LONESTAR_RN',
+    'RTLSNAKE_BT','CEDRVALE_RN','SBEAN_BESS','GOMZ_RN','GRDNE_ESR_RN','JDKNS_RN','SANDLAKE_RN'],
+  'North Texas': ['OLNEYTN_RN','DIBOL_RN','FRMRSVLW_RN','MNWL_BESS_RN','LFSTH_RN','PAULN_RN','CISC_RN'],
+  'Coastal': ['MV_VALV4_RN','WLTC_ESR_RN','MAINLAND_RN','FALFUR_RN','PAVLOV_BT_RN','POTEETS_RN','TYNAN_RN'],
+  'Premium': ['CATARINA_B1','HOLCOMB_RN1','HAMI_BESS_RN','JUNCTION_RN','RUSSEKST_RN','FTDUNCAN_RN'],
+};
+const PM_REGION_COLORS = {'West Texas':'#EAF2FA','North Texas':'#e3f2fd','Coastal':'#fff3e0','Premium':'#fce4ec'};
+
+function pmShortNode(id) {
+  return id.replace(/_RN$/,'').replace(/_B1$/,'').replace(/_BESS$/,'').replace(/_BT$/,'');
+}
+function pmFmt(v) {
+  if (v == null || isNaN(v)) return '—';
+  return v < 0 ? '-$' + Math.abs(v).toFixed(2) : '$' + Number(v).toFixed(2);
+}
+
+function renderPriceMatrix(rtHourly, daHourly, dartHourly) {
+  const thead = document.getElementById('price-matrix-thead');
+  const tbody = document.getElementById('price-matrix-tbody');
+  const table = document.getElementById('price-matrix-table');
+  const empty = document.getElementById('price-matrix-empty');
+  if (!thead || !tbody) return;
+
+  const availableNodes = new Set([
+    ...Object.keys(rtHourly || {}),
+    ...Object.keys(daHourly || {}),
+    ...Object.keys(dartHourly || {}),
+  ]);
+
+  if (!availableNodes.size) {
+    if (table) table.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (table) table.style.display = '';
+  if (empty) empty.style.display = 'none';
+
+  thead.innerHTML = '<tr>' +
+    '<th class="pm-node-head">Node</th>' +
+    '<th class="pm-metric-head">Metric</th>' +
+    Array.from({length:24}, (_, i) => '<th>HE ' + String(i+1).padStart(2,'0') + '</th>').join('') +
+    '</tr>';
+
+  let rowsHtml = '';
+  Object.entries(PM_REGIONS).forEach(([region, nodesInRegion]) => {
+    const nodesPresent = nodesInRegion.filter(n => availableNodes.has(n));
+    if (!nodesPresent.length) return;
+
+    const regionColor = PM_REGION_COLORS[region] || '#f8f9fa';
+    rowsHtml += '<tr class="pm-region-row"><td colspan="26" style="background:' +
+      regionColor + '">' + region + '</td></tr>';
+
+    nodesPresent.forEach(node => {
+      const shortNode = pmShortNode(node);
+      const rth = rtHourly[node]   || {};
+      const dah = daHourly[node]   || {};
+      const dth = dartHourly[node] || {};
+
+      const metrics = [
+        { key: 'DA',   data: dah },
+        { key: 'RT',   data: rth },
+        { key: 'DART', data: dth },
+      ];
+
+      metrics.forEach((m, mi) => {
+        const cells = Array.from({length:24}, (_, i) => {
+          const hr = i + 1;
+          const v  = m.data[hr] ?? m.data[String(hr)];
+          const isNeg = m.key === 'DART' && v != null && v < 0;
+          return '<td class="pm-val' + (isNeg ? ' pm-neg' : '') + '">' + pmFmt(v) + '</td>';
+        }).join('');
+
+        rowsHtml += '<tr' + (m.key === 'DART' ? ' class="pm-dart-row"' : '') + '>' +
+          (mi === 0 ? '<td class="pm-node-label" rowspan="3">' + shortNode + '</td>' : '') +
+          '<td class="pm-metric-label">' + m.key + '</td>' +
+          cells +
+          '</tr>';
+      });
+    });
+  });
+
+  tbody.innerHTML = rowsHtml;
 }
 
 loadData();
