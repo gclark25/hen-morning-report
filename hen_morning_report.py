@@ -1134,6 +1134,7 @@ def write_dashboard_json(data):
         "modo":               data.get("modo", {}),
         "asset_status":       data.get("asset_status", {}),
         "ercot_forecasts":    data.get("ercot_forecasts", {}),
+        "bid_close_forecast": data.get("bid_close_forecast", {"hourly": {}}),
         "as_prices":          data.get("as_prices", {}),
     }
     with open("latest.json", "w", encoding="utf-8") as f:

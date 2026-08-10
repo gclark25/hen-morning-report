@@ -531,6 +531,9 @@ tr:hover td{background:#fafbfc}
       Load: <span style="color:#888">Load Forecast by Model &amp; Weather Zone</span> &nbsp;·&nbsp;
       Wind: <span style="color:#888">Wind Power Production Hourly Avg Actual/Forecast</span> &nbsp;·&nbsp;
       Solar: <span style="color:#888">Solar Power Production Hourly Actual/Forecast</span>
+      <br>
+      <span style="color:#888">Solid = actual · Dashed = latest forecast · Dotted = bid-close forecast
+      (as of 10:00 CT the day before delivery — shown for both past and future days where available)</span>
     </div>
     <div class="card-body" style="position:relative;height:320px"><canvas id="fc-chart"></canvas></div>
   </div>
@@ -1424,6 +1427,7 @@ function renderAll(d, history, aiData) {
   const windActuals = d.wind_hourly        || {};
   const solActuals  = d.solar_hourly       || {};
   const yestLabels  = Array.from({length:24}, (_,i) => dataDate.slice(5) + ' HE' + String(i+1).padStart(2,'0'));
+  const yestFullTs  = Array.from({length:24}, (_,i) => dataDate + ' ' + String(i).padStart(2,'0'));
   const yestGl   = Array.from({length:24}, (_,i) => { const v = glActuals[String(i+1)]; return (v !== undefined && v !== null) ? Number(v) : null; });
   const yestWind = Array.from({length:24}, (_,i) => { const v = windActuals[String(i+1)]; return (v !== undefined && v !== null) ? Number(v) : 0; });
   const yestSol  = Array.from({length:24}, (_,i) => { const v = solActuals[String(i+1)]; return (v !== undefined && v !== null) ? Number(v) : 0; });
@@ -1437,12 +1441,27 @@ function renderAll(d, history, aiData) {
   let fcStartIdx = 0;
   for (let i=0; i<fcAll.length; i++) { if (fcAll[i] >= todayStr) { fcStartIdx = i; break; } }
   const blendedLabels = [...yestLabels, ...fcAll.slice(fcStartIdx).map(ts => { const [d2,hr] = ts.split(' '); return d2.slice(5) + ' ' + (hr || '00'); })];
+  const blendedFullTs = [...yestFullTs, ...fcAll.slice(fcStartIdx)];
+
+  // Bid-close forecast — the 10:00 CT day-before-delivery snapshot, aligned onto
+  // the same blended timeline by direct "YYYY-MM-DD HH" key lookup (matches
+  // ercot_forecasts.hourly_24hr's own key convention exactly, so no separate
+  // date-parsing/alignment logic is needed here — just a lookup per point).
+  // Missing hours resolve to null, which Chart.js renders as a genuine gap
+  // rather than a misleading zero or an interpolated line.
+  const bidClose = ((d.bid_close_forecast || {}).hourly) || {};
+  const bcGl   = blendedFullTs.map(ts => { const v = bidClose[ts]; return v ? v.gross_load : null; });
+  const bcNet  = blendedFullTs.map(ts => { const v = bidClose[ts]; return v ? v.net_load   : null; });
+  const bcWind = blendedFullTs.map(ts => { const v = bidClose[ts]; return v ? v.wind       : null; });
+  const bcSol  = blendedFullTs.map(ts => { const v = bidClose[ts]; return v ? v.solar      : null; });
+
   window._fcChartData = {
     labels: blendedLabels,
     gl:     [...yestGl,   ...fcastGl.slice(fcStartIdx)],
     net:    [...yestNet,  ...fcastNet.slice(fcStartIdx)],
     wind:   [...yestWind, ...fcastWnd.slice(fcStartIdx)],
     sol:    [...yestSol,  ...fcastSol.slice(fcStartIdx)],
+    bcGl: bcGl, bcNet: bcNet, bcWind: bcWind, bcSol: bcSol,
     splitAt: 24,
   };
   if (typeof Chart !== 'undefined') window._buildFcChart && window._buildFcChart();
@@ -2122,6 +2141,10 @@ window._buildFcChart = function() {
           segment: { borderDash: ctx => ctx.p0DataIndex >= (d.splitAt||24) ? [5,3] : [] } },
         { label:'Solar',      data:d.sol,  borderColor:'#ffa000', backgroundColor:'rgba(255,160,0,0.1)',   borderWidth:1.5, pointRadius:0, tension:0.4, fill:true },
         { label:'Wind',       data:d.wind, borderColor:'#7b1fa2', backgroundColor:'rgba(123,31,162,0.08)', borderWidth:1.5, pointRadius:0, tension:0.4, fill:true },
+        { label:'Bid-Close Gross Load', data:d.bcGl,   borderColor:'#e040fb', backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.4, borderDash:[2,2], spanGaps:false },
+        { label:'Bid-Close Net Load',   data:d.bcNet,  borderColor:'#212121', backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.4, borderDash:[2,2], spanGaps:false },
+        { label:'Bid-Close Solar',      data:d.bcSol,  borderColor:'#ffa000', backgroundColor:'transparent', borderWidth:1.2, pointRadius:0, tension:0.4, borderDash:[2,2], spanGaps:false },
+        { label:'Bid-Close Wind',       data:d.bcWind, borderColor:'#7b1fa2', backgroundColor:'transparent', borderWidth:1.2, pointRadius:0, tension:0.4, borderDash:[2,2], spanGaps:false },
       ]
     },
     options: {

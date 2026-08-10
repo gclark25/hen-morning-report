@@ -1553,7 +1553,317 @@ def collect_ercot_forecasts(token, sub_key):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6.  AS PRICES — DA vs RT Ancillary Service clearing prices  ← FIXED v3
+# 6.  BID-CLOSE FORECAST — the load/wind/solar forecast snapshot as of 10:00 CT
+#     the day before delivery (HEN's DA offer deadline — see the AI narrative
+#     footer's own "DA offer deadlines: Energy 10:00 AM CT" for confirmation of
+#     this cutoff). Ported from a working implementation in a sibling repo,
+#     reviewed and one bug fixed before porting: see BID_CLOSE_CUTOFF_HOUR_CT
+#     and the _bidclose_now_ct() comment below.
+#
+#     Confirmed from that repo's real production downloads (2026-08-09/10 runs):
+#       - The archive download for these three reports is a NESTED zip — an
+#         outer zip containing a '..._csv.zip' member, not a raw .csv.
+#       - Column names: load uses DeliveryDate/HourEnding/SystemTotal (+
+#         InUseFlag); wind/solar use DELIVERY_DATE/HOUR_ENDING/
+#         STWPF_SYSTEM_WIDE / STPPF_SYSTEM_WIDE.
+#     NOT independently confirmed: whether archive postDatetime values are
+#     themselves already in Central Time (assumed — see _bidclose_pick_doc).
+# ══════════════════════════════════════════════════════════════════════════════
+
+import csv as _csv_module
+import io as _io_module
+import zipfile as _zipfile_module
+from zoneinfo import ZoneInfo as _ZoneInfo
+
+BID_CLOSE_CUTOFF_HOUR_CT = 10  # HEN's DA offer deadline — confirmed against this
+                                 # dashboard's own AI narrative footer, NOT the 9am
+                                 # this was originally (incorrectly) hardcoded to
+                                 # in the sibling repo this was ported from.
+BID_CLOSE_ARCHIVE_PACING_SECONDS = 3  # same pacing lesson as everywhere else ERCOT-
+                                        # facing in this project — hammering archive
+                                        # list/download calls back-to-back trips 429s.
+BID_CLOSE_LOAD_EMIL  = "np3-565-cd"
+BID_CLOSE_WIND_EMIL  = "np4-732-cd"
+BID_CLOSE_SOLAR_EMIL = "np4-745-cd"
+_BID_CLOSE_CENTRAL = _ZoneInfo("America/Chicago")
+
+_BID_CLOSE_DATE_FIELD_CANDIDATES = ["DeliveryDate", "DELIVERY_DATE", "deliveryDate", "Delivery Date", "delivery_date"]
+_BID_CLOSE_HOUR_FIELD_CANDIDATES = ["HourEnding", "HOUR_ENDING", "hourEnding", "Hour Ending", "hour_ending"]
+_BID_CLOSE_LOAD_VALUE_CANDIDATES  = ["SystemTotal", "systemTotal", "System Total", "LoadForecast", "MTLF"]
+_BID_CLOSE_WIND_VALUE_CANDIDATES  = ["STWPFSystemWide", "STWPF System Wide", "STWPF_SYSTEM_WIDE"]
+_BID_CLOSE_SOLAR_VALUE_CANDIDATES = ["STPPFSystemWide", "STPPF System Wide", "STPPF_SYSTEM_WIDE"]
+_BID_CLOSE_DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d", "%m-%d-%Y", "%Y-%m-%dT%H:%M:%S")
+
+
+def _bidclose_first_present(row, candidates):
+    for c in candidates:
+        if c in row:
+            return row[c]
+    return None
+
+
+def _bidclose_get_json_with_retry(path, headers, params, max_attempts=5):
+    """Archive-list GET with the same 429-aware backoff as ercot_get() in
+    hen_morning_report.py — honors Retry-After, longer backoff for 429s
+    specifically than generic transient errors. Kept local rather than
+    imported since hen_integrations.py doesn't import from
+    hen_morning_report.py (the dependency only runs the other way)."""
+    last_exc = None
+    for attempt in range(max_attempts):
+        try:
+            r = requests.get(f"https://api.ercot.com/api/public-reports/{path}",
+                              headers=headers, params=params, timeout=45)
+            if r.status_code == 429:
+                if attempt < max_attempts - 1:
+                    retry_after = r.headers.get("Retry-After")
+                    wait = min(float(retry_after), 120) if retry_after else min(15 * (2 ** attempt), 120)
+                    print(f"    WARN: [bid-close] {path} rate limited (429) — waiting {wait:.0f}s...")
+                    time.sleep(wait)
+                    continue
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            last_exc = e
+            if attempt < max_attempts - 1:
+                wait = 10 * (attempt + 1)
+                print(f"    WARN: [bid-close] {path} attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
+                time.sleep(wait)
+    raise last_exc
+
+
+def _bidclose_post_bytes_with_retry(path, headers, json_body, max_attempts=5):
+    last_exc = None
+    for attempt in range(max_attempts):
+        try:
+            r = requests.post(f"https://api.ercot.com/api/public-reports/{path}",
+                               headers=headers, json=json_body, timeout=60)
+            if r.status_code == 429:
+                if attempt < max_attempts - 1:
+                    retry_after = r.headers.get("Retry-After")
+                    wait = min(float(retry_after), 120) if retry_after else min(15 * (2 ** attempt), 120)
+                    print(f"    WARN: [bid-close] {path} rate limited (429) — waiting {wait:.0f}s...")
+                    time.sleep(wait)
+                    continue
+            r.raise_for_status()
+            return r.content
+        except Exception as e:
+            last_exc = e
+            if attempt < max_attempts - 1:
+                wait = 10 * (attempt + 1)
+                print(f"    WARN: [bid-close] {path} attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
+                time.sleep(wait)
+    raise last_exc
+
+
+def _bidclose_list_archive(emil_id, token, sub_key, post_from, post_to):
+    headers = {"Authorization": f"Bearer {token}", "Ocp-Apim-Subscription-Key": sub_key}
+    params  = {"postDatetimeFrom": post_from, "postDatetimeTo": post_to, "size": 1000}
+    body = _bidclose_get_json_with_retry(f"archive/{emil_id}", headers, params)
+    return body.get("archives", [])
+
+
+def _bidclose_download_archive(emil_id, doc_id, token, sub_key):
+    headers = {"Authorization": f"Bearer {token}", "Ocp-Apim-Subscription-Key": sub_key}
+    return _bidclose_post_bytes_with_retry(f"archive/{emil_id}/download", headers, {"docIds": [doc_id]})
+
+
+def _bidclose_pick_doc(archives, cutoff_iso):
+    """Latest posting at or before the cutoff. Archive postDatetime values are
+    assumed to already be in Central Time (per ERCOT's own examples) — NOT
+    independently confirmed here; if bid-close picks look consistently off by
+    several hours once this runs against real data, this is the first thing
+    to revisit."""
+    candidates = [a for a in archives if a.get("postDatetime", "") <= cutoff_iso]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda a: a["postDatetime"])
+
+
+def _bidclose_parse_zip_bytes(raw, label, depth=0):
+    """ERCOT wraps these archives in a ZIP that itself contains ANOTHER ZIP —
+    confirmed from a real production download, a member like
+    '...LFMODWEATHERNP3565_csv.zip', not a raw .csv. Descends by content
+    (zipfile.is_zipfile), not filename, since a member could be zipped
+    without '.zip' in its name."""
+    if depth > 4:
+        print(f"    WARN: [bid-close/{label}] zip nesting exceeded depth 4 — giving up")
+        return []
+    rows = []
+    with _zipfile_module.ZipFile(_io_module.BytesIO(raw)) as zf:
+        entries = zf.infolist()
+        print(f"    [bid-close/{label}]{'  ' * depth} zip contents (depth {depth}): "
+              f"{[(e.filename, e.file_size) for e in entries]}")
+        for e in entries:
+            if e.filename.endswith("/"):
+                continue
+            member_bytes = zf.read(e.filename)
+            if _zipfile_module.is_zipfile(_io_module.BytesIO(member_bytes)):
+                rows.extend(_bidclose_parse_zip_bytes(member_bytes, label, depth + 1))
+                continue
+            try:
+                text = member_bytes.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                print(f"    WARN: [bid-close/{label}] member '{e.filename}' isn't a nested zip or UTF-8 text — skipping")
+                continue
+            batch = list(_csv_module.DictReader(_io_module.StringIO(text)))
+            if batch and not rows:
+                print(f"    [bid-close/{label}] archive CSV columns: {list(batch[0].keys())}")
+            rows.extend(batch)
+    return rows
+
+
+def _bidclose_normalize_date(raw):
+    raw = str(raw or "").strip()
+    if not raw:
+        return None
+    for fmt in _BID_CLOSE_DATE_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def _bidclose_row_is_in_use(row):
+    """Same lesson already learned for the live load forecast endpoint
+    elsewhere in this file — some forecast archives carry multiple competing
+    model rows per (date, hour). Conservative: only explicit false markers
+    are excluded; missing/blank/ambiguous values pass through rather than
+    risk filtering out the only usable row."""
+    if "InUseFlag" not in row:
+        return True
+    return str(row["InUseFlag"]).strip().upper() not in ("N", "NO", "FALSE", "0")
+
+
+def _bidclose_extract_day(rows, target_date, value_candidates):
+    by_hour = {}
+    sample_printed = False
+    for row in rows:
+        if not _bidclose_row_is_in_use(row):
+            continue
+        raw_date = _bidclose_first_present(row, _BID_CLOSE_DATE_FIELD_CANDIDATES)
+        d = _bidclose_normalize_date(raw_date)
+        he_raw  = _bidclose_first_present(row, _BID_CLOSE_HOUR_FIELD_CANDIDATES)
+        val_raw = _bidclose_first_present(row, value_candidates)
+        if not sample_printed and raw_date is not None:
+            print(f"    [bid-close] sample row: date_raw={raw_date!r} -> normalized={d!r}, "
+                  f"hour_raw={he_raw!r}, value_raw={val_raw!r}, target={target_date!r}")
+            sample_printed = True
+        if d != target_date or he_raw is None or val_raw is None:
+            continue
+        try:
+            he  = int(str(he_raw).split(":")[0])
+            val = float(val_raw)
+        except (ValueError, TypeError):
+            continue
+        if val and he not in by_hour:
+            by_hour[he] = val
+    return by_hour
+
+
+def collect_bid_close_forecast(token, sub_key, days_history=1, days_forecast=7):
+    """
+    Returns {"hourly": {"YYYY-MM-DD HH": {gross_load, wind, solar, net_load}}}
+    in GW, timestamp-keyed to match ercot_forecasts.hourly_24hr's own
+    "YYYY-MM-DD HH" (hour-BEGINNING, 0-23, zero-padded) convention exactly, so
+    the dashboard can align bid-close points onto the same x-axis by direct
+    key lookup. days_history=1 / days_forecast=7 matches this dashboard's own
+    Forecast tab window (yesterday + 7 days) — not copied from the sibling
+    repo's own 2-day-history/5-day-forecast window, which doesn't apply here.
+
+    Missing days are simply absent, not errors — a day whose 10am-the-day-
+    before cutoff hasn't happened yet is deliberately skipped rather than
+    filled with a stale/wrong posting.
+    """
+    now_ct = datetime.now(_BID_CLOSE_CENTRAL)
+    today  = now_ct.date()
+    offsets = range(-days_history, days_forecast)
+
+    earliest_cutoff_day = (today + timedelta(days=min(offsets))) - timedelta(days=1)
+    latest_cutoff_day   = (today + timedelta(days=max(offsets))) - timedelta(days=1)
+    post_from = f"{earliest_cutoff_day.isoformat()}T00:00:00"
+    post_to   = f"{latest_cutoff_day.isoformat()}T{BID_CLOSE_CUTOFF_HOUR_CT:02d}:00:00"
+
+    try:
+        load_archives = _bidclose_list_archive(BID_CLOSE_LOAD_EMIL, token, sub_key, post_from, post_to)
+        time.sleep(BID_CLOSE_ARCHIVE_PACING_SECONDS)
+        wind_archives = _bidclose_list_archive(BID_CLOSE_WIND_EMIL, token, sub_key, post_from, post_to)
+        time.sleep(BID_CLOSE_ARCHIVE_PACING_SECONDS)
+        solar_archives = _bidclose_list_archive(BID_CLOSE_SOLAR_EMIL, token, sub_key, post_from, post_to)
+        time.sleep(BID_CLOSE_ARCHIVE_PACING_SECONDS)
+    except Exception as e:
+        print(f"    WARN: [bid-close] archive listing failed entirely — {e}")
+        return {"hourly": {}}
+
+    download_cache = {}
+
+    def cached_download(emil_id, doc_id, label):
+        key = (emil_id, doc_id)
+        if key not in download_cache:
+            raw = _bidclose_download_archive(emil_id, doc_id, token, sub_key)
+            download_cache[key] = _bidclose_parse_zip_bytes(raw, label)
+            time.sleep(BID_CLOSE_ARCHIVE_PACING_SECONDS)
+        return download_cache[key]
+
+    hourly = {}
+    for offset in offsets:
+        delivery_day = today + timedelta(days=offset)
+        cutoff_day   = delivery_day - timedelta(days=1)
+        cutoff_dt    = datetime(cutoff_day.year, cutoff_day.month, cutoff_day.day,
+                                 BID_CLOSE_CUTOFF_HOUR_CT, tzinfo=_BID_CLOSE_CENTRAL)
+        target = delivery_day.isoformat()
+
+        if cutoff_dt > now_ct:
+            print(f"    [bid-close] {target} — cutoff ({cutoff_dt.isoformat()}) hasn't happened yet, skipping")
+            continue
+
+        cutoff_iso = f"{cutoff_day.isoformat()}T{BID_CLOSE_CUTOFF_HOUR_CT:02d}:00:00"
+
+        try:
+            load_doc  = _bidclose_pick_doc(load_archives, cutoff_iso)
+            wind_doc  = _bidclose_pick_doc(wind_archives, cutoff_iso)
+            solar_doc = _bidclose_pick_doc(solar_archives, cutoff_iso)
+            if not (load_doc and wind_doc and solar_doc):
+                print(f"    WARN: [bid-close] {target} — missing archive posting for at least one of "
+                      f"load/wind/solar before {cutoff_iso}, skipping")
+                continue
+
+            load_rows  = cached_download(BID_CLOSE_LOAD_EMIL, load_doc["docId"], "load")
+            wind_rows  = cached_download(BID_CLOSE_WIND_EMIL, wind_doc["docId"], "wind")
+            solar_rows = cached_download(BID_CLOSE_SOLAR_EMIL, solar_doc["docId"], "solar")
+
+            load_by_hour  = _bidclose_extract_day(load_rows, target, _BID_CLOSE_LOAD_VALUE_CANDIDATES)
+            wind_by_hour  = _bidclose_extract_day(wind_rows, target, _BID_CLOSE_WIND_VALUE_CANDIDATES)
+            solar_by_hour = _bidclose_extract_day(solar_rows, target, _BID_CLOSE_SOLAR_VALUE_CANDIDATES)
+
+            he_hours = sorted(set(load_by_hour) | set(wind_by_hour) | set(solar_by_hour))
+            if not he_hours:
+                print(f"    WARN: [bid-close] {target} — archives downloaded but no matching rows "
+                      f"parsed (check column names above)")
+                continue
+
+            for he in he_hours:
+                # HourEnding (1-24) -> hour-BEGINNING (0-23), matching
+                # ercot_forecasts.hourly_24hr's own key convention exactly.
+                hour_begin = he - 1
+                gl  = round(load_by_hour.get(he, 0)  / 1000, 2)
+                wnd = round(wind_by_hour.get(he, 0)  / 1000, 2)
+                sol = round(solar_by_hour.get(he, 0) / 1000, 2)
+                key = f"{target} {hour_begin:02d}"
+                hourly[key] = {"gross_load": gl, "wind": wnd, "solar": sol,
+                               "net_load": round(gl - wnd - sol, 2)}
+            print(f"    [bid-close] {target}: {len(he_hours)} hours (posted "
+                  f"{load_doc['postDatetime']} / {wind_doc['postDatetime']} / {solar_doc['postDatetime']})")
+        except Exception as e:
+            print(f"    WARN: [bid-close] {target} failed — {e}")
+            continue
+
+    return {"hourly": hourly, "generated_at": datetime.utcnow().isoformat() + "Z",
+            "cutoff_hour_ct": BID_CLOSE_CUTOFF_HOUR_CT}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 7.  AS PRICES — DA vs RT Ancillary Service clearing prices  ← FIXED v3
 #
 #  DA endpoint confirmed working from logs:
 #    np4-188-cd/dam_clear_price_for_cap
@@ -1829,28 +2139,38 @@ def collect_all_integrations(token=None, sub_key=None, asset_nodes=None):
     out = {}
 
     if token and sub_key:
-        print("\n── Integration 1/6: ERCOT binding constraints ──")
+        print("\n── Integration 1/7: ERCOT binding constraints ──")
         out.update(collect_ercot_constraints(token, sub_key, asset_nodes))
     else:
         print("  SKIP [ERCOT constraints] — no ERCOT token provided")
         out["constraints"] = []
 
-    print("\n── Integration 2/6: AG2 15-day weather ──")
+    print("\n── Integration 2/7: AG2 15-day weather ──")
     out.update(collect_ag2_weather())
 
-    print("\n── Integration 3/6: Modo Energy indices ──")
+    print("\n── Integration 3/7: Modo Energy indices ──")
     out.update(collect_modo_indices())
 
-    print("\n── Integration 4/6: PowerTools asset availability ──")
+    print("\n── Integration 4/7: PowerTools asset availability ──")
     out.update(collect_powertools_assets())
 
     if token and sub_key:
-        print("\n── Integration 5/6: ERCOT load/wind/solar forecasts ──")
+        print("\n── Integration 5/7: ERCOT load/wind/solar forecasts ──")
         out.update(collect_ercot_forecasts(token, sub_key))
     else:
         out["ercot_forecasts"] = {}
 
-    print("\n── Integration 6/6: AS DA vs RT clearing prices ──")
+    if token and sub_key:
+        print("\n── Integration 6/7: ERCOT bid-close forecast (10:00 CT day-before snapshot) ──")
+        try:
+            out["bid_close_forecast"] = collect_bid_close_forecast(token, sub_key)
+        except Exception as e:
+            print(f"  WARN [bid-close forecast] {e}")
+            out["bid_close_forecast"] = {"hourly": {}, "error": str(e)}
+    else:
+        out["bid_close_forecast"] = {"hourly": {}}
+
+    print("\n── Integration 7/7: AS DA vs RT clearing prices ──")
     try:
         out["as_prices"] = collect_as_prices(token, sub_key, lookback_days=5)
     except Exception as e:
