@@ -1902,33 +1902,56 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
             return str(name.get("name") or name.get("label") or name.get("column") or "")
         return str(name).strip()
 
-    def _get(path, params, label=""):
-        try:
-            r = requests.get(f"{base}/{path}", headers=headers,
-                             params={**params, "size": 5000}, timeout=30)
-            r.raise_for_status()
-            body       = r.json()
-            raw        = body.get("data") or []
-            fields_raw = body.get("fields") or []
-            if isinstance(raw, dict):
-                fields_raw = raw.get("fields") or fields_raw
-                raw        = raw.get("rows") or raw.get("data") or []
-            if not raw:
-                print(f"    [{label}] 0 rows — keys: {list(body.keys())}")
-                return []
-            fields = [_normalize_field(f) for f in fields_raw]
-            print(f"    [{label}] {len(raw)} rows · fields: {fields[:20]}")
-            if raw and isinstance(raw[0], list):
-                if not fields:
-                    print(f"    [{label}] WARN: list-of-lists but no fields")
+    def _get(path, params, label="", max_attempts=5):
+        """Same 429-aware retry pattern as ercot_get() (hen_morning_report.py) and
+        the bid-close archive helpers just above — honors Retry-After, longer
+        backoff for 429s specifically. This function previously had NO retry at
+        all: a single 429 on page 1 of the RT AS pull would return [], which the
+        pagination loop below treats identically to "reached the last page" —
+        silently producing a DA-only day with zero RT data, with no error
+        surfaced anywhere except a WARN buried in the log. Confirmed as the
+        actual cause of a real DA-only day (2026-08-27 run): page 1 of
+        np6-332-cd/rt_clear_price_cap_sced hit a 429 with no retry attempted."""
+        last_exc = None
+        for attempt in range(max_attempts):
+            try:
+                r = requests.get(f"{base}/{path}", headers=headers,
+                                 params={**params, "size": 5000}, timeout=30)
+                if r.status_code == 429:
+                    if attempt < max_attempts - 1:
+                        retry_after = r.headers.get("Retry-After")
+                        wait = min(float(retry_after), 120) if retry_after else min(15 * (2 ** attempt), 120)
+                        print(f"    WARN [{label}] {path} rate limited (429) — waiting {wait:.0f}s...")
+                        time.sleep(wait)
+                        continue
+                r.raise_for_status()
+                body       = r.json()
+                raw        = body.get("data") or []
+                fields_raw = body.get("fields") or []
+                if isinstance(raw, dict):
+                    fields_raw = raw.get("fields") or fields_raw
+                    raw        = raw.get("rows") or raw.get("data") or []
+                if not raw:
+                    print(f"    [{label}] 0 rows — keys: {list(body.keys())}")
                     return []
-                raw = [dict(zip(fields, row)) for row in raw]
-            if raw:
-                print(f"    [{label}] sample: { {k: raw[0][k] for k in list(raw[0].keys())[:8]} }")
-            return raw
-        except Exception as e:
-            print(f"    WARN [{label}] {path} -- {e}")
-            return []
+                fields = [_normalize_field(f) for f in fields_raw]
+                print(f"    [{label}] {len(raw)} rows · fields: {fields[:20]}")
+                if raw and isinstance(raw[0], list):
+                    if not fields:
+                        print(f"    [{label}] WARN: list-of-lists but no fields")
+                        return []
+                    raw = [dict(zip(fields, row)) for row in raw]
+                if raw:
+                    print(f"    [{label}] sample: { {k: raw[0][k] for k in list(raw[0].keys())[:8]} }")
+                return raw
+            except Exception as e:
+                last_exc = e
+                if attempt < max_attempts - 1:
+                    wait = 10 * (attempt + 1)
+                    print(f"    WARN [{label}] {path} attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
+                    time.sleep(wait)
+        print(f"    WARN [{label}] {path} — exhausted {max_attempts} attempts ({last_exc}), giving up")
+        return []
 
     def _parse_date_he(row):
         # Try standard deliveryDate + hourEnding fields first (DA format)
