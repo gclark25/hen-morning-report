@@ -2007,7 +2007,27 @@ def collect_as_prices(token, subscription_key, lookback_days=5):
             canonical = AS_TYPE_MAP.get(raw_type)
             if not canonical:
                 continue
-            price = row.get("MCPC") or row.get("mcpc") or row.get("price") or row.get("Price")
+            # ERCOT renamed this field on the RT report (np6-332-cd) at some point
+            # between 2026-08-10 and 2026-08-27: MCPC split into cappedMCPC and
+            # uncappedMCPC. cappedMCPC is preferred -- it's what SCED actually
+            # settles AS payments against (the report's own name,
+            # rt_clear_price_cap_sced, is specifically about the capped price).
+            # uncappedMCPC and the old MCPC/mcpc/price/Price names are kept as
+            # fallbacks in case a row only has one, or ERCOT reverts the schema.
+            # If DA-vs-RT spreads look economically off after this, cappedMCPC
+            # vs uncappedMCPC is the first thing to revisit -- this is a
+            # judgment call about which reflects "actual" settlement, not a
+            # certainty.
+            #
+            # Checked with "is not None" rather than truthiness/`or` for every
+            # candidate -- a legitimate $0.00 price is valid data, not a missing
+            # value, and the old `row.get("MCPC") or row.get(...)` chain would
+            # have silently skipped straight past a real 0 to the next fallback.
+            price = None
+            for field in ("cappedMCPC", "uncappedMCPC", "MCPC", "mcpc", "price", "Price"):
+                if row.get(field) is not None:
+                    price = row[field]
+                    break
             if price is None:
                 continue
             try:
