@@ -408,23 +408,44 @@ def collect_ercot_constraints(token, sub_key, asset_nodes=None):
         "Accept":                    "application/json",
     }
 
-    def _ercot_get(path, params=None):
+    def _ercot_get(path, params=None, max_attempts=5):
+        """429-aware retry, matching ercot_get()/collect_as_prices()'s pattern
+        elsewhere in this pipeline. Previously this had zero retry -- a single
+        429 immediately returned [], which the pagination loop below treats as
+        "reached the last page", silently killing the entire constraints pull.
+        Confirmed as the actual cause of a real empty-constraints day
+        (2026-09-01 run): one 429 on page 1, no retry attempted."""
         p = {"size": 5000}
         if params:
             p.update(params)
-        try:
-            r = requests.get(f"{BASE}/{path}", headers=headers, params=p, timeout=25)
-            r.raise_for_status()
-            body = r.json()
-            if isinstance(body, list):
-                return body
-            if "data" in body:
-                return body["data"]
-            for v in body.values():
-                if isinstance(v, list):
-                    return v
-        except Exception as e:
-            print(f"  WARN [ERCOT constraints] {path} — {e}")
+        last_exc = None
+        for attempt in range(max_attempts):
+            try:
+                r = requests.get(f"{BASE}/{path}", headers=headers, params=p, timeout=25)
+                if r.status_code == 429:
+                    if attempt < max_attempts - 1:
+                        retry_after = r.headers.get("Retry-After")
+                        wait = min(float(retry_after), 120) if retry_after else min(15 * (2 ** attempt), 120)
+                        print(f"  WARN [ERCOT constraints] {path} rate limited (429) — waiting {wait:.0f}s...")
+                        time.sleep(wait)
+                        continue
+                r.raise_for_status()
+                body = r.json()
+                if isinstance(body, list):
+                    return body
+                if "data" in body:
+                    return body["data"]
+                for v in body.values():
+                    if isinstance(v, list):
+                        return v
+                return []
+            except Exception as e:
+                last_exc = e
+                if attempt < max_attempts - 1:
+                    wait = 10 * (attempt + 1)
+                    print(f"  WARN [ERCOT constraints] {path} attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
+                    time.sleep(wait)
+        print(f"  WARN [ERCOT constraints] {path} — exhausted {max_attempts} attempts ({last_exc}), giving up")
         return []
 
     # ── Pull SCED shadow prices and binding transmission constraints ────────
