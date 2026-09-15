@@ -1,0 +1,8 @@
+/latest.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/history.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/ai_analysis.json
+  Cache-Control: no-cache, no-store, must-revalidate
