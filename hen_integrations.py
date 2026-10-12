@@ -1435,38 +1435,65 @@ def collect_ercot_forecasts(token, sub_key):
     yesterday_str = (today - timedelta(days=1)).isoformat()
     today_str     = today.isoformat()
 
-    def _ercot_get(path, params):
-        try:
-            r    = requests.get(f"{base}/{path}", headers=headers, params=params, timeout=30)
-            r.raise_for_status()
-            body = r.json()
-            if not hasattr(_ercot_get, "_debugged"):
-                _ercot_get._debugged = True
-                print(f"    DEBUG ERCOT response keys: {list(body.keys())[:8]}")
-                print(f"    DEBUG data type: {type(body.get('data')).__name__}, "
-                      f"sample: {str(body.get('data'))[:200]}")
-            fields_raw = body.get("fields") or []
-            raw        = body.get("data")   or []
-            if isinstance(raw, dict):
-                fields_raw = raw.get("fields") or fields_raw
-                raw        = raw.get("rows") or raw.get("data") or []
-            if not raw:
-                return []
-            fields = []
-            for f in fields_raw:
-                fields.append(str(f.get("name") or f.get("label") or "") if isinstance(f, dict) else str(f))
-            if not hasattr(_ercot_get, "_fields_logged"):
-                _ercot_get._fields_logged = True
-                print(f"    DEBUG fields ({len(fields)}): {fields[:15]}")
-            if raw and isinstance(raw[0], list):
-                if fields:
-                    raw = [dict(zip(fields, row)) for row in raw]
-                else:
+    def _ercot_get(path, params, max_attempts=5, timeout=60):
+        """Retry with backoff, matching ercot_get() / collect_as_prices() /
+        collect_ercot_constraints() elsewhere in this pipeline: honors
+        Retry-After on a 429, exponential backoff for 429s, linear backoff for
+        timeouts and other transient errors.
+
+        This helper previously had NO retry -- one error of any kind logged a
+        single WARN and returned [], and because load, wind and solar are three
+        separate calls, one failed call silently zeroed that one series while
+        the other two looked healthy. Confirmed as the cause of the 2026-10-12
+        run's missing wind forecast: np4-732-cd hit a 30s read timeout once, no
+        retry was attempted, and the whole 8-day wind series (hourly and daily)
+        came back as zeros, which in turn overstated net load.
+        Timeout raised 30s -> 60s for the same reason."""
+        last_exc = None
+        for attempt in range(max_attempts):
+            try:
+                r = requests.get(f"{base}/{path}", headers=headers, params=params, timeout=timeout)
+                if r.status_code == 429:
+                    if attempt < max_attempts - 1:
+                        retry_after = r.headers.get("Retry-After")
+                        wait = min(float(retry_after), 120) if retry_after else min(15 * (2 ** attempt), 120)
+                        print(f"  WARN [ERCOT forecast] {path} rate limited (429) — waiting {wait:.0f}s...")
+                        time.sleep(wait)
+                        continue
+                r.raise_for_status()
+                body = r.json()
+                if not hasattr(_ercot_get, "_debugged"):
+                    _ercot_get._debugged = True
+                    print(f"    DEBUG ERCOT response keys: {list(body.keys())[:8]}")
+                    print(f"    DEBUG data type: {type(body.get('data')).__name__}, "
+                          f"sample: {str(body.get('data'))[:200]}")
+                fields_raw = body.get("fields") or []
+                raw        = body.get("data")   or []
+                if isinstance(raw, dict):
+                    fields_raw = raw.get("fields") or fields_raw
+                    raw        = raw.get("rows") or raw.get("data") or []
+                if not raw:
                     return []
-            return raw
-        except Exception as e:
-            print(f"  WARN [ERCOT forecast] {path} — {e}")
-            return []
+                fields = []
+                for f in fields_raw:
+                    fields.append(str(f.get("name") or f.get("label") or "") if isinstance(f, dict) else str(f))
+                if not hasattr(_ercot_get, "_fields_logged"):
+                    _ercot_get._fields_logged = True
+                    print(f"    DEBUG fields ({len(fields)}): {fields[:15]}")
+                if raw and isinstance(raw[0], list):
+                    if fields:
+                        raw = [dict(zip(fields, row)) for row in raw]
+                    else:
+                        return []
+                return raw
+            except Exception as e:
+                last_exc = e
+                if attempt < max_attempts - 1:
+                    wait = 10 * (attempt + 1)
+                    print(f"  WARN [ERCOT forecast] {path} attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
+                    time.sleep(wait)
+        print(f"  WARN [ERCOT forecast] {path} — exhausted {max_attempts} attempts ({last_exc}), giving up")
+        return []
 
     print("  Pulling ERCOT short-term load forecast...")
     load_rows  = _ercot_get("np3-565-cd/lf_by_model_weather_zone",
@@ -1555,10 +1582,35 @@ def collect_ercot_forecasts(token, sub_key):
     print(f"    Load: {len(load_by_dt)} intervals · Wind: {len(wind_by_dt)} · Solar: {len(solar_by_dt)}")
     print(f"    24hr series: {len(h24_timestamps)} hours · 7-day series: {len(d7_dates)} days")
 
+    # Make an empty series impossible to miss. Net load is computed as
+    # gross - wind - solar, so a missing wind (or solar) series silently
+    # OVERSTATES net load and peak net load rather than showing a gap.
+    # Two distinct causes get two distinct messages:
+    #   - no rows came back at all  -> the fetch failed (see the WARN lines above)
+    #   - rows came back but none had a usable value -> ERCOT likely renamed
+    #     the report's fields; the first row's keys are printed to show how.
+    missing_sources = []
+    for _name, _rows, _parsed in (("load",  load_rows,  load_by_dt),
+                                  ("wind",  wind_rows,  wind_by_dt),
+                                  ("solar", solar_rows, solar_by_dt)):
+        if _parsed:
+            continue
+        missing_sources.append(_name)
+        if _rows:
+            _first = _rows[0] if isinstance(_rows[0], dict) else {}
+            print(f"    !! ERCOT forecast: {_name} returned {len(_rows)} rows but none had a usable value "
+                  f"— first row keys: {list(_first.keys())}")
+        else:
+            print(f"    !! ERCOT forecast: {_name} returned NO rows (see WARN lines above)")
+    if missing_sources:
+        print(f"    !! Missing forecast series: {', '.join(missing_sources)} — net load and peak net load "
+              f"are NOT reliable this run.")
+
     return {
         "ercot_forecasts": {
             "generated_at":  datetime.utcnow().isoformat() + "Z",
             "forecast_date": today_str,
+            "missing_sources": missing_sources,
             "hourly_24hr": {
                 "timestamps": h24_timestamps, "gross_load": h24_load,
                 "wind": h24_wind, "solar": h24_solar, "net_load": h24_net,
