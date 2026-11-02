@@ -1,0 +1,20 @@
+name = "hen-morning-report-trigger"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Cloudflare cron triggers are UTC-only, and Central time flips between UTC-5
+# (CDT, Mar-Nov) and UTC-6 (CST, Nov-Mar). So two crons are registered and
+# src/index.js acts only on the one that is actually 6:00 AM in Chicago:
+#   11:00 UTC = 6 AM CDT      12:00 UTC = 6 AM CST
+[triggers]
+crons = ["0 11 * * *", "0 12 * * *"]
+
+[vars]
+GH_OWNER    = "gclark25"
+GH_REPO     = "hen-morning-report"
+GH_WORKFLOW = "hen-morning-report.yml"
+GH_REF      = "main"
+
+# Keeps the Worker's logs (including any failed dispatch) in the dashboard.
+[observability]
+enabled = true
