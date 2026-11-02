@@ -1,8 +1,14 @@
 name: HEN Daily Morning Report
 on:
-  schedule:
-    - cron: '0 11 * * *'
+  # The 6:00 AM Central run is started by the Cloudflare Worker in hen-trigger/
+  # through the workflow_dispatch API. GitHub's own `schedule:` was removed
+  # because it was starting runs 2-5 hours late. Manual runs still work.
   workflow_dispatch:
+# Runs queue instead of overlapping, so a manual run started while the 6 AM
+# run is still going waits its turn rather than racing it on git push / deploy.
+concurrency:
+  group: hen-morning-report
+  cancel-in-progress: false
 jobs:
   morning-report:
     runs-on: ubuntu-latest
