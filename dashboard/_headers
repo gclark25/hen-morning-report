@@ -6,3 +6,6 @@
 
 /ai_analysis.json
   Cache-Control: no-cache, no-store, must-revalidate
+
+/brief_feed.json
+  Cache-Control: no-cache, no-store, must-revalidate

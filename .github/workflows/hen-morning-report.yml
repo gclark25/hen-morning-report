@@ -45,6 +45,11 @@ jobs:
           POWERTOOLS_USERNAME:    ${{ secrets.POWERTOOLS_USERNAME }}
           POWERTOOLS_PASSWORD:    ${{ secrets.POWERTOOLS_PASSWORD }}
         run: python hen_morning_report.py
+      - name: Build brief feed
+        # Writes dashboard/brief_feed.json from latest.json. If it fails, the dashboard
+        # still deploys, a warning is logged, and the previous feed stays in place (its
+        # generated_at / data_date then read as stale to the brief).
+        run: python build_brief_feed.py || echo "::warning::brief_feed.json build failed - previous file left in place"
       - name: Commit dashboard data
         run: |
           git config user.name  "github-actions[bot]"
@@ -52,6 +57,7 @@ jobs:
           cp latest.json dashboard/latest.json
           git add dashboard/latest.json dashboard/history.json
           git add dashboard/ai_analysis.json || true
+          git add dashboard/brief_feed.json || true
           git diff --staged --quiet || git commit -m "Data update — $(date -u +%Y-%m-%d)"
           git push
       - name: Deploy to Cloudflare Pages
