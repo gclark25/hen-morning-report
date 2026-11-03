@@ -235,14 +235,16 @@ def debug_da_probe(token, sub_key):
         "Ocp-Apim-Subscription-Key": sub_key,
         "Accept":                    "application/json",
     }
+    _d5 = (date.today() - timedelta(days=5)).isoformat()
     variants = [
-        ("A: HB_NORTH + yesterday",
+        ("A: HB_NORTH last 5 days thru today",
          {"settlementPoint": "HB_NORTH",
-          "deliveryDateFrom": YESTERDAY, "deliveryDateTo": YESTERDAY, "size": 1000}),
-        ("B: all points + yesterday (size 5)",
-         {"deliveryDateFrom": YESTERDAY, "deliveryDateTo": YESTERDAY, "size": 5}),
-        ("C: HB_NORTH, no dates (size 5)",
-         {"settlementPoint": "HB_NORTH", "size": 5}),
+          "deliveryDateFrom": _d5, "deliveryDateTo": TODAY_STR, "size": 500}),
+        ("B: HB_NORTH, deliveryDateFrom=yesterday only",
+         {"settlementPoint": "HB_NORTH",
+          "deliveryDateFrom": YESTERDAY, "size": 100}),
+        ("C: HB_NORTH, no dates (size 30, newest first)",
+         {"settlementPoint": "HB_NORTH", "size": 30}),
     ]
     print(f"\n── DEBUG: day-ahead price probe ({path}, YESTERDAY={YESTERDAY}) ──")
     for label, params in variants:
@@ -251,14 +253,19 @@ def debug_da_probe(token, sub_key):
                              params=params, timeout=45)
             text = r.text.replace("\n", " ")
             print(f"  [{label}] HTTP {r.status_code} · {len(r.text)} chars")
-            print(f"    {text[:700]}")
             try:
                 body = r.json()
                 if isinstance(body, dict):
                     data = body.get("data")
                     n = len(data) if isinstance(data, list) else "n/a"
-                    print(f"    keys={list(body.keys())} · data rows={n} · "
-                          f"meta={body.get('_meta')}")
+                    dates = sorted({str(x[0]) for x in data
+                                    if isinstance(x, list) and x}) if isinstance(data, list) else []
+                    print(f"    data rows={n} · totalRecords="
+                          f"{(body.get('_meta') or {}).get('totalRecords')} · "
+                          f"distinct deliveryDates={dates}")
+                    if isinstance(data, list) and data:
+                        print(f"    first row: {data[0]}")
+                        print(f"    last row:  {data[-1]}")
             except Exception as je:
                 print(f"    (response is not JSON: {je})")
         except Exception as e:
