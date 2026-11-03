@@ -3365,12 +3365,12 @@
     "SBEAN_BESS": -15.1291
   },
   "sharpe_ratios": {
-    "PAULN_RN": {
-      "sharpe": -0.0486,
-      "mean_dart": -0.5521,
-      "stdev_dart": 11.3683,
+    "SBEAN_BESS": {
+      "sharpe": -0.1637,
+      "mean_dart": -6.2064,
+      "stdev_dart": 37.9213,
       "n_obs": 72,
-      "signal": "NEUTRAL"
+      "signal": "LEAN_RT"
     },
     "LFSTH_RN": {
       "sharpe": 0.0004,
@@ -3379,19 +3379,40 @@
       "n_obs": 72,
       "signal": "NEUTRAL"
     },
-    "TYNAN_RN": {
-      "sharpe": -0.2989,
-      "mean_dart": -4.3243,
-      "stdev_dart": 14.4662,
+    "PAVLOV_BT_RN": {
+      "sharpe": 1.1389,
+      "mean_dart": 36.636,
+      "stdev_dart": 32.1678,
+      "n_obs": 72,
+      "signal": "STRONG_DA"
+    },
+    "SANDLAKE_RN": {
+      "sharpe": -0.0028,
+      "mean_dart": -0.1328,
+      "stdev_dart": 47.019,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "RUSSEKST_RN": {
+      "sharpe": -0.4891,
+      "mean_dart": -13.1885,
+      "stdev_dart": 26.9666,
       "n_obs": 72,
       "signal": "LEAN_RT"
     },
-    "SADLBACK_RN": {
-      "sharpe": -0.1103,
-      "mean_dart": -4.4211,
-      "stdev_dart": 40.0837,
+    "GOMZ_RN": {
+      "sharpe": -0.5059,
+      "mean_dart": -14.7237,
+      "stdev_dart": 29.1034,
       "n_obs": 72,
-      "signal": "NEUTRAL"
+      "signal": "STRONG_RT"
+    },
+    "GRDNE_ESR_RN": {
+      "sharpe": -0.4339,
+      "mean_dart": -13.8675,
+      "stdev_dart": 31.9623,
+      "n_obs": 72,
+      "signal": "LEAN_RT"
     },
     "CATARINA_B1": {
       "sharpe": -0.2157,
@@ -3400,24 +3421,31 @@
       "n_obs": 72,
       "signal": "LEAN_RT"
     },
-    "HOLCOMB_RN1": {
-      "sharpe": -0.3444,
-      "mean_dart": -4.9662,
-      "stdev_dart": 14.42,
+    "FALFUR_RN": {
+      "sharpe": -0.3445,
+      "mean_dart": -4.8311,
+      "stdev_dart": 14.0224,
       "n_obs": 72,
       "signal": "LEAN_RT"
+    },
+    "JUNCTION_RN": {
+      "sharpe": -0.1183,
+      "mean_dart": -2.6939,
+      "stdev_dart": 22.7656,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "SADLBACK_RN": {
+      "sharpe": -0.1103,
+      "mean_dart": -4.4211,
+      "stdev_dart": 40.0837,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
     },
     "POTEETS_RN": {
       "sharpe": -0.3253,
       "mean_dart": -4.8165,
       "stdev_dart": 14.8063,
-      "n_obs": 72,
-      "signal": "LEAN_RT"
-    },
-    "WLTC_ESR_RN": {
-      "sharpe": -0.2831,
-      "mean_dart": -4.0143,
-      "stdev_dart": 14.1776,
       "n_obs": 72,
       "signal": "LEAN_RT"
     },
@@ -3427,90 +3455,6 @@
       "stdev_dart": 43.9116,
       "n_obs": 72,
       "signal": "NEUTRAL"
-    },
-    "OLNEYTN_RN": {
-      "sharpe": 0.037,
-      "mean_dart": 0.7543,
-      "stdev_dart": 20.3594,
-      "n_obs": 72,
-      "signal": "NEUTRAL"
-    },
-    "SANDLAKE_RN": {
-      "sharpe": -0.0028,
-      "mean_dart": -0.1328,
-      "stdev_dart": 47.019,
-      "n_obs": 72,
-      "signal": "NEUTRAL"
-    },
-    "GRDNE_ESR_RN": {
-      "sharpe": -0.4339,
-      "mean_dart": -13.8675,
-      "stdev_dart": 31.9623,
-      "n_obs": 72,
-      "signal": "LEAN_RT"
-    },
-    "CEDRVALE_RN": {
-      "sharpe": 0.0038,
-      "mean_dart": 0.1786,
-      "stdev_dart": 47.5174,
-      "n_obs": 72,
-      "signal": "NEUTRAL"
-    },
-    "GOMZ_RN": {
-      "sharpe": -0.5059,
-      "mean_dart": -14.7237,
-      "stdev_dart": 29.1034,
-      "n_obs": 72,
-      "signal": "STRONG_RT"
-    },
-    "COYOTSPR_RN": {
-      "sharpe": -0.0455,
-      "mean_dart": -1.9996,
-      "stdev_dart": 43.9116,
-      "n_obs": 72,
-      "signal": "NEUTRAL"
-    },
-    "RTLSNAKE_BT": {
-      "sharpe": -0.0752,
-      "mean_dart": -3.1793,
-      "stdev_dart": 42.2891,
-      "n_obs": 72,
-      "signal": "NEUTRAL"
-    },
-    "LONESTAR_RN": {
-      "sharpe": -0.079,
-      "mean_dart": -3.3293,
-      "stdev_dart": 42.1217,
-      "n_obs": 72,
-      "signal": "NEUTRAL"
-    },
-    "FTDUNCAN_RN": {
-      "sharpe": -0.4345,
-      "mean_dart": -7.471,
-      "stdev_dart": 17.1935,
-      "n_obs": 72,
-      "signal": "LEAN_RT"
-    },
-    "CISC_RN": {
-      "sharpe": 0.2822,
-      "mean_dart": 24.7411,
-      "stdev_dart": 87.6858,
-      "n_obs": 72,
-      "signal": "LEAN_DA"
-    },
-    "RUSSEKST_RN": {
-      "sharpe": -0.4891,
-      "mean_dart": -13.1885,
-      "stdev_dart": 26.9666,
-      "n_obs": 72,
-      "signal": "LEAN_RT"
-    },
-    "HAMI_BESS_RN": {
-      "sharpe": -0.3272,
-      "mean_dart": -5.7385,
-      "stdev_dart": 17.5362,
-      "n_obs": 72,
-      "signal": "LEAN_RT"
     },
     "MAINLAND_RN": {
       "sharpe": -0.4761,
@@ -3526,52 +3470,24 @@
       "n_obs": 72,
       "signal": "LEAN_RT"
     },
-    "JUNCTION_RN": {
-      "sharpe": -0.1183,
-      "mean_dart": -2.6939,
-      "stdev_dart": 22.7656,
-      "n_obs": 72,
-      "signal": "NEUTRAL"
-    },
-    "FALFUR_RN": {
-      "sharpe": -0.3445,
-      "mean_dart": -4.8311,
-      "stdev_dart": 14.0224,
-      "n_obs": 72,
-      "signal": "LEAN_RT"
-    },
-    "MNWL_BESS_RN": {
-      "sharpe": 0.0371,
-      "mean_dart": 0.7249,
-      "stdev_dart": 19.5429,
-      "n_obs": 72,
-      "signal": "NEUTRAL"
-    },
-    "TOYAH_RN": {
-      "sharpe": -0.5946,
-      "mean_dart": -16.9424,
-      "stdev_dart": 28.493,
-      "n_obs": 72,
-      "signal": "STRONG_RT"
-    },
-    "PAVLOV_BT_RN": {
-      "sharpe": 1.1389,
-      "mean_dart": 36.636,
-      "stdev_dart": 32.1678,
-      "n_obs": 72,
-      "signal": "STRONG_DA"
-    },
-    "JDKNS_RN": {
-      "sharpe": -0.3217,
-      "mean_dart": -10.6499,
-      "stdev_dart": 33.1067,
-      "n_obs": 72,
-      "signal": "LEAN_RT"
-    },
     "DIBOL_RN": {
       "sharpe": 0.0001,
       "mean_dart": 0.0007,
       "stdev_dart": 10.8688,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "PAULN_RN": {
+      "sharpe": -0.0486,
+      "mean_dart": -0.5521,
+      "stdev_dart": 11.3683,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "OLNEYTN_RN": {
+      "sharpe": 0.037,
+      "mean_dart": 0.7543,
+      "stdev_dart": 20.3594,
       "n_obs": 72,
       "signal": "NEUTRAL"
     },
@@ -3582,10 +3498,94 @@
       "n_obs": 72,
       "signal": "NEUTRAL"
     },
-    "SBEAN_BESS": {
-      "sharpe": -0.1637,
-      "mean_dart": -6.2064,
-      "stdev_dart": 37.9213,
+    "JDKNS_RN": {
+      "sharpe": -0.3217,
+      "mean_dart": -10.6499,
+      "stdev_dart": 33.1067,
+      "n_obs": 72,
+      "signal": "LEAN_RT"
+    },
+    "CISC_RN": {
+      "sharpe": 0.2822,
+      "mean_dart": 24.7411,
+      "stdev_dart": 87.6858,
+      "n_obs": 72,
+      "signal": "LEAN_DA"
+    },
+    "RTLSNAKE_BT": {
+      "sharpe": -0.0752,
+      "mean_dart": -3.1793,
+      "stdev_dart": 42.2891,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "FTDUNCAN_RN": {
+      "sharpe": -0.4345,
+      "mean_dart": -7.471,
+      "stdev_dart": 17.1935,
+      "n_obs": 72,
+      "signal": "LEAN_RT"
+    },
+    "MNWL_BESS_RN": {
+      "sharpe": 0.0371,
+      "mean_dart": 0.7249,
+      "stdev_dart": 19.5429,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "LONESTAR_RN": {
+      "sharpe": -0.079,
+      "mean_dart": -3.3293,
+      "stdev_dart": 42.1217,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "COYOTSPR_RN": {
+      "sharpe": -0.0455,
+      "mean_dart": -1.9996,
+      "stdev_dart": 43.9116,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "TYNAN_RN": {
+      "sharpe": -0.2989,
+      "mean_dart": -4.3243,
+      "stdev_dart": 14.4662,
+      "n_obs": 72,
+      "signal": "LEAN_RT"
+    },
+    "CEDRVALE_RN": {
+      "sharpe": 0.0038,
+      "mean_dart": 0.1786,
+      "stdev_dart": 47.5174,
+      "n_obs": 72,
+      "signal": "NEUTRAL"
+    },
+    "TOYAH_RN": {
+      "sharpe": -0.5946,
+      "mean_dart": -16.9424,
+      "stdev_dart": 28.493,
+      "n_obs": 72,
+      "signal": "STRONG_RT"
+    },
+    "HAMI_BESS_RN": {
+      "sharpe": -0.3272,
+      "mean_dart": -5.7385,
+      "stdev_dart": 17.5362,
+      "n_obs": 72,
+      "signal": "LEAN_RT"
+    },
+    "HOLCOMB_RN1": {
+      "sharpe": -0.3444,
+      "mean_dart": -4.9662,
+      "stdev_dart": 14.42,
+      "n_obs": 72,
+      "signal": "LEAN_RT"
+    },
+    "WLTC_ESR_RN": {
+      "sharpe": -0.2831,
+      "mean_dart": -4.0143,
+      "stdev_dart": 14.1776,
       "n_obs": 72,
       "signal": "LEAN_RT"
     }
@@ -4909,7 +4909,7 @@
         ]
       }
     },
-    "generated_at": "2026-11-03T14:19:35.884017Z",
+    "generated_at": "2026-11-03T14:33:03.211181Z",
     "source": "AG2 Trader (wsitrader.com)"
   },
   "modo": {
@@ -5008,7 +5008,7 @@
     "error": "Power Apps URL \u2014 needs HTTP trigger endpoint from IT"
   },
   "ercot_forecasts": {
-    "generated_at": "2026-11-03T14:19:43.227540Z",
+    "generated_at": "2026-11-03T14:33:15.061818Z",
     "forecast_date": "2026-11-03",
     "missing_sources": [],
     "hourly_24hr": {
@@ -6453,11 +6453,11 @@
         "net_load": 43.99
       }
     },
-    "generated_at": "2026-11-03T14:20:12.134130Z",
+    "generated_at": "2026-11-03T14:33:43.530679Z",
     "cutoff_hour_ct": 10
   },
   "as_prices": {
-    "generated_at": "2026-11-03T14:20:14.131699Z",
+    "generated_at": "2026-11-03T14:33:44.697923Z",
     "start_date": "2026-10-28",
     "end_date": "2026-11-02",
     "as_types": [
