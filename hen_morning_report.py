@@ -222,6 +222,50 @@ def ercot_get(path, token, sub_key, params=None, max_attempts=5):
             time.sleep(wait)
     return []
 
+def debug_da_probe(token, sub_key):
+    """
+    DIAGNOSTIC ONLY (safe to leave in, or delete once DA prices are fixed).
+    Calls the day-ahead settlement point price report three different ways and
+    prints the raw HTTP status and the first part of the response, so the log
+    shows exactly why DA comes back empty. Prints no credentials.
+    """
+    path = "np4-190-cd/dam_stlmnt_pnt_prices"
+    headers = {
+        "Authorization":             f"Bearer {token}",
+        "Ocp-Apim-Subscription-Key": sub_key,
+        "Accept":                    "application/json",
+    }
+    variants = [
+        ("A: HB_NORTH + yesterday",
+         {"settlementPoint": "HB_NORTH",
+          "deliveryDateFrom": YESTERDAY, "deliveryDateTo": YESTERDAY, "size": 1000}),
+        ("B: all points + yesterday (size 5)",
+         {"deliveryDateFrom": YESTERDAY, "deliveryDateTo": YESTERDAY, "size": 5}),
+        ("C: HB_NORTH, no dates (size 5)",
+         {"settlementPoint": "HB_NORTH", "size": 5}),
+    ]
+    print(f"\n── DEBUG: day-ahead price probe ({path}, YESTERDAY={YESTERDAY}) ──")
+    for label, params in variants:
+        try:
+            r = requests.get(f"{BASE_URL}/{path}", headers=headers,
+                             params=params, timeout=45)
+            text = r.text.replace("\n", " ")
+            print(f"  [{label}] HTTP {r.status_code} · {len(r.text)} chars")
+            print(f"    {text[:700]}")
+            try:
+                body = r.json()
+                if isinstance(body, dict):
+                    data = body.get("data")
+                    n = len(data) if isinstance(data, list) else "n/a"
+                    print(f"    keys={list(body.keys())} · data rows={n} · "
+                          f"meta={body.get('_meta')}")
+            except Exception as je:
+                print(f"    (response is not JSON: {je})")
+        except Exception as e:
+            print(f"  [{label}] request failed: {e}")
+        time.sleep(3)
+    print("── END DEBUG ──\n")
+
 def safe_float(val):
     try:
         return float(val)
@@ -321,6 +365,10 @@ def _pull_rt_da_hourly(node_list, token, sub_key):
                              {"settlementPoint":   node,
                               "deliveryDateFrom":  YESTERDAY,
                               "deliveryDateTo":    YESTERDAY})
+            # DEBUG: log what the DA report returned for the first point of
+            # each list (and the HB_NORTH hub) so empty results are visible.
+            if node in (node_list[0], "HB_NORTH"):
+                print(f"    DEBUG DA {node}: {len(rows)} rows · sample: {rows[:2]}")
             hour_prices = {}
             all_prices  = []
             for row in rows:
@@ -366,6 +414,12 @@ def _compute_dart(rt_summary, rt_hourly, da_summary, da_hourly):
 
 def collect_data(token, sub_key):
     data = {}
+
+    # ── DIAGNOSTIC: probe the day-ahead price report once (see debug_da_probe)
+    try:
+        debug_da_probe(token, sub_key)
+    except Exception as e:
+        print(f"  WARN: DA probe failed — {e}")
 
     # ── Gross load — hourly ──────────────────────────────────────────────────
     print("  Pulling gross load (hourly)...")
