@@ -2,23 +2,42 @@
 """Build dashboard/brief_feed.json -- the small, market-data-only feed for the morning brief.
 
     python3 build_brief_feed.py                      latest.json -> dashboard/brief_feed.json
-    python3 build_brief_feed.py --in dashboard/latest.json --out /tmp/brief_feed.json
+    python3 build_brief_feed.py --in dashboard/latest.json --history dashboard/history.json \
+                                --out /tmp/brief_feed.json
 
 Why it exists: latest.json is too large for the brief's fetch tool, so it arrives cut off.
-This file carries only what the brief needs and stays well under 50 KB.
+This file carries only what the brief needs and stays under 50,000 characters.
+
+Sections (existing keys first, in this order, then the additive ones):
+    schema_version .. as_spreads   freshness block, hourly rows, daily rows, AS spreads
+    constraints   top 8 binding constraints by avg shadow price, with the 3 most-affected nodes
+    weather       next 4 days (after data_date) of high temp and precip % per ERCOT metro
+    nodes         per settlement point: Sharpe signal, mean DART, MCC, RT avg/max/min, DART
+    hubs          per ERCOT hub / load zone: RT avg/max/min and DA avg
+    data_flags    machine-readable "is this section empty / degraded" switches
 
 MARKET DATA ONLY. The script reads a fixed whitelist of latest.json sections and never
-copies anything else, so HEN revenue, dispatch, state of charge and node-level data
+copies anything else, so HEN revenue, dispatch actuals, state of charge and performance
 cannot reach the feed:
     data_date, gross_load_hourly, wind_hourly, solar_hourly   (yesterday's actuals, GW)
     ercot_forecasts, bid_close_forecast                       (system forecasts, GW)
     as_prices                                                 (system AS clearing prices)
+    constraints, node_mcc_summary                             (ERCOT shadow prices; MCC per node)
+    weather                                                   (AG2 metro forecasts)
+    rt, da, dart, sharpe_ratios                               (settlement point prices / spreads)
+    hub_zone_rt, hub_zone_da                                  (hub and load zone prices)
+    history.json: only whether the newest entry's regional block is empty (a boolean)
+Nothing from modo, asset_status or history's battery / fleet blocks is ever read.
 
 Refresh: rewritten every time the pipeline runs (daily at 6:00 AM Central via the Cloudflare
 trigger, plus any manual run). It does not update intraday on its own.
 
-Rules: GW fields rounded to 1 decimal; AS spreads to 2 (cents matter at that scale); null, never
-0, for missing values; same shape every day. Atomic write: on any failure the previous file is
+Rules: GW fields rounded to 1 decimal; AS spreads, prices, shadow prices and MCC to 2; Sharpe
+to 3 (it is a ratio, not a price); null, never 0 / NaN / Infinity, for missing values; same shape
+every day. Size: if the file would pass 50,000 characters (measured as the file AND as
+json.dumps of it, which is how the brief measures) weather is cut to 3 days first, then
+constraints to 6. A failure while building any additive section is logged as a warning and
+that section is left empty; it never stops the existing sections from being written. Atomic write: on any failure the previous file is
 left untouched and the script exits 1, so a stale file is detectably stale (generated_at,
 data_date) instead of half-written.
 
@@ -35,6 +54,7 @@ DSTFlag change in the collectors (next fall-back day: Nov 7, 2027).
 """
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -50,7 +70,12 @@ N_DAYS         = 4                       # data_date (actuals) + today + the nex
 AS_DAYS        = 5                       # AS spread lookback shown in the feed
 AS_PRODUCTS    = ["REGUP", "REGDN", "RRS", "NSPIN", "ECRS"]
 DAYLIGHT_HE    = range(10, 18)           # HE10-HE17: solar is always > 0 here
-MAX_BYTES      = 50_000
+MAX_BYTES      = 50_000                  # also the character limit (see fits())
+CONSTRAINTS_N  = 8                       # additive sections: how much to include
+CONSTRAINTS_N_TRIMMED = 6                # ... and the fallback if the file would be too big
+WEATHER_DAYS  = 4
+WEATHER_DAYS_TRIMMED = 3
+TOP_NODES_N   = 3
 PLAUSIBLE      = {"gross_load": (10.0, 120.0), "wind": (0.0, 50.0), "solar": (0.0, 50.0)}  # GW
 
 ROW_KEYS = ("date", "he", "ts_ct", "status", "gross_load", "wind", "solar", "net_load",
@@ -116,7 +141,9 @@ def parse_date(s):
 
 
 # ── the feed ─────────────────────────────────────────────────────────────────
-def build(latest, now_ct=None):
+def build_core(latest, now_ct=None):
+    """The original feed: freshness block, hourly, daily, as_spreads. Unchanged from the first
+    release; the additive sections are layered on top by build()."""
     now_ct = now_ct or datetime.now(CT)
     if not isinstance(latest, dict) or not latest.get("data_date"):
         raise ValueError("latest.json has no data_date")
@@ -271,9 +298,208 @@ def build(latest, now_ct=None):
     }
 
 
+# ── additive sections ────────────────────────────────────────────────────────────────────────
+EXTRA_KEYS = ("constraints", "weather", "nodes", "hubs", "data_flags")
+_WARNED = set()
+
+
+def fin(x):
+    """A finite float, or None. Rejects bools, strings, NaN and +/-Infinity."""
+    if x is None or isinstance(x, bool) or not isinstance(x, (int, float)):
+        return None
+    v = float(x)
+    return v if math.isfinite(v) else None
+
+
+def p2(x):
+    """Price / shadow price / MCC: 2 decimals, or None."""
+    v = fin(x)
+    return None if v is None else round(v, 2) + 0.0
+
+
+def p3(x):
+    """Ratios (Sharpe): 3 decimals, or None."""
+    v = fin(x)
+    return None if v is None else round(v, 3) + 0.0
+
+
+def _text(x):
+    return x if isinstance(x, str) and x else None
+
+
+def _dict(x):
+    return x if isinstance(x, dict) else {}
+
+
+def build_constraints(latest, limit=CONSTRAINTS_N):
+    """Top `limit` constraints by avg shadow price ($/MWh) from latest.json 'constraints'.
+    peak_hour is the hour ENDING (1-24) with the highest avg shadow price; top_nodes are the
+    (up to 3) nodes with the largest |MCC| from that constraint's node_mcc, sign kept."""
+    ranked = []
+    for c in latest.get("constraints") or []:
+        if not isinstance(c, dict):
+            continue
+        avg = fin(c.get("avg_shadow"))
+        if avg is None:
+            continue
+        peak_hour, best = None, None
+        for he, rec in _dict(c.get("hourly")).items():
+            v = fin(rec.get("avg_shadow") if isinstance(rec, dict) else rec)
+            try:
+                h = int(he)
+            except (TypeError, ValueError):
+                continue
+            if v is not None and (best is None or v > best or (v == best and h < peak_hour)):
+                best, peak_hour = v, h
+        mcc = [(str(n), fin(v)) for n, v in _dict(c.get("node_mcc")).items()]
+        mcc = sorted(((n, v) for n, v in mcc if v is not None), key=lambda t: (-abs(t[1]), t[0]))
+        hb = fin(c.get("hours_binding"))
+        impact = fin(c.get("hen_impact_score"))
+        row = {"name": _text(c.get("name")), "from_station": _text(c.get("from_station")),
+               "to_station": _text(c.get("to_station")), "avg_shadow": p2(avg),
+               "peak_shadow": p2(c.get("peak_shadow")),
+               "hours_binding": None if hb is None else int(hb),
+               "hen_impact_score": p2(impact), "peak_hour": peak_hour,
+               "top_nodes": [{"node": n, "mcc": p2(v)} for n, v in mcc[:TOP_NODES_N]]}
+        ranked.append((-avg, -(impact or 0.0), str(c.get("name")), row))
+    ranked.sort(key=lambda t: t[:3])
+    return [t[3] for t in ranked[:limit]]
+
+
+def build_weather(latest, days=WEATHER_DAYS):
+    """The next `days` days AFTER data_date for each city: [{date, high, precip_pct}].
+    The pipeline writes 0 where a high temperature is missing, which no Texas metro ever reaches,
+    so a high of 0 is reported as null. Cities with no day after data_date are left out."""
+    cutoff = str(latest["data_date"])[:10]
+    cities = _dict(_dict(latest.get("weather")).get("cities"))
+    out = {}
+    for city in sorted(cities):
+        rows = []
+        for d in _dict(cities[city]).get("days") or []:
+            if not isinstance(d, dict):
+                continue
+            ds = str(d.get("date"))[:10]
+            if ds <= cutoff:
+                continue
+            hi, pp = fin(d.get("high")), fin(d.get("precip_pct"))
+            rows.append({"date": ds,
+                         "high": None if hi in (None, 0) else int(round(hi)),
+                         "precip_pct": None if pp is None else (int(pp) if pp == int(pp) else round(pp, 1))})
+        rows.sort(key=lambda r: r["date"])
+        if rows:
+            out[str(city)] = rows[:days]
+    return out
+
+
+def build_nodes(latest):
+    """One entry per node in sharpe_ratios (sorted by name)."""
+    sharpe, rt, dart = (_dict(latest.get(k)) for k in ("sharpe_ratios", "rt", "dart"))
+    mcc = _dict(latest.get("node_mcc_summary"))
+    out = {}
+    for node in sorted(sharpe):
+        s_, r_ = _dict(sharpe[node]), _dict(rt.get(node))
+        out[str(node)] = {"signal": _text(s_.get("signal")), "sharpe": p3(s_.get("sharpe")),
+                          "mean_dart": p2(s_.get("mean_dart")), "mcc": p2(mcc.get(node)),
+                          "rt_avg": p2(r_.get("avg")), "rt_max": p2(r_.get("max")),
+                          "rt_min": p2(r_.get("min")), "dart": p2(dart.get(node))}
+    return out
+
+
+def build_hubs(latest):
+    """One entry per ERCOT hub / load zone: RT avg/max/min and DA avg."""
+    rt, da = _dict(latest.get("hub_zone_rt")), _dict(latest.get("hub_zone_da"))
+    out = {}
+    for hub in sorted(set(rt) | set(da)):
+        r_, d_ = _dict(rt.get(hub)), _dict(da.get(hub))
+        out[str(hub)] = {"rt_avg": p2(r_.get("avg")), "rt_max": p2(r_.get("max")),
+                         "rt_min": p2(r_.get("min")), "da_avg": p2(d_.get("avg"))}
+    return out
+
+
+def _history_regional_empty(history, data_date):
+    """True when the newest history entry has no regional block, or is not for data_date at all
+    (so the regional view has nothing for that day). None when history is unavailable."""
+    entries = [e for e in history or [] if isinstance(e, dict) and e.get("date")]
+    if not entries:
+        return None
+    last = max(entries, key=lambda e: str(e["date"]))
+    return str(last["date"])[:10] != str(data_date)[:10] or not last.get("regional")
+
+
+FLAG_KEYS = ("da_empty", "dart_empty", "rt_empty", "history_regional_empty_for_data_date",
+             "forecast_missing_sources", "constraints_count", "weather_city_count", "node_count")
+
+
+def build_flags(latest, history, constraints, weather, nodes):
+    ms = _dict(latest.get("ercot_forecasts")).get("missing_sources")
+    return {"da_empty":   not latest.get("da"),             # true when the dict has zero keys
+            "dart_empty": not latest.get("dart"),
+            "rt_empty":   not latest.get("rt"),
+            "history_regional_empty_for_data_date": _history_regional_empty(history, latest.get("data_date")),
+            "forecast_missing_sources": [str(x) for x in ms] if isinstance(ms, list) else [],
+            "constraints_count":  len(constraints),         # entries actually in this file
+            "weather_city_count": len(weather),
+            "node_count":         len(nodes)}
+
+
+def _section(name, fn, default):
+    """Build one additive section; on any error warn once and leave it empty. The existing
+    sections and the file as a whole are never put at risk by a surprise in these."""
+    try:
+        return fn()
+    except Exception as exc:
+        if name not in _WARNED:
+            _WARNED.add(name)
+            print(f"::warning::brief_feed: section '{name}' skipped ({exc!r}); the rest of the feed is unaffected")
+        return default
+
+
+def build_extras(latest, history=None, weather_days=WEATHER_DAYS, constraints_n=CONSTRAINTS_N):
+    constraints = _section("constraints", lambda: build_constraints(latest, constraints_n), [])
+    weather     = _section("weather",     lambda: build_weather(latest, weather_days), {})
+    nodes       = _section("nodes",       lambda: build_nodes(latest), {})
+    hubs        = _section("hubs",        lambda: build_hubs(latest), {})
+    flags       = _section("data_flags",  lambda: build_flags(latest, history, constraints, weather, nodes),
+                           dict.fromkeys(FLAG_KEYS))
+    return {"constraints": constraints, "weather": weather, "nodes": nodes, "hubs": hubs,
+            "data_flags": flags}
+
+
+def build(latest, now_ct=None, history=None, weather_days=WEATHER_DAYS, constraints_n=CONSTRAINTS_N):
+    """The full feed: the original sections untouched and in their original order, then the
+    additive ones (constraints, weather, nodes, hubs, data_flags)."""
+    feed = build_core(latest, now_ct)
+    feed.update(build_extras(latest, history, weather_days, constraints_n))
+    return feed
+
+
+def fits(text):
+    """Under the limit as a file (characters and bytes) and as json.dumps() of it, which is
+    how the brief measures it (json.dumps' default separators are longer than the file's)."""
+    return (len(text) < MAX_BYTES and len(text.encode("utf-8")) < MAX_BYTES
+            and len(json.dumps(json.loads(text))) < MAX_BYTES)
+
+
+def render(latest, now_ct=None, history=None):
+    """Build and serialise, trimming only if needed: weather to 3 days first, then constraints
+    to 6. Returns (feed, text, note) where note says what was trimmed ('' if nothing)."""
+    core = build_core(latest, now_ct)
+    plans = [(WEATHER_DAYS, CONSTRAINTS_N, ""),
+             (WEATHER_DAYS_TRIMMED, CONSTRAINTS_N, "weather cut to 3 days"),
+             (WEATHER_DAYS_TRIMMED, CONSTRAINTS_N_TRIMMED, "weather cut to 3 days, constraints cut to 6")]
+    for weather_days, constraints_n, note in plans:
+        feed = dict(core)
+        feed.update(build_extras(latest, history, weather_days, constraints_n))
+        text = dumps(feed)
+        json.loads(text)                                      # must round-trip as valid JSON
+        if fits(text):
+            return feed, text, note
+    raise ValueError(f"feed is {len(text)} characters even after trimming; limit is {MAX_BYTES}")
+
+
 def dumps(feed):
     """Valid JSON, compact, one row per line (small and diff-friendly)."""
-    j = lambda o: json.dumps(o, separators=(",", ":"), ensure_ascii=False)
+    j = lambda o: json.dumps(o, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
     out = ["{"]
     for k in ("schema_version", "generated_at", "data_date", "forecast_run_at",
               "as_prices_end_date", "missing_sources"):
@@ -286,7 +512,17 @@ def dumps(feed):
     out.append('"as_spreads":{' + ",".join(f'"{k}":{j(a[k])}' for k in ("start", "end", "unit", "he_index"))
                + ',"series":[')
     out.append(",\n".join(j(r) for r in a["series"]))
-    out.append("]}")
+    extras = [k for k in EXTRA_KEYS if k in feed]
+    out.append("]}" + ("," if extras else ""))
+    for i, k in enumerate(extras):
+        comma, val = ("," if i < len(extras) - 1 else ""), feed[k]
+        if k == "data_flags":
+            out.append(f'"{k}":{j(val)}{comma}')
+        elif isinstance(val, list):                           # constraints: one per line
+            out += [f'"{k}":[]{comma}'] if not val else [f'"{k}":[', ",\n".join(j(r) for r in val), "]" + comma]
+        else:                                                 # weather / nodes / hubs: one key per line
+            out += [f'"{k}":{{}}{comma}'] if not val else [
+                f'"{k}":{{', ",\n".join(f"{j(n)}:{j(v)}" for n, v in val.items()), "}" + comma]
     out.append("}")
     return "\n".join(out) + "\n"
 
@@ -305,27 +541,40 @@ def write_atomic(path, text):
         raise
 
 
+def load_history(path):
+    """history.json as a list, or None if it is missing or unreadable (the flag then reads null)."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            h = json.load(fh)
+        return h if isinstance(h, list) else None
+    except (OSError, ValueError):
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser(description="Build brief_feed.json from latest.json.")
     ap.add_argument("--in",  dest="src", default="latest.json")
+    ap.add_argument("--history", dest="hist", default=os.path.join("dashboard", "history.json"))
     ap.add_argument("--out", dest="dst", default=os.path.join("dashboard", "brief_feed.json"))
     args = ap.parse_args()
     try:
         with open(args.src, encoding="utf-8") as fh:
             latest = json.load(fh)
-        feed = build(latest)
-        text = dumps(feed)
-        json.loads(text)                                     # must round-trip as valid JSON
+        feed, text, note = render(latest, history=load_history(args.hist))
         size = len(text.encode("utf-8"))
-        if size > MAX_BYTES:
-            raise ValueError(f"feed is {size} bytes, over the {MAX_BYTES} byte limit")
         write_atomic(args.dst, text)
     except Exception as exc:                                 # previous file stays untouched
         print(f"brief_feed: FAILED, previous file left in place -- {exc}", file=sys.stderr)
         return 1
+    flags = feed["data_flags"]
     print(f"brief_feed: {len(feed['hourly'])} hourly rows, {len(feed['daily'])} daily rows, "
-          f"{len(feed['as_spreads']['series'])} AS series, {size / 1000:.1f} KB, "
-          f"data_date={feed['data_date']}, missing_sources={feed['missing_sources']}")
+          f"{len(feed['as_spreads']['series'])} AS series, {flags['constraints_count']} constraints, "
+          f"{flags['weather_city_count']} weather cities, {flags['node_count']} nodes, {len(feed['hubs'])} hubs, "
+          f"{size / 1000:.1f} KB, data_date={feed['data_date']}, missing_sources={feed['missing_sources']}"
+          f"{' [' + note + ']' if note else ''}")
+    print(f"brief_feed: data_flags da_empty={flags['da_empty']} dart_empty={flags['dart_empty']} "
+          f"rt_empty={flags['rt_empty']} history_regional_empty={flags['history_regional_empty_for_data_date']} "
+          f"forecast_missing_sources={flags['forecast_missing_sources']}")
     return 0
 
 
