@@ -12,9 +12,17 @@ Sections (existing keys first, in this order, then the additive ones):
     schema_version .. as_spreads   freshness block, hourly rows, daily rows, AS spreads
     constraints   top 8 binding constraints by avg shadow price, with the 3 most-affected nodes
     weather       next 4 days (after data_date) of high temp and precip % per ERCOT metro
-    nodes         per settlement point: Sharpe signal, mean DART, MCC, RT avg/max/min, DART
+    nodes         per settlement point: Sharpe signal, mean DART, MCC, RT avg/max/min, DART, then
+                  top_constraints (the 2 constraints with the largest |MCC| AT THAT NODE, from every
+                  constraint in latest.json, not just the 8 above), hen_name, region
+                  (and hen_name_confirmed:false for the one name that is an unconfirmed assumption)
     hubs          per ERCOT hub / load zone: RT avg/max/min and DA avg
     data_flags    machine-readable "is this section empty / degraded" switches
+    freshness     expected_data_date, is_fresh, stale_reasons: one answer to "can I use this today?"
+    constraints[].peak_hour_ending is the explicit hour-ending (1-24) of peak_hour (see build_constraints)
+
+Not included: system RT lambda. The pipeline does not pull it (ERCOT publishes it as
+np6-322-cd/sced_system_lambda); adding it means a new collector, so it is left out rather than faked.
 
 MARKET DATA ONLY. The script reads a fixed whitelist of latest.json sections and never
 copies anything else, so HEN revenue, dispatch actuals, state of charge and performance
@@ -26,6 +34,7 @@ cannot reach the feed:
     weather                                                   (AG2 metro forecasts)
     rt, da, dart, sharpe_ratios                               (settlement point prices / spreads)
     hub_zone_rt, hub_zone_da                                  (hub and load zone prices)
+    regions                                                   (the dashboard's group names -> node lists)
     history.json: only whether the newest entry's regional block is empty (a boolean)
 Nothing from modo, asset_status or history's battery / fleet blocks is ever read.
 
@@ -36,9 +45,10 @@ Rules: GW fields rounded to 1 decimal; AS spreads, prices, shadow prices and MCC
 to 3 (it is a ratio, not a price); null, never 0 / NaN / Infinity, for missing values; same shape
 every day. Size: if the file would pass 50,000 characters (measured as the file AND as
 json.dumps of it, which is how the brief measures) weather is cut to 3 days first, then
-constraints to 6. A failure while building any additive section is logged as a warning and
-that section is left empty; it never stops the existing sections from being written. Atomic write: on any failure the previous file is
-left untouched and the script exits 1, so a stale file is detectably stale (generated_at,
+constraints to 6, then (last resort, so size can never stop the daily feed) each node's
+top_constraints to 1. A failure while building any additive section is logged as a warning and
+that section is left empty; it never stops the existing sections from being written. Atomic
+write: on any failure the previous file is left untouched and the script exits 1, so a stale file is detectably stale (generated_at,
 data_date) instead of half-written.
 
 Missing-value rules (the pipeline stores 0 for "no data" in several places):
@@ -60,6 +70,7 @@ import re
 import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from zoneinfo import ZoneInfo
 
 CT  = ZoneInfo("America/Chicago")
@@ -76,6 +87,40 @@ CONSTRAINTS_N_TRIMMED = 6                # ... and the fallback if the file woul
 WEATHER_DAYS  = 4
 WEATHER_DAYS_TRIMMED = 3
 TOP_NODES_N   = 3
+TOP_CONSTRAINTS_PER_NODE = 2             # nodes[].top_constraints
+TOP_CONSTRAINTS_TRIMMED  = 1             # last-resort size fallback (see render())
+FRESH_AFTER = dtime(6, 0)                # freshness: the feed must be generated at/after 06:00 CT
+
+# HEN's name for each settlement point (nodes[].hen_name). One place to edit.
+HEN_NAMES = {
+    "CATARINA_B1": "Catarina", "CEDRVALE_RN": "Cedarvale", "CISC_RN": "Cisco",
+    "COYOTSPR_RN": "Coyote Springs", "DIBOL_RN": "Diboll", "FALFUR_RN": "Falfurrias",
+    "FAULKNER_RN": "Faulkner", "FRMRSVLW_RN": "Farmersville", "FTDUNCAN_RN": "Fort Duncan",
+    "GOMZ_RN": "Gomez", "GRDNE_ESR_RN": "Garden City East", "HAMI_BESS_RN": "Hamilton",
+    "HOLCOMB_RN1": "Holcomb", "JDKNS_RN": "Judkins", "JUNCTION_RN": "Junction",
+    "LFSTH_RN": "Lufkin South", "LONESTAR_RN": "Lonestar", "MAINLAND_RN": "Mainland",
+    "MNWL_BESS_RN": "Mineral Wells East", "MV_VALV4_RN": "Val Verde", "OLNEYTN_RN": "Olney",
+    "PAULN_RN": "Pauline", "PAVLOV_BT_RN": "Pavlov", "POTEETS_RN": "Poteets",
+    "RTLSNAKE_BT": "Rattlesnake", "RUSSEKST_RN": "Russek Street", "SADLBACK_RN": "Saddleback",
+    "SANDLAKE_RN": "Sandlake", "SBEAN_BESS": "Screwbean",
+    "TOYAH_RN": "Cherry Creek",          # ASSUMPTION, NOT CONFIRMED: supplied as a guess in the request that
+                                         # added this field. Confirm it, then delete TOYAH_RN from
+                                         # UNCONFIRMED_HEN_NAMES below.
+    "TYNAN_RN": "Tynan", "WLTC_ESR_RN": "Weil Tract",
+}
+UNCONFIRMED_HEN_NAMES = {"TOYAH_RN"}     # these get nodes[].hen_name_confirmed = false (and no one else does)
+
+# nodes[].region is the dashboard's own grouping (latest.json "regions", written from REGIONS in
+# hen_morning_report.py). FALLBACK_REGIONS is only used if that key is ever missing. Fort Duncan is
+# reported as its own region in this feed even though the dashboard groups it under Premium.
+REGION_OVERRIDES = {"FTDUNCAN_RN": "South (Fort Duncan)"}
+FALLBACK_REGIONS = {
+    "West Texas": ["TOYAH_RN", "SADLBACK_RN", "FAULKNER_RN", "COYOTSPR_RN", "LONESTAR_RN", "RTLSNAKE_BT",
+                   "CEDRVALE_RN", "SBEAN_BESS", "GOMZ_RN", "GRDNE_ESR_RN", "JDKNS_RN", "SANDLAKE_RN"],
+    "North Texas": ["OLNEYTN_RN", "DIBOL_RN", "FRMRSVLW_RN", "MNWL_BESS_RN", "LFSTH_RN", "PAULN_RN", "CISC_RN"],
+    "Coastal": ["MV_VALV4_RN", "WLTC_ESR_RN", "MAINLAND_RN", "FALFUR_RN", "PAVLOV_BT_RN", "POTEETS_RN", "TYNAN_RN"],
+    "Premium": ["CATARINA_B1", "HOLCOMB_RN1", "HAMI_BESS_RN", "JUNCTION_RN", "RUSSEKST_RN", "FTDUNCAN_RN"],
+}
 PLAUSIBLE      = {"gross_load": (10.0, 120.0), "wind": (0.0, 50.0), "solar": (0.0, 50.0)}  # GW
 
 ROW_KEYS = ("date", "he", "ts_ct", "status", "gross_load", "wind", "solar", "net_load",
@@ -299,7 +344,7 @@ def build_core(latest, now_ct=None):
 
 
 # ── additive sections ────────────────────────────────────────────────────────────────────────
-EXTRA_KEYS = ("constraints", "weather", "nodes", "hubs", "data_flags")
+EXTRA_KEYS = ("constraints", "weather", "nodes", "hubs", "data_flags", "freshness")
 _WARNED = set()
 
 
@@ -360,7 +405,12 @@ def build_constraints(latest, limit=CONSTRAINTS_N):
                "peak_shadow": p2(c.get("peak_shadow")),
                "hours_binding": None if hb is None else int(hb),
                "hen_impact_score": p2(impact), "peak_hour": peak_hour,
-               "top_nodes": [{"node": n, "mcc": p2(v)} for n, v in mcc[:TOP_NODES_N]]}
+               "top_nodes": [{"node": n, "mcc": p2(v)} for n, v in mcc[:TOP_NODES_N]],
+               # peak_hour comes from the keys of each constraint's "hourly" dict. Those are produced in
+               # hen_integrations.collect_ercot_constraints as  he = int(SCEDTimestamp[11:13]) + 1  on the
+               # Central-time SCED timestamp, i.e. HOUR-ENDING 1-24 (the 13:05 interval is HE14), so no
+               # conversion is needed and peak_hour_ending == peak_hour. Kept as its own explicit field.
+               "peak_hour_ending": peak_hour if peak_hour is not None and 1 <= peak_hour <= 24 else None}
         ranked.append((-avg, -(impact or 0.0), str(c.get("name")), row))
     ranked.sort(key=lambda t: t[:3])
     return [t[3] for t in ranked[:limit]]
@@ -391,17 +441,52 @@ def build_weather(latest, days=WEATHER_DAYS):
     return out
 
 
-def build_nodes(latest):
-    """One entry per node in sharpe_ratios (sorted by name)."""
+def _node_constraint_index(latest):
+    """node -> [(constraint name, mcc)] over ALL constraints in latest.json (the pipeline keeps its 20
+    highest HEN-impact constraints there), biggest |mcc| first, ties by name. MCC that rounds to 0.00
+    is dropped: a constraint with no real effect on the node is not worth listing."""
+    idx = {}
+    for c in latest.get("constraints") or []:
+        if not isinstance(c, dict) or _text(c.get("name")) is None:
+            continue
+        for node, v in _dict(c.get("node_mcc")).items():
+            f = fin(v)
+            if f is not None and abs(f) >= 0.005:
+                idx.setdefault(str(node), []).append((c["name"], f))
+    for node in idx:
+        idx[node].sort(key=lambda t: (-abs(t[1]), t[0]))
+    return idx
+
+
+def _node_region(node, regions):
+    if node in REGION_OVERRIDES:
+        return REGION_OVERRIDES[node]
+    for groups in (regions, FALLBACK_REGIONS):
+        for name, members in groups.items():
+            if isinstance(members, list) and node in members:
+                return str(name)
+    return None
+
+
+def build_nodes(latest, top_constraints_n=TOP_CONSTRAINTS_PER_NODE):
+    """One entry per node in sharpe_ratios (sorted by name). The first eight fields are the original
+    ones; top_constraints, hen_name, region (and hen_name_confirmed for unconfirmed names) follow."""
     sharpe, rt, dart = (_dict(latest.get(k)) for k in ("sharpe_ratios", "rt", "dart"))
     mcc = _dict(latest.get("node_mcc_summary"))
+    by_node, regions = _node_constraint_index(latest), _dict(latest.get("regions"))
     out = {}
     for node in sorted(sharpe):
         s_, r_ = _dict(sharpe[node]), _dict(rt.get(node))
-        out[str(node)] = {"signal": _text(s_.get("signal")), "sharpe": p3(s_.get("sharpe")),
-                          "mean_dart": p2(s_.get("mean_dart")), "mcc": p2(mcc.get(node)),
-                          "rt_avg": p2(r_.get("avg")), "rt_max": p2(r_.get("max")),
-                          "rt_min": p2(r_.get("min")), "dart": p2(dart.get(node))}
+        entry = {"signal": _text(s_.get("signal")), "sharpe": p3(s_.get("sharpe")),
+                 "mean_dart": p2(s_.get("mean_dart")), "mcc": p2(mcc.get(node)),
+                 "rt_avg": p2(r_.get("avg")), "rt_max": p2(r_.get("max")),
+                 "rt_min": p2(r_.get("min")), "dart": p2(dart.get(node))}
+        entry["top_constraints"] = [{"name": n, "mcc": p2(v)} for n, v in by_node.get(str(node), [])[:top_constraints_n]]
+        entry["hen_name"] = HEN_NAMES.get(node)
+        entry["region"] = _node_region(node, regions)
+        if node in UNCONFIRMED_HEN_NAMES:
+            entry["hen_name_confirmed"] = False
+        out[str(node)] = entry
     return out
 
 
@@ -454,10 +539,11 @@ def _section(name, fn, default):
         return default
 
 
-def build_extras(latest, history=None, weather_days=WEATHER_DAYS, constraints_n=CONSTRAINTS_N):
+def build_extras(latest, history=None, weather_days=WEATHER_DAYS, constraints_n=CONSTRAINTS_N,
+                 top_constraints_n=TOP_CONSTRAINTS_PER_NODE):
     constraints = _section("constraints", lambda: build_constraints(latest, constraints_n), [])
     weather     = _section("weather",     lambda: build_weather(latest, weather_days), {})
-    nodes       = _section("nodes",       lambda: build_nodes(latest), {})
+    nodes       = _section("nodes",       lambda: build_nodes(latest, top_constraints_n), {})
     hubs        = _section("hubs",        lambda: build_hubs(latest), {})
     flags       = _section("data_flags",  lambda: build_flags(latest, history, constraints, weather, nodes),
                            dict.fromkeys(FLAG_KEYS))
@@ -465,12 +551,56 @@ def build_extras(latest, history=None, weather_days=WEATHER_DAYS, constraints_n=
             "data_flags": flags}
 
 
-def build(latest, now_ct=None, history=None, weather_days=WEATHER_DAYS, constraints_n=CONSTRAINTS_N):
-    """The full feed: the original sections untouched and in their original order, then the
-    additive ones (constraints, weather, nodes, hubs, data_flags)."""
-    feed = build_core(latest, now_ct)
-    feed.update(build_extras(latest, history, weather_days, constraints_n))
+def build_freshness(feed):
+    """Is this feed safe for the brief to use as today's? Computed from the feed's own fields, so it
+    always describes exactly what is in the file. All five conditions must hold:
+      1. data_date is yesterday in Central, relative to generated_at
+      2. generated_at is at or after 06:00 CT on its own date
+      3. forecast_run_at is on the same Central date as generated_at
+      4. missing_sources is empty
+      5. none of data_flags da_empty / dart_empty / rt_empty is true
+    One plain-English reason is recorded per failed condition."""
+    gen = datetime.fromisoformat(feed["generated_at"]).astimezone(CT)
+    expected = gen.date() - timedelta(days=1)                # calendar yesterday: right on 23/25-hour days
+    reasons = []
+    if feed.get("data_date") != expected.isoformat():
+        reasons.append(f"data_date is {feed.get('data_date')} but yesterday in Central time is {expected}, "
+                       f"so the report is not for the expected day")
+    if gen.time() < FRESH_AFTER:
+        reasons.append(f"the feed was generated at {gen:%H:%M} CT, before the {FRESH_AFTER:%H:%M} CT cutoff, "
+                       f"so overnight data may be incomplete")
+    if not feed.get("forecast_run_at"):
+        reasons.append("forecast_run_at is missing, so the forecast run time cannot be checked")
+    else:
+        fr = datetime.fromisoformat(feed["forecast_run_at"]).astimezone(CT)
+        if fr.date() != gen.date():
+            reasons.append(f"the forecasts were last run {fr:%Y-%m-%d %H:%M} CT, not on the same Central date "
+                           f"as the feed ({gen:%Y-%m-%d})")
+    if feed.get("missing_sources"):
+        reasons.append("some sources are missing today: " + ", ".join(str(x) for x in feed["missing_sources"]))
+    flags = _dict(feed.get("data_flags"))
+    for key, label in (("da_empty", "day-ahead (DA) energy prices"), ("dart_empty", "DART spreads"),
+                       ("rt_empty", "real-time (RT) prices")):
+        if flags.get(key) is True:
+            reasons.append(f"{label} are empty ({key} is true)")
+    return {"expected_data_date": expected.isoformat(), "is_fresh": not reasons, "stale_reasons": reasons}
+
+
+def _assemble(core, latest, history, weather_days, constraints_n, top_constraints_n):
+    feed = dict(core)
+    feed.update(build_extras(latest, history, weather_days, constraints_n, top_constraints_n))
+    # if freshness itself cannot be computed, say "not fresh": never claim fresh by accident
+    feed["freshness"] = _section("freshness", lambda: build_freshness(feed),
+                                 {"expected_data_date": None, "is_fresh": False,
+                                  "stale_reasons": ["freshness could not be computed"]})
     return feed
+
+
+def build(latest, now_ct=None, history=None, weather_days=WEATHER_DAYS, constraints_n=CONSTRAINTS_N,
+          top_constraints_n=TOP_CONSTRAINTS_PER_NODE):
+    """The full feed: the original sections untouched and in their original order, then the
+    additive ones (constraints, weather, nodes, hubs, data_flags, freshness)."""
+    return _assemble(build_core(latest, now_ct), latest, history, weather_days, constraints_n, top_constraints_n)
 
 
 def fits(text):
@@ -481,15 +611,18 @@ def fits(text):
 
 
 def render(latest, now_ct=None, history=None):
-    """Build and serialise, trimming only if needed: weather to 3 days first, then constraints
-    to 6. Returns (feed, text, note) where note says what was trimmed ('' if nothing)."""
+    """Build and serialise, trimming only if needed, in this order: weather to 3 days, constraints to 6,
+    then (last resort, so a size problem can never stop the daily feed) each node's top_constraints to 1.
+    Returns (feed, text, note) where note says what was trimmed ('' if nothing)."""
     core = build_core(latest, now_ct)
-    plans = [(WEATHER_DAYS, CONSTRAINTS_N, ""),
-             (WEATHER_DAYS_TRIMMED, CONSTRAINTS_N, "weather cut to 3 days"),
-             (WEATHER_DAYS_TRIMMED, CONSTRAINTS_N_TRIMMED, "weather cut to 3 days, constraints cut to 6")]
-    for weather_days, constraints_n, note in plans:
-        feed = dict(core)
-        feed.update(build_extras(latest, history, weather_days, constraints_n))
+    plans = [(WEATHER_DAYS, CONSTRAINTS_N, TOP_CONSTRAINTS_PER_NODE, ""),
+             (WEATHER_DAYS_TRIMMED, CONSTRAINTS_N, TOP_CONSTRAINTS_PER_NODE, "weather cut to 3 days"),
+             (WEATHER_DAYS_TRIMMED, CONSTRAINTS_N_TRIMMED, TOP_CONSTRAINTS_PER_NODE,
+              "weather cut to 3 days, constraints cut to 6"),
+             (WEATHER_DAYS_TRIMMED, CONSTRAINTS_N_TRIMMED, TOP_CONSTRAINTS_TRIMMED,
+              "weather cut to 3 days, constraints cut to 6, top_constraints cut to 1 per node")]
+    for weather_days, constraints_n, top_n, note in plans:
+        feed = _assemble(core, latest, history, weather_days, constraints_n, top_n)
         text = dumps(feed)
         json.loads(text)                                      # must round-trip as valid JSON
         if fits(text):
@@ -516,7 +649,7 @@ def dumps(feed):
     out.append("]}" + ("," if extras else ""))
     for i, k in enumerate(extras):
         comma, val = ("," if i < len(extras) - 1 else ""), feed[k]
-        if k == "data_flags":
+        if k in ("data_flags", "freshness"):
             out.append(f'"{k}":{j(val)}{comma}')
         elif isinstance(val, list):                           # constraints: one per line
             out += [f'"{k}":[]{comma}'] if not val else [f'"{k}":[', ",\n".join(j(r) for r in val), "]" + comma]
@@ -575,6 +708,9 @@ def main():
     print(f"brief_feed: data_flags da_empty={flags['da_empty']} dart_empty={flags['dart_empty']} "
           f"rt_empty={flags['rt_empty']} history_regional_empty={flags['history_regional_empty_for_data_date']} "
           f"forecast_missing_sources={flags['forecast_missing_sources']}")
+    fresh = feed["freshness"]
+    print(f"brief_feed: freshness is_fresh={fresh['is_fresh']} expected_data_date={fresh['expected_data_date']}"
+          f"{' stale_reasons=' + str(fresh['stale_reasons']) if fresh['stale_reasons'] else ''}")
     return 0
 
 
